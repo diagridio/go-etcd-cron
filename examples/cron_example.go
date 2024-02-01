@@ -7,6 +7,7 @@ import (
 	"log"
 	"os"
 	"os/signal"
+	"strconv"
 	"sync"
 	"syscall"
 
@@ -14,9 +15,28 @@ import (
 )
 
 func main() {
-	log.Println("starting")
+	hostId, err := strconv.Atoi(os.Getenv("HOST_ID"))
+	if err != nil {
+		hostId = 0
+	}
+	numHosts, err := strconv.Atoi(os.Getenv("NUM_HOSTS"))
+	if err != nil {
+		numHosts = 1
+	}
+	numPartitions, err := strconv.Atoi(os.Getenv("NUM_PARTITIONS"))
+	if err != nil {
+		numPartitions = 1
+	}
 
-	cron, err := etcdcron.New(etcdcron.WithNamespace("example"))
+	log.Printf("starting hostId=%d for total of %d hosts and %d partitions", hostId, numHosts, numPartitions)
+
+	p, err := etcdcron.NewPartitioning(numPartitions, numHosts, hostId)
+	if err != nil {
+		log.Fatal("fail to create partitioning", err)
+	}
+	cron, err := etcdcron.New(
+		etcdcron.WithNamespace("example"),
+		etcdcron.WithPartitioning(p))
 	if err != nil {
 		log.Fatal("fail to create etcd-cron", err)
 	}

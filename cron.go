@@ -40,6 +40,8 @@ type Cron struct {
 	running           bool
 	runWaitingGroup   sync.WaitGroup
 	etcdclient        EtcdMutexBuilder
+	partitioning      *Partitioning
+	partitionMutexMap sync.Map
 }
 
 // Job contains 3 mandatory options to define a job
@@ -153,6 +155,12 @@ func WithNamespace(n string) CronOpt {
 	})
 }
 
+func WithPartitioning(p *Partitioning) CronOpt {
+	return CronOpt(func(cron *Cron) {
+		cron.partitioning = p
+	})
+}
+
 // New returns a new Cron job runner.
 func New(opts ...CronOpt) (*Cron, error) {
 	cron := &Cron{
@@ -164,6 +172,9 @@ func New(opts ...CronOpt) (*Cron, error) {
 	}
 	for _, opt := range opts {
 		opt(cron)
+	}
+	if cron.partitioning == nil {
+		cron.partitioning = NoPartitioning()
 	}
 	if cron.etcdclient == nil {
 		etcdClient, err := NewEtcdMutexBuilder(etcdclient.Config{
@@ -250,17 +261,28 @@ func (c *Cron) ListJobsByPrefix(prefix string) []*Job {
 
 // Schedule adds a Job to the Cron to be run on the given schedule.
 func (c *Cron) Schedule(schedule Schedule, job Job) error {
-	distMutex, err := c.etcdclient.NewMutex(fmt.Sprintf("%s/job/%s", c.namespace, job.canonicalName()))
-	if err != nil {
-		err := errors.Wrapf(err, "fail to create etcd mutex for job '%v'", job.Name)
-		go c.etcdErrorsHandler(context.Background(), job, err)
-		return err
+	partitionId := c.partitioning.CalculatePartitionId(job.canonicalName())
+	if !c.partitioning.CheckPartitionLeader(partitionId) {
+		return fmt.Errorf("host does not own partition %d", partitionId)
+	}
+	mutexName := fmt.Sprintf("%s/partition/%d", c.namespace, partitionId)
+	distMutexAny, ok := c.partitionMutexMap.Load(mutexName)
+	if !ok {
+		distMutex, err := c.etcdclient.NewMutex(mutexName)
+		if err != nil {
+			err := errors.Wrapf(err, "fail to create etcd mutex '%v'", mutexName)
+			go c.etcdErrorsHandler(context.Background(), job, err)
+			return err
+		}
+		// TODO: make mutex comparable and use CompareAndSwap.
+		c.partitionMutexMap.Store(mutexName, distMutex)
+		distMutexAny = distMutex
 	}
 
 	entry := &Entry{
 		Schedule:  schedule,
 		Job:       job,
-		distMutex: distMutex,
+		distMutex: distMutexAny.(DistributedMutex),
 	}
 	if !c.running {
 		c.entriesMutex.Lock()
@@ -297,6 +319,7 @@ func (c *Cron) run(ctx context.Context) {
 	c.runWaitingGroup.Add(1)
 	// Figure out the next activation times for each entry.
 	now := time.Now().Local()
+
 	for _, entry := range c.entries {
 		entry.Next = entry.Schedule.Next(now)
 	}
