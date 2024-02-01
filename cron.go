@@ -3,7 +3,6 @@ package etcdcron
 import (
 	"context"
 	"fmt"
-	"google.golang.org/protobuf/types/known/anypb"
 	"log"
 	"regexp"
 	"runtime/debug"
@@ -11,6 +10,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"google.golang.org/protobuf/types/known/anypb"
 
 	"github.com/iancoleman/strcase"
 	"github.com/pkg/errors"
