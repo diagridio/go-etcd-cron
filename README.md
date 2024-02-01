@@ -1,17 +1,18 @@
-# Go Etcd Cron v1.3.2
+# Go Etcd Cron
 
-This package has been based on the project [https://github.com/robfig/cron](https://github.com/robfig/cron)
+Work-in-progress
 
-[ ![Codeship Status for Scalingo/go-etcd-cron](https://app.codeship.com/projects/36ea06c0-9bc8-0135-7b7d-329e62b9d6c9/status?branch=master)](https://app.codeship.com/projects/252777)
-[![GoDoc](http://godoc.org/github.com/Scalingo/go-etcd-cron?status.png)](http://godoc.org/github.com/Scalingo/go-etcd-cron)
+[![GoDoc](http://godoc.org/github.com/diagridio/go-etcd-cron?status.png)](http://godoc.org/github.com/diagridio/go-etcd-cron)
 
 ## Goal
 
 This package aims at implementing a distributed and fault tolerant cron in order to:
 
 * Run an identical process on several hosts
-* Each of these process instantiate a cron with the same rules
-* Ensure only one of these processes executes an iteration of a job
+* Each of these process instantiate a subset of the cron jobs
+* Ensure only one of these processes executes a job
+* Number of cron jobs can scale by increasing the number of hosts
+* Eventualy, a trigger can be missed due to change in leadership for a cron job
 
 ## Etcd Initialization
 
@@ -56,28 +57,8 @@ cron.AddJob(Job{
 })
 ```
 
-## Release a New Version
+## History
 
-Bump new version number in `CHANGELOG.md` and `README.md`.
+This is a fork of [https://github.com/Scalingo/go-etcd-cron](https://github.com/Scalingo/go-etcd-cron), which had been based on [https://github.com/robfig/cron](https://github.com/robfig/cron).
 
-Commit, tag and create a new release:
-
-```sh
-version="1.3.2"
-
-git switch --create release/${version}
-git add CHANGELOG.md README.md
-git commit -m "Bump v${version}"
-git push --set-upstream origin release/${version}
-gh pr create --reviewer=EtienneM --title "$(git log -1 --pretty=%B)"
-```
-
-Once the pull request merged, you can tag the new release.
-
-```sh
-git tag v${version}
-git push origin master v${version}
-gh release create v${version}
-```
-
-The title of the release should be the version number and the text of the release is the same as the changelog.
+This fork has similar but still different goals from Scalingo's go-etcd-cron library.
