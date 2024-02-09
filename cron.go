@@ -3,11 +3,13 @@ package etcdcron
 import (
 	"context"
 	"fmt"
+	"google.golang.org/protobuf/types/known/anypb"
 	"log"
 	"regexp"
 	"runtime/debug"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/iancoleman/strcase"
@@ -24,6 +26,7 @@ const (
 // be inspected while running.
 type Cron struct {
 	entries           []*Entry
+	entriesMutex      sync.RWMutex
 	stop              chan struct{}
 	add               chan *Entry
 	snapshot          chan []*Entry
@@ -42,6 +45,12 @@ type Job struct {
 	Rhythm string
 	// Routine method
 	Func func(context.Context) error
+
+	Repeats  int32
+	DueTime  string
+	TTL      string
+	Data     *anypb.Any
+	Metadata map[string]string
 }
 
 func (j Job) Run(ctx context.Context) error {
@@ -174,6 +183,55 @@ func (c *Cron) AddJob(job Job) error {
 	return nil
 }
 
+// GetJob retrieves a job by name.
+func (c *Cron) GetJob(jobName string) *Job {
+	c.entriesMutex.RLock()
+	defer c.entriesMutex.RUnlock()
+
+	for _, entry := range c.entries {
+		if entry.Job.Name == jobName {
+			return &entry.Job
+		}
+	}
+	return nil
+}
+
+// DeleteJob deletes a job by name.
+func (c *Cron) DeleteJob(jobName string) error {
+	c.entriesMutex.Lock()
+	defer c.entriesMutex.Unlock()
+
+	var updatedEntries []*Entry
+	found := false
+	for _, entry := range c.entries {
+		if entry.Job.Name == jobName {
+			found = true
+			continue
+		}
+		// Keep the entries that don't match the specified jobName
+		updatedEntries = append(updatedEntries, entry)
+	}
+	if !found {
+		return fmt.Errorf("job not found: %s", jobName)
+	}
+	c.entries = updatedEntries
+	return nil
+}
+
+func (c *Cron) ListJobsByPrefix(prefix string) []*Job {
+	c.entriesMutex.RLock()
+	defer c.entriesMutex.RUnlock()
+
+	var appJobs []*Job
+	for _, entry := range c.entries {
+		if strings.HasPrefix(entry.Job.Name, prefix) {
+			// Job belongs to the specified app_id
+			appJobs = append(appJobs, &entry.Job)
+		}
+	}
+	return appJobs
+}
+
 // Schedule adds a Job to the Cron to be run on the given schedule.
 func (c *Cron) Schedule(schedule Schedule, job Job) {
 	entry := &Entry{
@@ -181,7 +239,9 @@ func (c *Cron) Schedule(schedule Schedule, job Job) {
 		Job:      job,
 	}
 	if !c.running {
+		c.entriesMutex.Lock()
 		c.entries = append(c.entries, entry)
+		c.entriesMutex.Unlock()
 		return
 	}
 
@@ -191,6 +251,9 @@ func (c *Cron) Schedule(schedule Schedule, job Job) {
 // Entries returns a snapshot of the cron entries.
 func (c *Cron) Entries() []*Entry {
 	if c.running {
+		c.entriesMutex.RLock()
+		defer c.entriesMutex.RUnlock()
+
 		c.snapshot <- nil
 		x := <-c.snapshot
 		return x
@@ -253,7 +316,7 @@ func (c *Cron) run(ctx context.Context) {
 						ctx = c.funcCtx(ctx, e.Job)
 					}
 
-					m, err := c.etcdclient.NewMutex(fmt.Sprintf("etcd_cron/%s/%d", e.Job.canonicalName(), effective.Unix()))
+					m, err := c.etcdclient.NewMutex(fmt.Sprintf("etcd_cron/%s/", e.Job.canonicalName()))
 					if err != nil {
 						go c.etcdErrorsHandler(ctx, e.Job, errors.Wrapf(err, "fail to create etcd mutex for job '%v'", e.Job.Name))
 						return
@@ -302,6 +365,9 @@ func (c *Cron) Stop() {
 
 // entrySnapshot returns a copy of the current cron entry list.
 func (c *Cron) entrySnapshot() []*Entry {
+	c.entriesMutex.RLock()
+	defer c.entriesMutex.RUnlock()
+
 	entries := []*Entry{}
 	for _, e := range c.entries {
 		entries = append(entries, &Entry{
