@@ -1,3 +1,8 @@
+/*
+Copyright (c) 2024 Diagrid Inc.
+Licensed under the MIT License.
+*/
+
 package etcdcron
 
 import (
@@ -10,6 +15,8 @@ import (
 )
 
 func TestPartitionCalculation(t *testing.T) {
+	// If this test fails, it means the partitioning logic changes and it is a breaking change.
+	// Users cannot run or delete their persisted jobs if this fails.
 	numVirtualPartitions := 53
 	numHosts := 1
 	p, _ := NewPartitioning(numVirtualPartitions, numHosts, 0)
@@ -55,7 +62,7 @@ func TestPartitionLeadershipDist(t *testing.T) {
 		count := make([]int, numHosts)
 		for hostId := 0; hostId < numHosts; hostId++ {
 			p, _ := NewPartitioning(numVirtParts, numHosts, hostId)
-			for partitionId := 0; partitionId < p.numVirtualPartitions; partitionId++ {
+			for partitionId := 0; partitionId < numVirtParts; partitionId++ {
 				if p.CheckPartitionLeader(partitionId) {
 					count[hostId] = count[hostId] + 1
 				}

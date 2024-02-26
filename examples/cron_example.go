@@ -1,8 +1,12 @@
+/*
+Copyright (c) 2024 Diagrid Inc.
+Licensed under the MIT License.
+*/
+
 package main
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"log"
 	"os"
@@ -36,7 +40,12 @@ func main() {
 	}
 	cron, err := etcdcron.New(
 		etcdcron.WithNamespace("example"),
-		etcdcron.WithPartitioning(p))
+		etcdcron.WithPartitioning(p),
+		etcdcron.WithTriggerFunc(func(ctx context.Context, triggerType string, payload []byte) error {
+			fmt.Printf("Trigger from pid %d: %s %s\n", os.Getpid(), triggerType, string(payload))
+			return nil
+		}),
+	)
 	if err != nil {
 		log.Fatal("fail to create etcd-cron", err)
 	}
@@ -55,22 +64,50 @@ func main() {
 		wg.Done()
 	}()
 
-	cron.AddJob(etcdcron.Job{
-		Name:   "error-every-4s",
-		Rhythm: "*/4 * * * * *",
-		Func: func(ctx context.Context) error {
-			// Use default logging of etcd-cron
-			return errors.New("horrible error")
-		},
-	})
-	cron.AddJob(etcdcron.Job{
-		Name:   "echo-every-10s",
-		Rhythm: "*/10 * * * * *",
-		Func: func(ctx context.Context) error {
-			log.Println("Every 10 seconds from", os.Getpid())
-			return nil
-		},
-	})
+	if os.Getenv("ADD") == "1" {
+		cron.AddJob(etcdcron.Job{
+			Name:           "error-every-2s",
+			Rhythm:         "*/2 * * * * *",
+			TriggerType:    "stdout", // can be anything the client wants
+			TriggerPayload: []byte("even error"),
+		})
+		cron.AddJob(etcdcron.Job{
+			Name:           "echo-every-10s",
+			Rhythm:         "*/10 * * * * *",
+			TriggerType:    "stdout", // can be anything the client wants
+			TriggerPayload: []byte("every 10 seconds"),
+		})
+		cron.AddJob(etcdcron.Job{
+			Name:           "error-every-3s",
+			Rhythm:         "*/3 * * * * *",
+			TriggerType:    "stdout", // can be anything the client wants
+			TriggerPayload: []byte("odd error"),
+		})
+		cron.AddJob(etcdcron.Job{
+			Name:           "error-every-4s",
+			Rhythm:         "*/4 * * * * *",
+			TriggerType:    "stdout", // can be anything the client wants
+			TriggerPayload: []byte("fourth error"),
+		})
+		cron.AddJob(etcdcron.Job{
+			Name:           "error-every-5s",
+			Rhythm:         "*/5 * * * * *",
+			TriggerType:    "stdout", // can be anything the client wants
+			TriggerPayload: []byte("fifth error"),
+		})
+		cron.AddJob(etcdcron.Job{
+			Name:           "error-every-6s",
+			Rhythm:         "*/6 * * * * *",
+			TriggerType:    "stdout", // can be anything the client wants
+			TriggerPayload: []byte("sixth error"),
+		})
+		cron.AddJob(etcdcron.Job{
+			Name:           "error-every-7s",
+			Rhythm:         "*/7 * * * * *",
+			TriggerType:    "stdout", // can be anything the client wants
+			TriggerPayload: []byte("seventh error"),
+		})
+	}
 	cron.Start(context.Background())
 
 	// Wait for graceful shutdown on interrupt signal

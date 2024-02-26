@@ -1,22 +1,22 @@
+/*
+Copyright (c) 2024 Diagrid Inc.
+Licensed under the MIT License.
+*/
+
 package etcdcron
 
 import (
 	"context"
 	"fmt"
 	"log"
-	"regexp"
 	"runtime/debug"
 	"sort"
 	"strings"
 	"sync"
 	"time"
 
-	"google.golang.org/protobuf/types/known/anypb"
-
-	"github.com/iancoleman/strcase"
 	"github.com/pkg/errors"
 	etcdclient "go.etcd.io/etcd/client/v3"
-	"go.etcd.io/etcd/client/v3/concurrency"
 )
 
 const (
@@ -29,19 +29,22 @@ const (
 // be inspected while running.
 type Cron struct {
 	namespace         string
-	entries           []*Entry
+	entries           map[string]*Entry
 	entriesMutex      sync.RWMutex
 	stop              chan struct{}
 	add               chan *Entry
+	delete            chan string
 	snapshot          chan []*Entry
 	etcdErrorsHandler func(context.Context, Job, error)
 	errorsHandler     func(context.Context, Job, error)
 	funcCtx           func(context.Context, Job) context.Context
+	triggerFunc       func(context.Context, string, []byte) error
 	running           bool
 	runWaitingGroup   sync.WaitGroup
 	etcdclient        EtcdMutexBuilder
-	partitioning      *Partitioning
-	partitionMutexMap sync.Map
+	jobStore          JobStore
+	organizer         Organizer
+	partitioning      Partitioning
 }
 
 // Job contains 3 mandatory options to define a job
@@ -50,31 +53,10 @@ type Job struct {
 	Name string
 	// Cron-formatted rhythm (ie. 0,10,30 1-5 0 * * *)
 	Rhythm string
-	// Routine method
-	Func func(context.Context) error
-
-	Repeats  int32
-	DueTime  string
-	TTL      string
-	Data     *anypb.Any
-	Metadata map[string]string
-}
-
-func (j Job) Run(ctx context.Context) error {
-	return j.Func(ctx)
-}
-
-var (
-	nonAlphaNumerical = regexp.MustCompile("[^a-z0-9_]")
-)
-
-func (j Job) canonicalName() string {
-	return strcase.ToSnake(
-		nonAlphaNumerical.ReplaceAllString(
-			strings.ToLower(j.Name),
-			"_",
-		),
-	)
+	// The type of trigger
+	TriggerType string
+	// The payload containg all the information for the trigger
+	TriggerPayload []byte
 }
 
 // The Schedule describes a job's duty cycle.
@@ -100,8 +82,8 @@ type Entry struct {
 	// The Job o run.
 	Job Job
 
-	// Mutex to hold ownership for this job.
-	distMutex DistributedMutex
+	// Prefix for the ticker mutex
+	distMutexPrefix string
 }
 
 // byTime is a wrapper for sorting the entry array by time
@@ -143,9 +125,21 @@ func WithEtcdMutexBuilder(b EtcdMutexBuilder) CronOpt {
 	})
 }
 
+func WithJobStore(s JobStore) CronOpt {
+	return CronOpt(func(cron *Cron) {
+		cron.jobStore = s
+	})
+}
+
 func WithFuncCtx(f func(context.Context, Job) context.Context) CronOpt {
 	return CronOpt(func(cron *Cron) {
 		cron.funcCtx = f
+	})
+}
+
+func WithTriggerFunc(f func(context.Context, string, []byte) error) CronOpt {
+	return CronOpt(func(cron *Cron) {
+		cron.triggerFunc = f
 	})
 }
 
@@ -155,7 +149,7 @@ func WithNamespace(n string) CronOpt {
 	})
 }
 
-func WithPartitioning(p *Partitioning) CronOpt {
+func WithPartitioning(p Partitioning) CronOpt {
 	return CronOpt(func(cron *Cron) {
 		cron.partitioning = p
 	})
@@ -164,8 +158,9 @@ func WithPartitioning(p *Partitioning) CronOpt {
 // New returns a new Cron job runner.
 func New(opts ...CronOpt) (*Cron, error) {
 	cron := &Cron{
-		entries:  nil,
+		entries:  map[string]*Entry{},
 		add:      make(chan *Entry),
+		delete:   make(chan string),
 		stop:     make(chan struct{}),
 		snapshot: make(chan []*Entry),
 		running:  false,
@@ -198,16 +193,56 @@ func New(opts ...CronOpt) (*Cron, error) {
 	if cron.namespace == "" {
 		cron.namespace = defaultNamespace
 	}
+	cron.organizer = NewOrganizer(cron.namespace, cron.partitioning)
+	if cron.jobStore == nil {
+		jobStore, err := cron.etcdclient.NewJobStore(
+			context.TODO(),
+			cron.organizer,
+			cron.partitioning,
+			func(ctx context.Context, j Job) error {
+				return cron.scheduleJob(j)
+			},
+			func(ctx context.Context, s string) error {
+				cron.killJob(s)
+				return nil
+			})
+		if err != nil {
+			return nil, err
+		}
+
+		cron.jobStore = jobStore
+	}
 	return cron, nil
 }
 
-// AddFunc adds a Job to the Cron to be run on the given schedule.
+// AddJob adds a Job.
 func (c *Cron) AddJob(job Job) error {
-	schedule, err := Parse(job.Rhythm)
-	if err != nil {
-		return err
+	if c.jobStore == nil {
+		return fmt.Errorf("cannot persist job: no job store configured")
 	}
-	return c.Schedule(schedule, job)
+	return c.jobStore.Put(context.TODO(), job)
+}
+
+// DeleteJob removes a job.
+func (c *Cron) DeleteJob(jobName string) error {
+	if c.jobStore == nil {
+		return fmt.Errorf("cannot delete job: no job store configured")
+	}
+	return c.jobStore.Delete(context.TODO(), jobName)
+}
+
+func (c *Cron) killJob(name string) {
+	if !c.running {
+		_, ok := c.entries[name]
+		if !ok {
+			return
+		}
+
+		delete(c.entries, name)
+		return
+	}
+
+	c.delete <- name
 }
 
 // GetJob retrieves a job by name.
@@ -215,42 +250,17 @@ func (c *Cron) GetJob(jobName string) *Job {
 	c.entriesMutex.RLock()
 	defer c.entriesMutex.RUnlock()
 
-	for _, entry := range c.entries {
-		if entry.Job.Name == jobName {
-			return &entry.Job
-		}
+	entry, ok := c.entries[jobName]
+	if !ok || (entry == nil) {
+		return nil
 	}
-	return nil
-}
 
-// DeleteJob deletes a job by name.
-func (c *Cron) DeleteJob(jobName string) error {
-	c.entriesMutex.Lock()
-	defer c.entriesMutex.Unlock()
-
-	var updatedEntries []*Entry
-	found := false
-	for _, entry := range c.entries {
-		if entry.Job.Name == jobName {
-			found = true
-			continue
-		}
-		// Keep the entries that don't match the specified jobName
-		updatedEntries = append(updatedEntries, entry)
-	}
-	if !found {
-		return fmt.Errorf("job not found: %s", jobName)
-	}
-	c.entries = updatedEntries
-	return nil
+	return &entry.Job
 }
 
 func (c *Cron) ListJobsByPrefix(prefix string) []*Job {
-	c.entriesMutex.RLock()
-	defer c.entriesMutex.RUnlock()
-
 	var appJobs []*Job
-	for _, entry := range c.entries {
+	for _, entry := range c.entrySnapshot() {
 		if strings.HasPrefix(entry.Job.Name, prefix) {
 			// Job belongs to the specified app_id
 			appJobs = append(appJobs, &entry.Job)
@@ -260,33 +270,31 @@ func (c *Cron) ListJobsByPrefix(prefix string) []*Job {
 }
 
 // Schedule adds a Job to the Cron to be run on the given schedule.
-func (c *Cron) Schedule(schedule Schedule, job Job) error {
-	partitionId := c.partitioning.CalculatePartitionId(job.canonicalName())
-	if !c.partitioning.CheckPartitionLeader(partitionId) {
-		return fmt.Errorf("host does not own partition %d", partitionId)
+func (c *Cron) scheduleJob(job Job) error {
+	s, err := Parse(job.Rhythm)
+	if err != nil {
+		return err
 	}
-	mutexName := fmt.Sprintf("%s/partition/%d", c.namespace, partitionId)
-	distMutexAny, ok := c.partitionMutexMap.Load(mutexName)
-	if !ok {
-		distMutex, err := c.etcdclient.NewMutex(mutexName)
-		if err != nil {
-			err := errors.Wrapf(err, "fail to create etcd mutex '%v'", mutexName)
-			go c.etcdErrorsHandler(context.Background(), job, err)
-			return err
-		}
-		// TODO: make mutex comparable and use CompareAndSwap.
-		c.partitionMutexMap.Store(mutexName, distMutex)
-		distMutexAny = distMutex
+
+	return c.schedule(s, job)
+}
+
+// Schedule adds a Job to the Cron to be run on the given schedule.
+func (c *Cron) schedule(schedule Schedule, job Job) error {
+	partitionId := c.partitioning.CalculatePartitionId(job.Name)
+	if !c.partitioning.CheckPartitionLeader(partitionId) {
+		// It means the partitioning changed and persisted jobs are in the wrong partition now.
+		return fmt.Errorf("host does not own partition %d", partitionId)
 	}
 
 	entry := &Entry{
-		Schedule:  schedule,
-		Job:       job,
-		distMutex: distMutexAny.(DistributedMutex),
+		Schedule:        schedule,
+		Job:             job,
+		Prev:            time.Now(), // Important to avoid "stale" runs.
+		distMutexPrefix: c.organizer.TicksPath(partitionId) + "/",
 	}
 	if !c.running {
-		c.entriesMutex.Lock()
-		c.entries = append(c.entries, entry)
+		c.entries[entry.Job.Name] = entry
 		return nil
 	}
 
@@ -317,30 +325,33 @@ func (c *Cron) Start(ctx context.Context) {
 // access to the 'running' state variable.
 func (c *Cron) run(ctx context.Context) {
 	c.runWaitingGroup.Add(1)
+	mutexStore := NewMutexStore(c.etcdclient)
 	// Figure out the next activation times for each entry.
 	now := time.Now().Local()
 
-	for _, entry := range c.entries {
-		entry.Next = entry.Schedule.Next(now)
-	}
+	changed := true
+	entries := []*Entry{}
 
 	for {
-		// Determine the next entry to run.
-		sort.Sort(byTime(c.entries))
+		if changed {
+			c.next(now)
+			entries = c.entrySnapshot()
+			changed = false
+		}
 
 		var effective time.Time
-		if len(c.entries) == 0 || c.entries[0].Next.IsZero() {
+		if len(entries) == 0 || entries[0].Next.IsZero() {
 			// If there are no entries yet, just sleep - it still handles new entries
 			// and stop requests.
 			effective = now.AddDate(10, 0, 0)
 		} else {
-			effective = c.entries[0].Next
+			effective = entries[0].Next
 		}
 
 		select {
 		case now = <-time.After(effective.Sub(now)):
 			// Run every entry whose next time was this effective time.
-			for _, e := range c.entries {
+			for _, e := range entries {
 				if e.Next != effective {
 					break
 				}
@@ -364,51 +375,55 @@ func (c *Cron) run(ctx context.Context) {
 						ctx = c.funcCtx(ctx, e.Job)
 					}
 
+					tickLock := e.distMutexPrefix + fmt.Sprintf("%v", effective.Unix())
+					m, err := mutexStore.Get(tickLock)
+					if err != nil {
+						go c.etcdErrorsHandler(ctx, e.Job, errors.Wrapf(err, "fail to create etcd mutex for job '%v'", e.Job.Name))
+						return
+					}
 					lockCtx, cancel := context.WithTimeout(ctx, time.Second)
 					defer cancel()
 
-					err := e.distMutex.TryLock(lockCtx)
-					if err == context.DeadlineExceeded || err == concurrency.ErrLocked {
+					err = m.Lock(lockCtx)
+					if err == context.DeadlineExceeded {
 						return
 					} else if err != nil {
-						go c.etcdErrorsHandler(ctx, e.Job, errors.Wrapf(err, "fail to lock mutex '%v'", e.distMutex.Key()))
+						go c.etcdErrorsHandler(ctx, e.Job, errors.Wrapf(err, "fail to lock mutex '%v'", m.Key()))
 						return
 					}
 
-					err = e.Job.Run(ctx)
+					err = c.triggerFunc(ctx, e.Job.TriggerType, e.Job.TriggerPayload)
 					if err != nil {
 						go c.errorsHandler(ctx, e.Job, err)
 						return
 					}
 					// Cannot unlock because it can open a chance for double trigger since two instances
 					// can have a clock skew and compete for the lock at slight different windows.
-					// So, we keep to keep the lock over and over.
+					// So, we keep the lock during its ttl
 				}(ctx, e)
 			}
 			continue
 
 		case newEntry := <-c.add:
-			c.entries = append(c.entries, newEntry)
+			c.entries[newEntry.Job.Name] = newEntry
+			changed = true
+			now = time.Now().Local()
 			newEntry.Next = newEntry.Schedule.Next(now)
 
+		case name := <-c.delete:
+			fmt.Printf("Deleting %s\n", name)
+			delete(c.entries, name)
+			changed = true
+			now = time.Now().Local()
+
 		case <-c.snapshot:
+			now = time.Now().Local()
 			c.snapshot <- c.entrySnapshot()
 
 		case <-c.stop:
-			log.Printf("[etcd-cron] unlocking %d jobs ...", len(c.entries))
-			for _, entry := range c.entries {
-				err := entry.distMutex.Unlock(context.Background())
-				if err != nil {
-					log.Printf("[etcd-cron] error when trying to unlock '%v' job: %v", entry.Job.Name, err)
-				}
-			}
-			log.Printf("[etcd-cron] successfully unlocked %d jobs.", len(c.entries))
 			c.runWaitingGroup.Done()
 			return
 		}
-
-		// 'now' should be updated after newEntry and snapshot cases.
-		now = time.Now().Local()
 	}
 }
 
@@ -433,5 +448,15 @@ func (c *Cron) entrySnapshot() []*Entry {
 			Job:      e.Job,
 		})
 	}
+	sort.Sort(byTime(entries))
 	return entries
+}
+
+func (c *Cron) next(now time.Time) {
+	c.entriesMutex.RLock()
+	defer c.entriesMutex.RUnlock()
+
+	for _, entry := range c.entries {
+		entry.Next = entry.Schedule.Next(now)
+	}
 }
