@@ -6,6 +6,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/google/uuid"
 )
 
 // Many tests schedule a job for every second, and then wait at most a second
@@ -15,7 +17,7 @@ const ONE_SECOND = 1*time.Second + 200*time.Millisecond
 
 // Start and stop cron with no entries.
 func TestNoEntries(t *testing.T) {
-	cron, err := New()
+	cron, err := New(WithNamespace(randomNamespace()))
 	if err != nil {
 		t.Fatal("unexpected error")
 	}
@@ -33,7 +35,7 @@ func TestStopCausesJobsToNotRun(t *testing.T) {
 	wg := &sync.WaitGroup{}
 	wg.Add(1)
 
-	cron, err := New()
+	cron, err := New(WithNamespace(randomNamespace()))
 	if err != nil {
 		t.Fatal("unexpected error")
 	}
@@ -61,7 +63,7 @@ func TestAddBeforeRunning(t *testing.T) {
 	wg := &sync.WaitGroup{}
 	wg.Add(1)
 
-	cron, err := New()
+	cron, err := New(WithNamespace(randomNamespace()))
 	if err != nil {
 		t.Fatal("unexpected error")
 	}
@@ -86,7 +88,7 @@ func TestAddWhileRunning(t *testing.T) {
 	wg := &sync.WaitGroup{}
 	wg.Add(1)
 
-	cron, err := New()
+	cron, err := New(WithNamespace(randomNamespace()))
 	if err != nil {
 		t.Fatal("unexpected error")
 	}
@@ -114,7 +116,7 @@ func TestSnapshotEntries(t *testing.T) {
 	wg := &sync.WaitGroup{}
 	wg.Add(1)
 
-	cron, err := New()
+	cron, err := New(WithNamespace(randomNamespace()))
 	if err != nil {
 		t.Fatal("unexpected error")
 	}
@@ -151,7 +153,7 @@ func TestMultipleEntries(t *testing.T) {
 	wg := &sync.WaitGroup{}
 	wg.Add(2)
 
-	cron, err := New()
+	cron, err := New(WithNamespace(randomNamespace()))
 	if err != nil {
 		t.Fatal("unexpected error")
 	}
@@ -191,7 +193,7 @@ func TestRunningJobTwice(t *testing.T) {
 	wg := &sync.WaitGroup{}
 	wg.Add(2)
 
-	cron, err := New()
+	cron, err := New(WithNamespace(randomNamespace()))
 	if err != nil {
 		t.Fatal("unexpected error")
 	}
@@ -225,7 +227,7 @@ func TestRunningMultipleSchedules(t *testing.T) {
 	wg := &sync.WaitGroup{}
 	wg.Add(2)
 
-	cron, err := New()
+	cron, err := New(WithNamespace(randomNamespace()))
 	if err != nil {
 		t.Fatal("unexpected error")
 	}
@@ -268,7 +270,7 @@ func TestLocalTimezone(t *testing.T) {
 	spec := fmt.Sprintf("%d %d %d %d %d ?",
 		now.Second()+1, now.Minute(), now.Hour(), now.Day(), now.Month())
 
-	cron, err := New()
+	cron, err := New(WithNamespace(randomNamespace()))
 	if err != nil {
 		t.Fatal("unexpected error")
 	}
@@ -296,7 +298,7 @@ func TestJob(t *testing.T) {
 	wg := &sync.WaitGroup{}
 	wg.Add(1)
 
-	cron, err := New()
+	cron, err := New(WithNamespace(randomNamespace()))
 	if err != nil {
 		t.Fatal("unexpected error")
 	}
@@ -361,13 +363,13 @@ func TestCron_Parallel(t *testing.T) {
 	wg := &sync.WaitGroup{}
 	wg.Add(2)
 
-	cron1, err := New()
+	cron1, err := New(WithNamespace(randomNamespace()))
 	if err != nil {
 		t.Fatal("unexpected error")
 	}
 	defer cron1.Stop()
 
-	cron2, err := New()
+	cron2, err := New(WithNamespace(randomNamespace()))
 	if err != nil {
 		t.Fatal("unexpected error")
 	}
@@ -410,4 +412,8 @@ func stop(cron *Cron) chan bool {
 		ch <- true
 	}()
 	return ch
+}
+
+func randomNamespace() string {
+	return uuid.New().String()
 }

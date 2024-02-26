@@ -16,16 +16,19 @@ import (
 	"github.com/iancoleman/strcase"
 	"github.com/pkg/errors"
 	etcdclient "go.etcd.io/etcd/client/v3"
+	"go.etcd.io/etcd/client/v3/concurrency"
 )
 
 const (
 	defaultEtcdEndpoint = "127.0.0.1:2379"
+	defaultNamespace    = "etcd_cron"
 )
 
 // Cron keeps track of any number of entries, invoking the associated func as
 // specified by the schedule. It may be started, stopped, and the entries may
 // be inspected while running.
 type Cron struct {
+	namespace         string
 	entries           []*Entry
 	entriesMutex      sync.RWMutex
 	stop              chan struct{}
@@ -35,6 +38,7 @@ type Cron struct {
 	errorsHandler     func(context.Context, Job, error)
 	funcCtx           func(context.Context, Job) context.Context
 	running           bool
+	runWaitingGroup   sync.WaitGroup
 	etcdclient        EtcdMutexBuilder
 }
 
@@ -93,6 +97,9 @@ type Entry struct {
 
 	// The Job o run.
 	Job Job
+
+	// Mutex to hold ownership for this job.
+	distMutex DistributedMutex
 }
 
 // byTime is a wrapper for sorting the entry array by time
@@ -140,6 +147,12 @@ func WithFuncCtx(f func(context.Context, Job) context.Context) CronOpt {
 	})
 }
 
+func WithNamespace(n string) CronOpt {
+	return CronOpt(func(cron *Cron) {
+		cron.namespace = n
+	})
+}
+
 // New returns a new Cron job runner.
 func New(opts ...CronOpt) (*Cron, error) {
 	cron := &Cron{
@@ -171,6 +184,9 @@ func New(opts ...CronOpt) (*Cron, error) {
 			log.Printf("[etcd-cron] error when handling '%v' job: %v", j.Name, err)
 		}
 	}
+	if cron.namespace == "" {
+		cron.namespace = defaultNamespace
+	}
 	return cron, nil
 }
 
@@ -180,8 +196,7 @@ func (c *Cron) AddJob(job Job) error {
 	if err != nil {
 		return err
 	}
-	c.Schedule(schedule, job)
-	return nil
+	return c.Schedule(schedule, job)
 }
 
 // GetJob retrieves a job by name.
@@ -234,19 +249,27 @@ func (c *Cron) ListJobsByPrefix(prefix string) []*Job {
 }
 
 // Schedule adds a Job to the Cron to be run on the given schedule.
-func (c *Cron) Schedule(schedule Schedule, job Job) {
+func (c *Cron) Schedule(schedule Schedule, job Job) error {
+	distMutex, err := c.etcdclient.NewMutex(fmt.Sprintf("%s/job/%s", c.namespace, job.canonicalName()))
+	if err != nil {
+		err := errors.Wrapf(err, "fail to create etcd mutex for job '%v'", job.Name)
+		go c.etcdErrorsHandler(context.Background(), job, err)
+		return err
+	}
+
 	entry := &Entry{
-		Schedule: schedule,
-		Job:      job,
+		Schedule:  schedule,
+		Job:       job,
+		distMutex: distMutex,
 	}
 	if !c.running {
 		c.entriesMutex.Lock()
 		c.entries = append(c.entries, entry)
-		c.entriesMutex.Unlock()
-		return
+		return nil
 	}
 
 	c.add <- entry
+	return nil
 }
 
 // Entries returns a snapshot of the cron entries.
@@ -271,6 +294,7 @@ func (c *Cron) Start(ctx context.Context) {
 // Run the scheduler.. this is private just due to the need to synchronize
 // access to the 'running' state variable.
 func (c *Cron) run(ctx context.Context) {
+	c.runWaitingGroup.Add(1)
 	// Figure out the next activation times for each entry.
 	now := time.Now().Local()
 	for _, entry := range c.entries {
@@ -317,19 +341,14 @@ func (c *Cron) run(ctx context.Context) {
 						ctx = c.funcCtx(ctx, e.Job)
 					}
 
-					m, err := c.etcdclient.NewMutex(fmt.Sprintf("etcd_cron/%s/", e.Job.canonicalName()))
-					if err != nil {
-						go c.etcdErrorsHandler(ctx, e.Job, errors.Wrapf(err, "fail to create etcd mutex for job '%v'", e.Job.Name))
-						return
-					}
 					lockCtx, cancel := context.WithTimeout(ctx, time.Second)
 					defer cancel()
 
-					err = m.Lock(lockCtx)
-					if err == context.DeadlineExceeded {
+					err := e.distMutex.TryLock(lockCtx)
+					if err == context.DeadlineExceeded || err == concurrency.ErrLocked {
 						return
 					} else if err != nil {
-						go c.etcdErrorsHandler(ctx, e.Job, errors.Wrapf(err, "fail to lock mutex '%v'", m.Key()))
+						go c.etcdErrorsHandler(ctx, e.Job, errors.Wrapf(err, "fail to lock mutex '%v'", e.distMutex.Key()))
 						return
 					}
 
@@ -338,6 +357,9 @@ func (c *Cron) run(ctx context.Context) {
 						go c.errorsHandler(ctx, e.Job, err)
 						return
 					}
+					// Cannot unlock because it can open a chance for double trigger since two instances
+					// can have a clock skew and compete for the lock at slight different windows.
+					// So, we keep to keep the lock over and over.
 				}(ctx, e)
 			}
 			continue
@@ -350,6 +372,15 @@ func (c *Cron) run(ctx context.Context) {
 			c.snapshot <- c.entrySnapshot()
 
 		case <-c.stop:
+			log.Printf("[etcd-cron] unlocking %d jobs ...", len(c.entries))
+			for _, entry := range c.entries {
+				err := entry.distMutex.Unlock(context.Background())
+				if err != nil {
+					log.Printf("[etcd-cron] error when trying to unlock '%v' job: %v", entry.Job.Name, err)
+				}
+			}
+			log.Printf("[etcd-cron] successfully unlocked %d jobs.", len(c.entries))
+			c.runWaitingGroup.Done()
 			return
 		}
 
@@ -362,6 +393,7 @@ func (c *Cron) run(ctx context.Context) {
 func (c *Cron) Stop() {
 	c.stop <- struct{}{}
 	c.running = false
+	c.runWaitingGroup.Wait()
 }
 
 // entrySnapshot returns a copy of the current cron entry list.
