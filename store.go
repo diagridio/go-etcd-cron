@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"path/filepath"
 
+	"github.com/pkg/errors"
 	"go.etcd.io/etcd/api/v3/mvccpb"
 	etcdclient "go.etcd.io/etcd/client/v3"
 	"go.etcd.io/etcd/client/v3/mirror"
@@ -106,6 +107,17 @@ func (s *etcdStore) init(ctx context.Context) error {
 }
 
 func (s *etcdStore) Put(ctx context.Context, job Job) error {
+	opts := []etcdclient.OpOption{}
+	if job.TTL > 0 {
+		// Create a lease
+		lease, err := s.etcdClient.Grant(ctx, job.TTL)
+		if err != nil {
+			return errors.Errorf("failed to create lease to save job %s: %v", job.Name, err)
+		}
+
+		opts = append(opts, etcdclient.WithLease(lease.ID))
+	}
+
 	record := &JobRecord{
 		Name:    job.Name,
 		Rhythm:  job.Rhythm,
@@ -119,7 +131,9 @@ func (s *etcdStore) Put(ctx context.Context, job Job) error {
 	_, err = s.kvStore.Put(
 		ctx,
 		s.organizer.JobPath(job.Name),
-		string(bytes))
+		string(bytes),
+		opts...,
+	)
 	return err
 }
 

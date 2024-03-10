@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/stretchr/testify/assert"
 	anypb "google.golang.org/protobuf/types/known/anypb"
 )
 
@@ -435,6 +436,41 @@ func TestCron_Parallel(t *testing.T) {
 	case <-time.After(time.Duration(2) * ONE_SECOND):
 		t.FailNow()
 	case <-wait(wg):
+	}
+}
+
+// Test job expires.
+func TestTTL(t *testing.T) {
+	wg := &sync.WaitGroup{}
+	wg.Add(5)
+	firedOnce := false
+
+	cron, err := New(
+		WithNamespace(randomNamespace()),
+		WithTriggerFunc(func(ctx context.Context, s string, p *anypb.Any) error {
+			firedOnce = true
+			wg.Done()
+			return nil
+		}))
+	if err != nil {
+		t.Fatal("unexpected error")
+	}
+	cron.AddJob(Job{
+		Name:   "test-twice-3",
+		Rhythm: "* * * * * ?",
+		TTL:    2,
+	})
+
+	cron.Start(context.Background())
+	defer cron.Stop()
+
+	select {
+	case <-time.After(6 * ONE_SECOND):
+		// Success, it means it did not consume all the workgroup count because the job expired.
+		assert.True(t, firedOnce)
+	case <-wait(wg):
+		// Fails because TTL should delete the job and make it stop consuming the workgroup count.
+		t.FailNow()
 	}
 }
 

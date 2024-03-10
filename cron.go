@@ -58,6 +58,8 @@ type Job struct {
 	Type string
 	// The payload containg all the information for the trigger
 	Payload *anypb.Any
+	// Optional number of seconds until this job expires (if > 0)
+	TTL int64
 }
 
 // The Schedule describes a job's duty cycle.
