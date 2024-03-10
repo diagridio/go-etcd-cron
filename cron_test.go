@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	anypb "google.golang.org/protobuf/types/known/anypb"
 )
 
 // Many tests schedule a job for every second, and then wait at most a second
@@ -42,7 +43,7 @@ func TestStopCausesJobsToNotRun(t *testing.T) {
 
 	cron, err := New(
 		WithNamespace(randomNamespace()),
-		WithTriggerFunc(func(ctx context.Context, s string, b []byte) error {
+		WithTriggerFunc(func(ctx context.Context, s string, p *anypb.Any) error {
 			wg.Done()
 			return nil
 		}))
@@ -71,7 +72,7 @@ func TestAddBeforeRunning(t *testing.T) {
 
 	cron, err := New(
 		WithNamespace(randomNamespace()),
-		WithTriggerFunc(func(ctx context.Context, s string, b []byte) error {
+		WithTriggerFunc(func(ctx context.Context, s string, p *anypb.Any) error {
 			wg.Done()
 			return nil
 		}))
@@ -100,7 +101,7 @@ func TestAddWhileRunning(t *testing.T) {
 
 	cron, err := New(
 		WithNamespace(randomNamespace()),
-		WithTriggerFunc(func(ctx context.Context, s string, b []byte) error {
+		WithTriggerFunc(func(ctx context.Context, s string, p *anypb.Any) error {
 			wg.Done()
 			return nil
 		}))
@@ -129,7 +130,7 @@ func TestSnapshotEntries(t *testing.T) {
 
 	cron, err := New(
 		WithNamespace(randomNamespace()),
-		WithTriggerFunc(func(ctx context.Context, s string, b []byte) error {
+		WithTriggerFunc(func(ctx context.Context, s string, p *anypb.Any) error {
 			wg.Done()
 			return nil
 		}))
@@ -167,7 +168,7 @@ func TestMultipleEntries(t *testing.T) {
 
 	cron, err := New(
 		WithNamespace(randomNamespace()),
-		WithTriggerFunc(func(ctx context.Context, s string, b []byte) error {
+		WithTriggerFunc(func(ctx context.Context, s string, p *anypb.Any) error {
 			if s == "return-nil" {
 				return nil
 			}
@@ -179,18 +180,18 @@ func TestMultipleEntries(t *testing.T) {
 		t.Fatal("unexpected error")
 	}
 	cron.AddJob(Job{
-		Name:        "test-multiple-1",
-		Rhythm:      "0 0 0 1 1 ?",
-		TriggerType: "return-nil",
+		Name:   "test-multiple-1",
+		Rhythm: "0 0 0 1 1 ?",
+		Type:   "return-nil",
 	})
 	cron.AddJob(Job{
 		Name:   "test-multiple-2",
 		Rhythm: "* * * * * ?",
 	})
 	cron.AddJob(Job{
-		Name:        "test-multiple-3",
-		Rhythm:      "0 0 0 31 12 ?",
-		TriggerType: "return-nil",
+		Name:   "test-multiple-3",
+		Rhythm: "0 0 0 31 12 ?",
+		Type:   "return-nil",
 	})
 	cron.AddJob(Job{
 		Name:   "test-multiple-4",
@@ -214,7 +215,7 @@ func TestRunningJobTwice(t *testing.T) {
 
 	cron, err := New(
 		WithNamespace(randomNamespace()),
-		WithTriggerFunc(func(ctx context.Context, s string, b []byte) error {
+		WithTriggerFunc(func(ctx context.Context, s string, p *anypb.Any) error {
 			if s == "return-nil" {
 				return nil
 			}
@@ -226,14 +227,14 @@ func TestRunningJobTwice(t *testing.T) {
 		t.Fatal("unexpected error")
 	}
 	cron.AddJob(Job{
-		Name:        "test-twice-1",
-		Rhythm:      "0 0 0 1 1 ?",
-		TriggerType: "return-nil",
+		Name:   "test-twice-1",
+		Rhythm: "0 0 0 1 1 ?",
+		Type:   "return-nil",
 	})
 	cron.AddJob(Job{
-		Name:        "test-twice-2",
-		Rhythm:      "0 0 0 31 12 ?",
-		TriggerType: "return-nil",
+		Name:   "test-twice-2",
+		Rhythm: "0 0 0 31 12 ?",
+		Type:   "return-nil",
 	})
 	cron.AddJob(Job{
 		Name:   "test-twice-3",
@@ -256,7 +257,7 @@ func TestRunningMultipleSchedules(t *testing.T) {
 
 	cron, err := New(
 		WithNamespace(randomNamespace()),
-		WithTriggerFunc(func(ctx context.Context, s string, b []byte) error {
+		WithTriggerFunc(func(ctx context.Context, s string, p *anypb.Any) error {
 			if s == "return-nil" {
 				return nil
 			}
@@ -269,22 +270,22 @@ func TestRunningMultipleSchedules(t *testing.T) {
 	}
 
 	cron.AddJob(Job{
-		Name:        "test-mschedule-1",
-		Rhythm:      "0 0 0 1 1 ?",
-		TriggerType: "return-nil",
+		Name:   "test-mschedule-1",
+		Rhythm: "0 0 0 1 1 ?",
+		Type:   "return-nil",
 	})
 	cron.AddJob(Job{
-		Name:        "test-mschedule-2",
-		Rhythm:      "0 0 0 31 12 ?",
-		TriggerType: "return-nil",
+		Name:   "test-mschedule-2",
+		Rhythm: "0 0 0 31 12 ?",
+		Type:   "return-nil",
 	})
 	cron.AddJob(Job{
 		Name:   "test-mschedule-3",
 		Rhythm: "* * * * * ?",
 	})
-	cron.schedule(Every(time.Minute), Job{Name: "test-mschedule-4", TriggerType: "return-nil"})
+	cron.schedule(Every(time.Minute), Job{Name: "test-mschedule-4", Type: "return-nil"})
 	cron.schedule(Every(time.Second), Job{Name: "test-mschedule-5"})
-	cron.schedule(Every(time.Hour), Job{Name: "test-mschedule-6", TriggerType: "return-nil"})
+	cron.schedule(Every(time.Hour), Job{Name: "test-mschedule-6", Type: "return-nil"})
 
 	cron.Start(context.Background())
 	defer cron.Stop()
@@ -307,7 +308,7 @@ func TestLocalTimezone(t *testing.T) {
 
 	cron, err := New(
 		WithNamespace(randomNamespace()),
-		WithTriggerFunc(func(ctx context.Context, s string, b []byte) error {
+		WithTriggerFunc(func(ctx context.Context, s string, p *anypb.Any) error {
 			wg.Done()
 			return nil
 		}))
@@ -336,7 +337,7 @@ func TestJob(t *testing.T) {
 
 	cron, err := New(
 		WithNamespace(randomNamespace()),
-		WithTriggerFunc(func(ctx context.Context, s string, b []byte) error {
+		WithTriggerFunc(func(ctx context.Context, s string, p *anypb.Any) error {
 			wg.Done()
 			return nil
 		}))
@@ -400,7 +401,7 @@ func TestCron_Parallel(t *testing.T) {
 
 	cron1, err := New(
 		WithNamespace(randomNamespace()),
-		WithTriggerFunc(func(ctx context.Context, s string, b []byte) error {
+		WithTriggerFunc(func(ctx context.Context, s string, p *anypb.Any) error {
 			wg.Done()
 			return nil
 		}))
@@ -411,7 +412,7 @@ func TestCron_Parallel(t *testing.T) {
 
 	cron2, err := New(
 		WithNamespace(randomNamespace()),
-		WithTriggerFunc(func(ctx context.Context, s string, b []byte) error {
+		WithTriggerFunc(func(ctx context.Context, s string, p *anypb.Any) error {
 			wg.Done()
 			return nil
 		}))

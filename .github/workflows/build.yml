@@ -36,5 +36,10 @@ jobs:
         with:
           go-version-file: 'go.mod'
           cache: 'false'
+      - name: Check mod tidy
+        run: |
+          go mod tidy
+          git diff --exit-code ./go.mod # check no changes
+          git diff --exit-code ./go.sum # check no changes
       - name: Run test
         run: go test

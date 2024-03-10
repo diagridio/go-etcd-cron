@@ -17,6 +17,7 @@ import (
 
 	"github.com/pkg/errors"
 	etcdclient "go.etcd.io/etcd/client/v3"
+	anypb "google.golang.org/protobuf/types/known/anypb"
 )
 
 const (
@@ -38,7 +39,7 @@ type Cron struct {
 	etcdErrorsHandler func(context.Context, Job, error)
 	errorsHandler     func(context.Context, Job, error)
 	funcCtx           func(context.Context, Job) context.Context
-	triggerFunc       func(context.Context, string, []byte) error
+	triggerFunc       func(context.Context, string, *anypb.Any) error
 	running           bool
 	runWaitingGroup   sync.WaitGroup
 	etcdclient        EtcdMutexBuilder
@@ -54,9 +55,9 @@ type Job struct {
 	// Cron-formatted rhythm (ie. 0,10,30 1-5 0 * * *)
 	Rhythm string
 	// The type of trigger
-	TriggerType string
+	Type string
 	// The payload containg all the information for the trigger
-	TriggerPayload []byte
+	Payload *anypb.Any
 }
 
 // The Schedule describes a job's duty cycle.
@@ -137,7 +138,7 @@ func WithFuncCtx(f func(context.Context, Job) context.Context) CronOpt {
 	})
 }
 
-func WithTriggerFunc(f func(context.Context, string, []byte) error) CronOpt {
+func WithTriggerFunc(f func(context.Context, string, *anypb.Any) error) CronOpt {
 	return CronOpt(func(cron *Cron) {
 		cron.triggerFunc = f
 	})
@@ -271,6 +272,7 @@ func (c *Cron) ListJobsByPrefix(prefix string) []*Job {
 
 // Schedule adds a Job to the Cron to be run on the given schedule.
 func (c *Cron) scheduleJob(job Job) error {
+	fmt.Printf("Scheduling job: %s %s\n", job.Name, job.Rhythm)
 	s, err := Parse(job.Rhythm)
 	if err != nil {
 		return err
@@ -290,10 +292,13 @@ func (c *Cron) schedule(schedule Schedule, job Job) error {
 	entry := &Entry{
 		Schedule:        schedule,
 		Job:             job,
-		Prev:            time.Now(), // Important to avoid "stale" runs.
+		Prev:            time.Unix(0, 0),
 		distMutexPrefix: c.organizer.TicksPath(partitionId) + "/",
 	}
 	if !c.running {
+		c.entriesMutex.Lock()
+		defer c.entriesMutex.Unlock()
+
 		c.entries[entry.Job.Name] = entry
 		return nil
 	}
@@ -331,13 +336,18 @@ func (c *Cron) run(ctx context.Context) {
 
 	changed := true
 	entries := []*Entry{}
+	c.entriesMutex.RLock()
+	for _, e := range c.entries {
+		e.Next = e.Schedule.Next(now)
+	}
+	c.entriesMutex.RUnlock()
 
 	for {
 		if changed {
-			c.next(now)
 			entries = c.entrySnapshot()
 			changed = false
 		}
+		sort.Sort(byTime(entries))
 
 		var effective time.Time
 		if len(entries) == 0 || entries[0].Next.IsZero() {
@@ -392,7 +402,7 @@ func (c *Cron) run(ctx context.Context) {
 						return
 					}
 
-					err = c.triggerFunc(ctx, e.Job.TriggerType, e.Job.TriggerPayload)
+					err = c.triggerFunc(ctx, e.Job.Type, e.Job.Payload)
 					if err != nil {
 						go c.errorsHandler(ctx, e.Job, err)
 						return
@@ -405,15 +415,18 @@ func (c *Cron) run(ctx context.Context) {
 			continue
 
 		case newEntry := <-c.add:
-			c.entries[newEntry.Job.Name] = newEntry
-			changed = true
 			now = time.Now().Local()
 			newEntry.Next = newEntry.Schedule.Next(now)
+			c.entriesMutex.Lock()
+			c.entries[newEntry.Job.Name] = newEntry
+			changed = true
+			c.entriesMutex.Unlock()
 
 		case name := <-c.delete:
-			fmt.Printf("Deleting %s\n", name)
+			c.entriesMutex.Lock()
 			delete(c.entries, name)
 			changed = true
+			c.entriesMutex.Unlock()
 			now = time.Now().Local()
 
 		case <-c.snapshot:
@@ -450,13 +463,4 @@ func (c *Cron) entrySnapshot() []*Entry {
 	}
 	sort.Sort(byTime(entries))
 	return entries
-}
-
-func (c *Cron) next(now time.Time) {
-	c.entriesMutex.RLock()
-	defer c.entriesMutex.RUnlock()
-
-	for _, entry := range c.entries {
-		entry.Next = entry.Schedule.Next(now)
-	}
 }

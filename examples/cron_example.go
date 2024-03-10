@@ -16,6 +16,7 @@ import (
 	"syscall"
 
 	etcdcron "github.com/diagridio/go-etcd-cron"
+	"google.golang.org/protobuf/types/known/anypb"
 )
 
 func main() {
@@ -25,11 +26,11 @@ func main() {
 	}
 	numHosts, err := strconv.Atoi(os.Getenv("NUM_HOSTS"))
 	if err != nil {
-		numHosts = 1
+		numHosts = 2
 	}
 	numPartitions, err := strconv.Atoi(os.Getenv("NUM_PARTITIONS"))
 	if err != nil {
-		numPartitions = 1
+		numPartitions = 5
 	}
 
 	log.Printf("starting hostId=%d for total of %d hosts and %d partitions", hostId, numHosts, numPartitions)
@@ -41,8 +42,8 @@ func main() {
 	cron, err := etcdcron.New(
 		etcdcron.WithNamespace("example"),
 		etcdcron.WithPartitioning(p),
-		etcdcron.WithTriggerFunc(func(ctx context.Context, triggerType string, payload []byte) error {
-			fmt.Printf("Trigger from pid %d: %s %s\n", os.Getpid(), triggerType, string(payload))
+		etcdcron.WithTriggerFunc(func(ctx context.Context, triggerType string, payload *anypb.Any) error {
+			fmt.Printf("Trigger from pid %d: %s %s\n", os.Getpid(), triggerType, string(payload.Value))
 			return nil
 		}),
 	)
@@ -66,46 +67,46 @@ func main() {
 
 	if os.Getenv("ADD") == "1" {
 		cron.AddJob(etcdcron.Job{
-			Name:           "error-every-2s",
-			Rhythm:         "*/2 * * * * *",
-			TriggerType:    "stdout", // can be anything the client wants
-			TriggerPayload: []byte("even error"),
+			Name:    "error-every-2s",
+			Rhythm:  "*/2 * * * * *",
+			Type:    "stdout", // can be anything the client wants
+			Payload: &anypb.Any{Value: []byte("even error")},
 		})
 		cron.AddJob(etcdcron.Job{
-			Name:           "echo-every-10s",
-			Rhythm:         "*/10 * * * * *",
-			TriggerType:    "stdout", // can be anything the client wants
-			TriggerPayload: []byte("every 10 seconds"),
+			Name:    "echo-every-10s",
+			Rhythm:  "*/10 * * * * *",
+			Type:    "stdout", // can be anything the client wants
+			Payload: &anypb.Any{Value: []byte("every 10 seconds")},
 		})
 		cron.AddJob(etcdcron.Job{
-			Name:           "error-every-3s",
-			Rhythm:         "*/3 * * * * *",
-			TriggerType:    "stdout", // can be anything the client wants
-			TriggerPayload: []byte("odd error"),
+			Name:    "error-every-3s",
+			Rhythm:  "*/3 * * * * *",
+			Type:    "stdout", // can be anything the client wants
+			Payload: &anypb.Any{Value: []byte("odd error")},
 		})
 		cron.AddJob(etcdcron.Job{
-			Name:           "error-every-4s",
-			Rhythm:         "*/4 * * * * *",
-			TriggerType:    "stdout", // can be anything the client wants
-			TriggerPayload: []byte("fourth error"),
+			Name:    "error-every-4s",
+			Rhythm:  "*/4 * * * * *",
+			Type:    "stdout", // can be anything the client wants
+			Payload: &anypb.Any{Value: []byte("fourth error")},
 		})
 		cron.AddJob(etcdcron.Job{
-			Name:           "error-every-5s",
-			Rhythm:         "*/5 * * * * *",
-			TriggerType:    "stdout", // can be anything the client wants
-			TriggerPayload: []byte("fifth error"),
+			Name:    "error-every-5s",
+			Rhythm:  "*/5 * * * * *",
+			Type:    "stdout", // can be anything the client wants
+			Payload: &anypb.Any{Value: []byte("fifth error")},
 		})
 		cron.AddJob(etcdcron.Job{
-			Name:           "error-every-6s",
-			Rhythm:         "*/6 * * * * *",
-			TriggerType:    "stdout", // can be anything the client wants
-			TriggerPayload: []byte("sixth error"),
+			Name:    "error-every-6s",
+			Rhythm:  "*/6 * * * * *",
+			Type:    "stdout", // can be anything the client wants
+			Payload: &anypb.Any{Value: []byte("sixth error")},
 		})
 		cron.AddJob(etcdcron.Job{
-			Name:           "error-every-7s",
-			Rhythm:         "*/7 * * * * *",
-			TriggerType:    "stdout", // can be anything the client wants
-			TriggerPayload: []byte("seventh error"),
+			Name:    "error-every-7s",
+			Rhythm:  "*/7 * * * * *",
+			Type:    "stdout", // can be anything the client wants
+			Payload: &anypb.Any{Value: []byte("seventh error")},
 		})
 	}
 	cron.Start(context.Background())
