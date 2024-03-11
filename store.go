@@ -8,6 +8,7 @@ package etcdcron
 import (
 	"context"
 	"fmt"
+	"log"
 	"path/filepath"
 
 	"github.com/pkg/errors"
@@ -168,21 +169,27 @@ func (s *etcdStore) notifyDelete(ctx context.Context, name string, callback func
 
 func (s *etcdStore) sync(ctx context.Context, prefix string, syncer mirror.Syncer) {
 	go func() {
-		fmt.Printf("Started sync for partition: %s\n", prefix)
+		log.Printf("Started sync for path: %s\n", prefix)
 		wc := syncer.SyncUpdates(ctx)
-		for wr := range wc {
-			for _, ev := range wr.Events {
-				switch ev.Type {
-				case mvccpb.PUT:
-					s.notifyPut(ctx, ev.Kv, s.putCallback)
-				case mvccpb.DELETE:
-					_, name := filepath.Split(string(ev.Kv.Key))
-					s.notifyDelete(ctx, name, s.deleteCallback)
-				default:
-					panic("unexpected etcd event type")
+		done := false
+		for !done {
+			select {
+			case <-ctx.Done():
+				done = true
+			case wr := <-wc:
+				for _, ev := range wr.Events {
+					switch ev.Type {
+					case mvccpb.PUT:
+						s.notifyPut(ctx, ev.Kv, s.putCallback)
+					case mvccpb.DELETE:
+						_, name := filepath.Split(string(ev.Kv.Key))
+						s.notifyDelete(ctx, name, s.deleteCallback)
+					default:
+						panic("unexpected etcd event type")
+					}
 				}
 			}
 		}
-		fmt.Printf("Exited sync for partition: %s\n", prefix)
+		log.Printf("Exited sync for path: %s\n", prefix)
 	}()
 }

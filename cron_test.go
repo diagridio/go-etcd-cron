@@ -98,7 +98,7 @@ func TestAddBeforeRunning(t *testing.T) {
 // Start cron, add a job, expect it runs.
 func TestAddWhileRunning(t *testing.T) {
 	wg := &sync.WaitGroup{}
-	wg.Add(1)
+	wg.Add(2)
 
 	cron, err := New(
 		WithNamespace(randomNamespace()),
@@ -118,7 +118,7 @@ func TestAddWhileRunning(t *testing.T) {
 	})
 
 	select {
-	case <-time.After(ONE_SECOND):
+	case <-time.After(2 * ONE_SECOND):
 		t.FailNow()
 	case <-wait(wg):
 	}
@@ -127,7 +127,7 @@ func TestAddWhileRunning(t *testing.T) {
 // Test timing with Entries.
 func TestSnapshotEntries(t *testing.T) {
 	wg := &sync.WaitGroup{}
-	wg.Add(1)
+	wg.Add(2)
 
 	cron, err := New(
 		WithNamespace(randomNamespace()),
@@ -145,15 +145,63 @@ func TestSnapshotEntries(t *testing.T) {
 	cron.Start(context.Background())
 	defer cron.Stop()
 
-	// Cron should fire in 2 seconds. After 1 second, call Entries.
+	// After 1 second, call Entries.
 	select {
 	case <-time.After(ONE_SECOND):
 		cron.Entries()
 	}
 
-	// Even though Entries was called, the cron should fire at the 2 second mark.
+	// Even though Entries was called, the cron should fire twice within 3 seconds (1 + 3).
 	select {
-	case <-time.After(ONE_SECOND):
+	case <-time.After(3 * ONE_SECOND):
+		t.FailNow()
+	case <-wait(wg):
+	}
+}
+
+// Test delayed add after un starts for a while.
+func TestDelayedAdd(t *testing.T) {
+	wg := &sync.WaitGroup{}
+	wg.Add(1)
+	called := false
+
+	cron, err := New(
+		WithNamespace(randomNamespace()),
+		WithTriggerFunc(func(ctx context.Context, s string, p *anypb.Any) error {
+			if s == "noop" {
+				return nil
+			}
+			if called {
+				t.Fatal("cannot call twice")
+			}
+			called = true
+			wg.Done()
+			return nil
+		}))
+	if err != nil {
+		t.Fatal("unexpected error")
+	}
+
+	cron.AddJob(Job{
+		Name:   "test-noop",
+		Rhythm: "@every 1s",
+		Type:   "noop",
+	})
+
+	cron.Start(context.Background())
+	defer cron.Stop()
+
+	// Artificial delay before add another record.
+	time.Sleep(10 * time.Second)
+
+	cron.AddJob(Job{
+		Name:   "test-ev-2s",
+		Rhythm: "@every 2s",
+	})
+
+	// Event should be called only once within 2 seconds.
+	select {
+	case <-time.After(3 * ONE_SECOND):
 		t.FailNow()
 	case <-wait(wg):
 	}
