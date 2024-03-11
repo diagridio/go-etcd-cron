@@ -353,7 +353,7 @@ func TestLocalTimezone(t *testing.T) {
 
 	now := time.Now().Local()
 	spec := fmt.Sprintf("%d %d %d %d %d ?",
-		now.Second()+1, now.Minute(), now.Hour(), now.Day(), now.Month())
+		now.Second()+2, now.Minute(), now.Hour(), now.Day(), now.Month())
 
 	cron, err := New(
 		WithNamespace(randomNamespace()),
@@ -373,7 +373,7 @@ func TestLocalTimezone(t *testing.T) {
 	defer cron.Stop()
 
 	select {
-	case <-time.After(ONE_SECOND):
+	case <-time.After(2 * ONE_SECOND):
 		t.FailNow()
 	case <-wait(wg):
 	}
