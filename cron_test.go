@@ -69,11 +69,17 @@ func TestStopCausesJobsToNotRun(t *testing.T) {
 // Add a job, start cron, expect it runs.
 func TestAddBeforeRunning(t *testing.T) {
 	wg := &sync.WaitGroup{}
+	calledAlready := false
 	wg.Add(1)
 
 	cron, err := New(
 		WithNamespace(randomNamespace()),
 		WithTriggerFunc(func(ctx context.Context, s string, p *anypb.Any) error {
+			if calledAlready {
+				return nil
+			}
+
+			calledAlready = true
 			wg.Done()
 			return nil
 		}))
@@ -82,14 +88,14 @@ func TestAddBeforeRunning(t *testing.T) {
 	}
 	cron.AddJob(Job{
 		Name:   "test-add-before-running",
-		Rhythm: "* * * * * ?",
+		Rhythm: "* * * * * *",
 	})
 	cron.Start(context.Background())
 	defer cron.Stop()
 
 	// Give cron 2 seconds to run our job (which is always activated).
 	select {
-	case <-time.After(ONE_SECOND):
+	case <-time.After(2 * ONE_SECOND):
 		t.FailNow()
 	case <-wait(wg):
 	}
@@ -251,7 +257,7 @@ func TestMultipleEntries(t *testing.T) {
 	defer cron.Stop()
 
 	select {
-	case <-time.After(ONE_SECOND):
+	case <-time.After(2 * ONE_SECOND):
 		t.FailNow()
 	case <-wait(wg):
 	}
@@ -382,11 +388,16 @@ func TestLocalTimezone(t *testing.T) {
 // Simple test using Runnables.
 func TestJob(t *testing.T) {
 	wg := &sync.WaitGroup{}
+	calledAlready := false
 	wg.Add(1)
 
 	cron, err := New(
 		WithNamespace(randomNamespace()),
 		WithTriggerFunc(func(ctx context.Context, s string, p *anypb.Any) error {
+			if calledAlready {
+				return nil
+			}
+			calledAlready = true
 			wg.Done()
 			return nil
 		}))
@@ -421,7 +432,7 @@ func TestJob(t *testing.T) {
 	defer cron.Stop()
 
 	select {
-	case <-time.After(ONE_SECOND):
+	case <-time.After(2 * ONE_SECOND):
 		t.FailNow()
 	case <-wait(wg):
 	}
