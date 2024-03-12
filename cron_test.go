@@ -53,7 +53,7 @@ func TestStopCausesJobsToNotRun(t *testing.T) {
 	}
 	cron.Start(context.Background())
 	cron.Stop()
-	cron.AddJob(Job{
+	cron.AddJob(context.TODO(), Job{
 		Name:   "test-stop",
 		Rhythm: "* * * * * ?",
 	})
@@ -86,7 +86,7 @@ func TestAddBeforeRunning(t *testing.T) {
 	if err != nil {
 		t.Fatal("unexpected error")
 	}
-	cron.AddJob(Job{
+	cron.AddJob(context.TODO(), Job{
 		Name:   "test-add-before-running",
 		Rhythm: "* * * * * *",
 	})
@@ -118,7 +118,7 @@ func TestAddWhileRunning(t *testing.T) {
 	cron.Start(context.Background())
 	defer cron.Stop()
 
-	cron.AddJob(Job{
+	cron.AddJob(context.TODO(), Job{
 		Name:   "test-run",
 		Rhythm: "* * * * * ?",
 	})
@@ -144,7 +144,7 @@ func TestSnapshotEntries(t *testing.T) {
 	if err != nil {
 		t.Fatal("unexpected error")
 	}
-	cron.AddJob(Job{
+	cron.AddJob(context.TODO(), Job{
 		Name:   "test-snapshot-entries",
 		Rhythm: "@every 2s",
 	})
@@ -188,7 +188,7 @@ func TestDelayedAdd(t *testing.T) {
 		t.Fatal("unexpected error")
 	}
 
-	cron.AddJob(Job{
+	cron.AddJob(context.TODO(), Job{
 		Name:   "test-noop",
 		Rhythm: "@every 1s",
 		Type:   "noop",
@@ -200,7 +200,7 @@ func TestDelayedAdd(t *testing.T) {
 	// Artificial delay before add another record.
 	time.Sleep(10 * time.Second)
 
-	cron.AddJob(Job{
+	cron.AddJob(context.TODO(), Job{
 		Name:   "test-ev-2s",
 		Rhythm: "@every 2s",
 	})
@@ -234,21 +234,21 @@ func TestMultipleEntries(t *testing.T) {
 	if err != nil {
 		t.Fatal("unexpected error")
 	}
-	cron.AddJob(Job{
+	cron.AddJob(context.TODO(), Job{
 		Name:   "test-multiple-1",
 		Rhythm: "0 0 0 1 1 ?",
 		Type:   "return-nil",
 	})
-	cron.AddJob(Job{
+	cron.AddJob(context.TODO(), Job{
 		Name:   "test-multiple-2",
 		Rhythm: "* * * * * ?",
 	})
-	cron.AddJob(Job{
+	cron.AddJob(context.TODO(), Job{
 		Name:   "test-multiple-3",
 		Rhythm: "0 0 0 31 12 ?",
 		Type:   "return-nil",
 	})
-	cron.AddJob(Job{
+	cron.AddJob(context.TODO(), Job{
 		Name:   "test-multiple-4",
 		Rhythm: "* * * * * ?",
 	})
@@ -281,17 +281,17 @@ func TestRunningJobTwice(t *testing.T) {
 	if err != nil {
 		t.Fatal("unexpected error")
 	}
-	cron.AddJob(Job{
+	cron.AddJob(context.TODO(), Job{
 		Name:   "test-twice-1",
 		Rhythm: "0 0 0 1 1 ?",
 		Type:   "return-nil",
 	})
-	cron.AddJob(Job{
+	cron.AddJob(context.TODO(), Job{
 		Name:   "test-twice-2",
 		Rhythm: "0 0 0 31 12 ?",
 		Type:   "return-nil",
 	})
-	cron.AddJob(Job{
+	cron.AddJob(context.TODO(), Job{
 		Name:   "test-twice-3",
 		Rhythm: "* * * * * ?",
 	})
@@ -324,17 +324,17 @@ func TestRunningMultipleSchedules(t *testing.T) {
 		t.Fatal("unexpected error")
 	}
 
-	cron.AddJob(Job{
+	cron.AddJob(context.TODO(), Job{
 		Name:   "test-mschedule-1",
 		Rhythm: "0 0 0 1 1 ?",
 		Type:   "return-nil",
 	})
-	cron.AddJob(Job{
+	cron.AddJob(context.TODO(), Job{
 		Name:   "test-mschedule-2",
 		Rhythm: "0 0 0 31 12 ?",
 		Type:   "return-nil",
 	})
-	cron.AddJob(Job{
+	cron.AddJob(context.TODO(), Job{
 		Name:   "test-mschedule-3",
 		Rhythm: "* * * * * ?",
 	})
@@ -370,7 +370,7 @@ func TestLocalTimezone(t *testing.T) {
 	if err != nil {
 		t.Fatal("unexpected error")
 	}
-	cron.AddJob(Job{
+	cron.AddJob(context.TODO(), Job{
 		Name:   "test-local",
 		Rhythm: spec,
 	})
@@ -405,19 +405,19 @@ func TestJob(t *testing.T) {
 		t.Fatal("unexpected error")
 	}
 
-	cron.AddJob(Job{
+	cron.AddJob(context.TODO(), Job{
 		Name:   "job0",
 		Rhythm: "0 0 0 30 Feb ?",
 	})
-	cron.AddJob(Job{
+	cron.AddJob(context.TODO(), Job{
 		Name:   "job1",
 		Rhythm: "0 0 0 1 1 ?",
 	})
-	cron.AddJob(Job{
+	cron.AddJob(context.TODO(), Job{
 		Name:   "job2",
 		Rhythm: "* * * * * ?",
 	})
-	cron.AddJob(Job{
+	cron.AddJob(context.TODO(), Job{
 		Name:   "job3",
 		Rhythm: "1 0 0 1 1 ?",
 	})
@@ -485,8 +485,8 @@ func TestCron_Parallel(t *testing.T) {
 		Name:   "test-parallel",
 		Rhythm: "* * * * * ?",
 	}
-	cron1.AddJob(job)
-	cron2.AddJob(job)
+	cron1.AddJob(context.TODO(), job)
+	cron2.AddJob(context.TODO(), job)
 
 	cron1.Start(context.Background())
 	cron2.Start(context.Background())
@@ -514,7 +514,7 @@ func TestTTL(t *testing.T) {
 	if err != nil {
 		t.Fatal("unexpected error")
 	}
-	cron.AddJob(Job{
+	cron.AddJob(context.TODO(), Job{
 		Name:   "test-twice-3",
 		Rhythm: "* * * * * ?",
 		TTL:    2,

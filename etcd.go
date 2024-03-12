@@ -23,11 +23,10 @@ type DistributedMutex interface {
 type EtcdMutexBuilder interface {
 	NewMutex(pfx string) (DistributedMutex, error)
 	NewJobStore(
-		ctx context.Context,
 		organizer Organizer,
 		partitioning Partitioning,
 		putCallback func(context.Context, Job) error,
-		deleteCallback func(context.Context, string) error) (JobStore, error)
+		deleteCallback func(context.Context, string) error) JobStore
 }
 
 type etcdMutexBuilder struct {
@@ -53,10 +52,9 @@ func (c etcdMutexBuilder) NewMutex(pfx string) (DistributedMutex, error) {
 }
 
 func (c etcdMutexBuilder) NewJobStore(
-	ctx context.Context,
 	organizer Organizer,
 	p Partitioning,
 	putCallback func(context.Context, Job) error,
-	deleteCallback func(context.Context, string) error) (JobStore, error) {
-	return NewEtcdJobStore(ctx, c.Client, organizer, p, putCallback, deleteCallback)
+	deleteCallback func(context.Context, string) error) JobStore {
+	return NewEtcdJobStore(c.Client, organizer, p, putCallback, deleteCallback)
 }

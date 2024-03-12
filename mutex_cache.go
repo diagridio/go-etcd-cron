@@ -18,7 +18,6 @@ type MutexStore struct {
 
 func NewMutexStore(mutexBuilder EtcdMutexBuilder) *MutexStore {
 	return &MutexStore{
-		lock:         sync.RWMutex{},
 		cache:        map[string]DistributedMutex{},
 		mutexBuilder: mutexBuilder,
 	}

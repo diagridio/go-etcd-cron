@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"log"
 	"path/filepath"
+	"sync"
 
 	"github.com/pkg/errors"
 	"go.etcd.io/etcd/api/v3/mvccpb"
@@ -20,17 +21,20 @@ import (
 
 // The JobStore persists and reads jobs from Etcd.
 type JobStore interface {
+	Init(ctx context.Context) error
 	Put(ctx context.Context, job Job) error
 	Delete(ctx context.Context, jobName string) error
+	Wait()
 }
 
 type etcdStore struct {
-	etcdClient     *etcdclient.Client
-	kvStore        etcdclient.KV
-	partitioning   Partitioning
-	organizer      Organizer
-	putCallback    func(context.Context, Job) error
-	deleteCallback func(context.Context, string) error
+	runWaitingGroup sync.WaitGroup
+	etcdClient      *etcdclient.Client
+	kvStore         etcdclient.KV
+	partitioning    Partitioning
+	organizer       Organizer
+	putCallback     func(context.Context, Job) error
+	deleteCallback  func(context.Context, string) error
 }
 
 type noStore struct {
@@ -47,6 +51,10 @@ func NoStore(
 	}
 }
 
+func (s *noStore) Init(ctx context.Context) error {
+	return nil
+}
+
 func (s *noStore) Put(ctx context.Context, job Job) error {
 	s.putCallback(ctx, job)
 	return nil
@@ -57,14 +65,15 @@ func (s *noStore) Delete(ctx context.Context, jobName string) error {
 	return nil
 }
 
+func (s *noStore) Wait() {}
+
 func NewEtcdJobStore(
-	ctx context.Context,
 	client *etcdclient.Client,
 	organizer Organizer,
 	partitioning Partitioning,
 	putCallback func(context.Context, Job) error,
-	deleteCallback func(context.Context, string) error) (JobStore, error) {
-	s := &etcdStore{
+	deleteCallback func(context.Context, string) error) JobStore {
+	return &etcdStore{
 		etcdClient:     client,
 		kvStore:        etcdclient.NewKV(client),
 		partitioning:   partitioning,
@@ -72,15 +81,9 @@ func NewEtcdJobStore(
 		putCallback:    putCallback,
 		deleteCallback: deleteCallback,
 	}
-	err := s.init(ctx)
-	if err != nil {
-		return nil, err
-	}
-
-	return s, nil
 }
 
-func (s *etcdStore) init(ctx context.Context) error {
+func (s *etcdStore) Init(ctx context.Context) error {
 	for _, partitionId := range s.partitioning.ListPartitions() {
 		// TODO(artursouza): parallelize this per partition.
 		partitionPrefix := s.organizer.JobsPath(partitionId) + "/"
@@ -145,6 +148,10 @@ func (s *etcdStore) Delete(ctx context.Context, jobName string) error {
 	return err
 }
 
+func (s *etcdStore) Wait() {
+	s.runWaitingGroup.Wait()
+}
+
 func (s *etcdStore) notifyPut(ctx context.Context, kv *mvccpb.KeyValue, callback func(context.Context, Job) error) error {
 	record := JobRecord{}
 	err := proto.Unmarshal(kv.Value, &record)
@@ -168,28 +175,29 @@ func (s *etcdStore) notifyDelete(ctx context.Context, name string, callback func
 }
 
 func (s *etcdStore) sync(ctx context.Context, prefix string, syncer mirror.Syncer) {
+	s.runWaitingGroup.Add(1)
 	go func() {
 		log.Printf("Started sync for path: %s\n", prefix)
 		wc := syncer.SyncUpdates(ctx)
-		done := false
-		for !done {
+		for {
 			select {
 			case <-ctx.Done():
-				done = true
+				s.runWaitingGroup.Done()
+				return
 			case wr := <-wc:
 				for _, ev := range wr.Events {
-					switch ev.Type {
+					t := ev.Type
+					switch t {
 					case mvccpb.PUT:
 						s.notifyPut(ctx, ev.Kv, s.putCallback)
 					case mvccpb.DELETE:
 						_, name := filepath.Split(string(ev.Kv.Key))
 						s.notifyDelete(ctx, name, s.deleteCallback)
 					default:
-						panic("unexpected etcd event type")
+						log.Printf("Unknown etcd event type: %v", t.String())
 					}
 				}
 			}
 		}
-		log.Printf("Exited sync for path: %s\n", prefix)
 	}()
 }

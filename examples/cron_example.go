@@ -70,49 +70,49 @@ func main() {
 	}()
 
 	if os.Getenv("ADD") == "1" {
-		cron.AddJob(etcdcron.Job{
+		cron.AddJob(context.TODO(), etcdcron.Job{
 			Name:    "every-2s-b34w5y5hbwthjs",
 			Rhythm:  "*/2 * * * * *",
 			Type:    "stdout", // can be anything the client wants
 			Payload: &anypb.Any{Value: []byte("ev 2s")},
 		})
-		cron.AddJob(etcdcron.Job{
+		cron.AddJob(context.TODO(), etcdcron.Job{
 			Name:    "every-10s-bnsf45354wbdsnd",
 			Rhythm:  "*/10 * * * * *",
 			Type:    "stdout", // can be anything the client wants
 			Payload: &anypb.Any{Value: []byte("ev 10s")},
 		})
-		cron.AddJob(etcdcron.Job{
+		cron.AddJob(context.TODO(), etcdcron.Job{
 			Name:    "every-3s-mdhgm764324rqdg",
 			Rhythm:  "*/3 * * * * *",
 			Type:    "stdout", // can be anything the client wants
 			Payload: &anypb.Any{Value: []byte("ev 3s")},
 		})
-		cron.AddJob(etcdcron.Job{
+		cron.AddJob(context.TODO(), etcdcron.Job{
 			Name:    "every-4s-vdafbrtjnysh245",
 			Rhythm:  "*/4 * * * * *",
 			Type:    "stdout", // can be anything the client wants
 			Payload: &anypb.Any{Value: []byte("ev 4s")},
 		})
-		cron.AddJob(etcdcron.Job{
+		cron.AddJob(context.TODO(), etcdcron.Job{
 			Name:    "every-5s-adjbg43q5rbafbr44",
 			Rhythm:  "*/5 * * * * *",
 			Type:    "stdout", // can be anything the client wants
 			Payload: &anypb.Any{Value: []byte("ev 5s")},
 		})
-		cron.AddJob(etcdcron.Job{
+		cron.AddJob(context.TODO(), etcdcron.Job{
 			Name:    "every-6s-abadfh52jgdyj467",
 			Rhythm:  "*/6 * * * * *",
 			Type:    "stdout", // can be anything the client wants
 			Payload: &anypb.Any{Value: []byte("ev 6s")},
 		})
-		cron.AddJob(etcdcron.Job{
+		cron.AddJob(context.TODO(), etcdcron.Job{
 			Name:    "every-7s-bndasfbn4q55fgn",
 			Rhythm:  "*/7 * * * * *",
 			Type:    "stdout", // can be anything the client wants
 			Payload: &anypb.Any{Value: []byte("ev 7s")},
 		})
-		cron.AddJob(etcdcron.Job{
+		cron.AddJob(context.TODO(), etcdcron.Job{
 			Name:    "every-1s-then-expire-hadfh452erhh",
 			Rhythm:  "*/1 * * * * *",
 			Type:    "stdout", // can be anything the client wants

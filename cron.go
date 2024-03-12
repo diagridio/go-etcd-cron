@@ -197,8 +197,7 @@ func New(opts ...CronOpt) (*Cron, error) {
 	}
 	cron.organizer = NewOrganizer(cron.namespace, cron.partitioning)
 	if cron.jobStore == nil {
-		jobStore, err := cron.etcdclient.NewJobStore(
-			context.TODO(),
+		cron.jobStore = cron.etcdclient.NewJobStore(
 			cron.organizer,
 			cron.partitioning,
 			func(ctx context.Context, j Job) error {
@@ -208,29 +207,24 @@ func New(opts ...CronOpt) (*Cron, error) {
 				cron.killJob(s)
 				return nil
 			})
-		if err != nil {
-			return nil, err
-		}
-
-		cron.jobStore = jobStore
 	}
 	return cron, nil
 }
 
 // AddJob adds a Job.
-func (c *Cron) AddJob(job Job) error {
+func (c *Cron) AddJob(ctx context.Context, job Job) error {
 	if c.jobStore == nil {
 		return fmt.Errorf("cannot persist job: no job store configured")
 	}
-	return c.jobStore.Put(context.TODO(), job)
+	return c.jobStore.Put(ctx, job)
 }
 
 // DeleteJob removes a job.
-func (c *Cron) DeleteJob(jobName string) error {
+func (c *Cron) DeleteJob(ctx context.Context, jobName string) error {
 	if c.jobStore == nil {
 		return fmt.Errorf("cannot delete job: no job store configured")
 	}
-	return c.jobStore.Delete(context.TODO(), jobName)
+	return c.jobStore.Delete(ctx, jobName)
 }
 
 func (c *Cron) killJob(name string) {
@@ -333,17 +327,22 @@ func (c *Cron) Entries() []*Entry {
 }
 
 // Start the cron scheduler in its own go-routine.
-func (c *Cron) Start(ctx context.Context) {
+func (c *Cron) Start(ctx context.Context) error {
 	c.running = true
 	ctxWithCancel, cancel := context.WithCancel(ctx)
+	err := c.jobStore.Init(ctxWithCancel)
+	if err != nil {
+		return err
+	}
 	c.cancel = cancel
+	c.runWaitingGroup.Add(1)
 	go c.run(ctxWithCancel)
+	return nil
 }
 
 // Run the scheduler.. this is private just due to the need to synchronize
 // access to the 'running' state variable.
 func (c *Cron) run(ctx context.Context) {
-	c.runWaitingGroup.Add(1)
 	mutexStore := NewMutexStore(c.etcdclient)
 	// Figure out the next activation times for each entry.
 	now := time.Now().Local()
@@ -351,6 +350,7 @@ func (c *Cron) run(ctx context.Context) {
 	changed := make(chan bool)
 	entries := []*Entry{}
 
+	c.runWaitingGroup.Add(1)
 	go func(ctx context.Context) {
 		for {
 			hasPendingOperations := false
@@ -364,6 +364,7 @@ func (c *Cron) run(ctx context.Context) {
 
 			select {
 			case <-ctx.Done():
+				c.runWaitingGroup.Done()
 				return
 			case <-time.After(time.Second):
 			}
@@ -474,6 +475,7 @@ func (c *Cron) Stop() {
 	c.cancel()
 	c.running = false
 	c.runWaitingGroup.Wait()
+	c.jobStore.Wait()
 }
 
 // entrySnapshot returns a copy of the current cron entry list.
