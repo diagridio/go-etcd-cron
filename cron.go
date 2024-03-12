@@ -33,8 +33,6 @@ type Cron struct {
 	pendingOperations []func(context.Context) *Entry
 	operationsMutex   sync.RWMutex
 	entries           map[string]*Entry
-	stop              chan struct{}
-	cancel            context.CancelFunc
 	snapshot          chan []*Entry
 	etcdErrorsHandler func(context.Context, Job, error)
 	errorsHandler     func(context.Context, Job, error)
@@ -163,7 +161,6 @@ func New(opts ...CronOpt) (*Cron, error) {
 	cron := &Cron{
 		pendingOperations: []func(context.Context) *Entry{},
 		entries:           map[string]*Entry{},
-		stop:              make(chan struct{}),
 		snapshot:          make(chan []*Entry),
 		running:           false,
 	}
@@ -329,14 +326,12 @@ func (c *Cron) Entries() []*Entry {
 // Start the cron scheduler in its own go-routine.
 func (c *Cron) Start(ctx context.Context) error {
 	c.running = true
-	ctxWithCancel, cancel := context.WithCancel(ctx)
-	err := c.jobStore.Init(ctxWithCancel)
+	err := c.jobStore.Init(ctx)
 	if err != nil {
 		return err
 	}
-	c.cancel = cancel
 	c.runWaitingGroup.Add(1)
-	go c.run(ctxWithCancel)
+	go c.run(ctx)
 	return nil
 }
 
@@ -462,20 +457,18 @@ func (c *Cron) run(ctx context.Context) {
 		case <-c.snapshot:
 			c.snapshot <- c.entrySnapshot(entries)
 
-		case <-c.stop:
+		case <-ctx.Done():
 			c.runWaitingGroup.Done()
 			return
 		}
 	}
 }
 
-// Stop the cron scheduler.
-func (c *Cron) Stop() {
-	c.stop <- struct{}{}
-	c.cancel()
-	c.running = false
+// Wait the cron to stop after context is cancelled.
+func (c *Cron) Wait() {
 	c.runWaitingGroup.Wait()
 	c.jobStore.Wait()
+	c.running = false
 }
 
 // entrySnapshot returns a copy of the current cron entry list.
