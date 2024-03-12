@@ -29,21 +29,23 @@ const (
 // specified by the schedule. It may be started, stopped, and the entries may
 // be inspected while running.
 type Cron struct {
-	namespace         string
-	pendingOperations []func(context.Context) *Entry
-	operationsMutex   sync.RWMutex
-	entries           map[string]*Entry
-	snapshot          chan []*Entry
-	etcdErrorsHandler func(context.Context, Job, error)
-	errorsHandler     func(context.Context, Job, error)
-	funcCtx           func(context.Context, Job) context.Context
-	triggerFunc       func(context.Context, string, *anypb.Any) error
-	running           bool
-	runWaitingGroup   sync.WaitGroup
-	etcdclient        EtcdMutexBuilder
-	jobStore          JobStore
-	organizer         Organizer
-	partitioning      Partitioning
+	namespace              string
+	pendingOperations      []func(context.Context) *Entry
+	pendingOperationsMutex sync.RWMutex
+	liveOperation          chan func(ctx context.Context) *Entry
+	entries                map[string]*Entry
+	entriesMutex           sync.RWMutex
+	snapshot               chan []*Entry
+	etcdErrorsHandler      func(context.Context, Job, error)
+	errorsHandler          func(context.Context, Job, error)
+	funcCtx                func(context.Context, Job) context.Context
+	triggerFunc            func(context.Context, string, *anypb.Any) error
+	running                bool
+	runWaitingGroup        sync.WaitGroup
+	etcdclient             EtcdMutexBuilder
+	jobStore               JobStore
+	organizer              Organizer
+	partitioning           Partitioning
 }
 
 // Job contains 3 mandatory options to define a job
@@ -160,6 +162,7 @@ func WithPartitioning(p Partitioning) CronOpt {
 func New(opts ...CronOpt) (*Cron, error) {
 	cron := &Cron{
 		pendingOperations: []func(context.Context) *Entry{},
+		liveOperation:     make(chan func(context.Context) *Entry),
 		entries:           map[string]*Entry{},
 		snapshot:          make(chan []*Entry),
 		running:           false,
@@ -238,8 +241,8 @@ func (c *Cron) killJob(name string) {
 
 // GetJob retrieves a job by name.
 func (c *Cron) GetJob(jobName string) *Job {
-	c.operationsMutex.RLock()
-	defer c.operationsMutex.RUnlock()
+	c.entriesMutex.RLock()
+	defer c.entriesMutex.RUnlock()
 
 	entry, ok := c.entries[jobName]
 	if !ok || (entry == nil) {
@@ -251,14 +254,14 @@ func (c *Cron) GetJob(jobName string) *Job {
 
 func (c *Cron) ListJobsByPrefix(prefix string) []*Job {
 	var appJobs []*Job
-	c.operationsMutex.RLock()
+	c.entriesMutex.RLock()
 	for _, entry := range c.entries {
 		if strings.HasPrefix(entry.Job.Name, prefix) {
 			// Job belongs to the specified app_id
 			appJobs = append(appJobs, &entry.Job)
 		}
 	}
-	c.operationsMutex.RUnlock()
+	c.entriesMutex.RUnlock()
 	return appJobs
 }
 
@@ -295,10 +298,15 @@ func (c *Cron) schedule(schedule Schedule, job Job) error {
 }
 
 func (c *Cron) appendOperation(op func(ctx context.Context) *Entry) {
-	c.operationsMutex.Lock()
-	defer c.operationsMutex.Unlock()
+	if !c.running {
+		c.pendingOperationsMutex.Lock()
+		defer c.pendingOperationsMutex.Unlock()
 
-	c.pendingOperations = append(c.pendingOperations, op)
+		c.pendingOperations = append(c.pendingOperations, op)
+		return
+	}
+
+	c.liveOperation <- op
 }
 
 // Entries returns a snapshot of the cron entries.
@@ -309,8 +317,8 @@ func (c *Cron) Entries() []*Entry {
 		return x
 	}
 
-	c.operationsMutex.RLock()
-	defer c.operationsMutex.RUnlock()
+	c.entriesMutex.RLock()
+	defer c.entriesMutex.RUnlock()
 	entries := []*Entry{}
 	for _, e := range c.entries {
 		entries = append(entries, &Entry{
@@ -325,11 +333,11 @@ func (c *Cron) Entries() []*Entry {
 
 // Start the cron scheduler in its own go-routine.
 func (c *Cron) Start(ctx context.Context) error {
-	c.running = true
 	err := c.jobStore.Init(ctx)
 	if err != nil {
 		return err
 	}
+	c.running = true
 	c.runWaitingGroup.Add(1)
 	go c.run(ctx)
 	return nil
@@ -342,29 +350,23 @@ func (c *Cron) run(ctx context.Context) {
 	// Figure out the next activation times for each entry.
 	now := time.Now().Local()
 
-	changed := make(chan bool)
 	entries := []*Entry{}
 
-	c.runWaitingGroup.Add(1)
-	go func(ctx context.Context) {
-		for {
-			hasPendingOperations := false
-			c.operationsMutex.RLock()
-			hasPendingOperations = len(c.pendingOperations) > 0
-			c.operationsMutex.RUnlock()
-
-			if hasPendingOperations {
-				changed <- true
-			}
-
-			select {
-			case <-ctx.Done():
-				c.runWaitingGroup.Done()
-				return
-			case <-time.After(time.Second):
-			}
+	// Pending operations only matter before running, ignored afterwards.
+	c.pendingOperationsMutex.Lock()
+	c.entriesMutex.Lock()
+	for _, op := range c.pendingOperations {
+		newEntry := op(ctx)
+		if newEntry != nil {
+			newEntry.Next = newEntry.Schedule.Next(now)
 		}
-	}(ctx)
+	}
+	for _, e := range c.entries {
+		entries = append(entries, e)
+	}
+	c.entriesMutex.Unlock()
+	c.pendingOperations = []func(context.Context) *Entry{}
+	c.pendingOperationsMutex.Unlock()
 
 	for {
 		sort.Sort(byTime(entries))
@@ -379,25 +381,17 @@ func (c *Cron) run(ctx context.Context) {
 		}
 
 		select {
-		case <-changed:
-			c.operationsMutex.Lock()
-			for _, op := range c.pendingOperations {
-				newEntry := op(ctx)
-				if newEntry != nil {
-					newEntry.Next = newEntry.Schedule.Next(now)
-				}
+		case op := <-c.liveOperation:
+			c.entriesMutex.Lock()
+			newEntry := op(ctx)
+			if newEntry != nil {
+				newEntry.Next = newEntry.Schedule.Next(now)
 			}
-			c.pendingOperations = []func(context.Context) *Entry{}
 			entries = []*Entry{}
 			for _, e := range c.entries {
-				entries = append(entries, &Entry{
-					Schedule: e.Schedule,
-					Next:     e.Next,
-					Prev:     e.Prev,
-					Job:      e.Job,
-				})
+				entries = append(entries, e)
 			}
-			c.operationsMutex.Unlock()
+			c.entriesMutex.Unlock()
 
 		case now = <-time.After(effective.Sub(now)):
 			// Run every entry whose next time was this effective time.

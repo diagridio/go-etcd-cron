@@ -56,7 +56,7 @@ func TestStopCausesJobsToNotRun(t *testing.T) {
 	cron.Start(ctx)
 	cancel()
 	cron.Wait()
-	cron.AddJob(context.TODO(), Job{
+	cron.AddJob(ctx, Job{
 		Name:   "test-stop",
 		Rhythm: "* * * * * ?",
 	})
@@ -89,11 +89,11 @@ func TestAddBeforeRunning(t *testing.T) {
 	if err != nil {
 		t.Fatal("unexpected error")
 	}
-	cron.AddJob(context.TODO(), Job{
+	ctx, cancel := context.WithCancel(context.Background())
+	cron.AddJob(ctx, Job{
 		Name:   "test-add-before-running",
 		Rhythm: "* * * * * *",
 	})
-	ctx, cancel := context.WithCancel(context.Background())
 	cron.Start(ctx)
 	defer func() {
 		cancel()
@@ -129,7 +129,7 @@ func TestAddWhileRunning(t *testing.T) {
 		cron.Wait()
 	}()
 
-	cron.AddJob(context.TODO(), Job{
+	cron.AddJob(ctx, Job{
 		Name:   "test-run",
 		Rhythm: "* * * * * ?",
 	})
@@ -155,11 +155,11 @@ func TestSnapshotEntries(t *testing.T) {
 	if err != nil {
 		t.Fatal("unexpected error")
 	}
-	cron.AddJob(context.TODO(), Job{
+	ctx, cancel := context.WithCancel(context.Background())
+	cron.AddJob(ctx, Job{
 		Name:   "test-snapshot-entries",
 		Rhythm: "@every 2s",
 	})
-	ctx, cancel := context.WithCancel(context.Background())
 	cron.Start(ctx)
 	defer func() {
 		cancel()
@@ -203,13 +203,13 @@ func TestDelayedAdd(t *testing.T) {
 		t.Fatal("unexpected error")
 	}
 
-	cron.AddJob(context.TODO(), Job{
+	ctx, cancel := context.WithCancel(context.Background())
+	cron.AddJob(ctx, Job{
 		Name:   "test-noop",
 		Rhythm: "@every 1s",
 		Type:   "noop",
 	})
 
-	ctx, cancel := context.WithCancel(context.Background())
 	cron.Start(ctx)
 	defer func() {
 		cancel()
@@ -219,7 +219,7 @@ func TestDelayedAdd(t *testing.T) {
 	// Artificial delay before add another record.
 	time.Sleep(10 * time.Second)
 
-	cron.AddJob(context.TODO(), Job{
+	cron.AddJob(ctx, Job{
 		Name:   "test-ev-2s",
 		Rhythm: "@every 2s",
 	})
@@ -253,26 +253,26 @@ func TestMultipleEntries(t *testing.T) {
 	if err != nil {
 		t.Fatal("unexpected error")
 	}
-	cron.AddJob(context.TODO(), Job{
+	ctx, cancel := context.WithCancel(context.Background())
+	cron.AddJob(ctx, Job{
 		Name:   "test-multiple-1",
 		Rhythm: "0 0 0 1 1 ?",
 		Type:   "return-nil",
 	})
-	cron.AddJob(context.TODO(), Job{
+	cron.AddJob(ctx, Job{
 		Name:   "test-multiple-2",
 		Rhythm: "* * * * * ?",
 	})
-	cron.AddJob(context.TODO(), Job{
+	cron.AddJob(ctx, Job{
 		Name:   "test-multiple-3",
 		Rhythm: "0 0 0 31 12 ?",
 		Type:   "return-nil",
 	})
-	cron.AddJob(context.TODO(), Job{
+	cron.AddJob(ctx, Job{
 		Name:   "test-multiple-4",
 		Rhythm: "* * * * * ?",
 	})
 
-	ctx, cancel := context.WithCancel(context.Background())
 	cron.Start(ctx)
 	defer func() {
 		cancel()
@@ -304,22 +304,22 @@ func TestRunningJobTwice(t *testing.T) {
 	if err != nil {
 		t.Fatal("unexpected error")
 	}
-	cron.AddJob(context.TODO(), Job{
+	ctx, cancel := context.WithCancel(context.Background())
+	cron.AddJob(ctx, Job{
 		Name:   "test-twice-1",
 		Rhythm: "0 0 0 1 1 ?",
 		Type:   "return-nil",
 	})
-	cron.AddJob(context.TODO(), Job{
+	cron.AddJob(ctx, Job{
 		Name:   "test-twice-2",
 		Rhythm: "0 0 0 31 12 ?",
 		Type:   "return-nil",
 	})
-	cron.AddJob(context.TODO(), Job{
+	cron.AddJob(ctx, Job{
 		Name:   "test-twice-3",
 		Rhythm: "* * * * * ?",
 	})
 
-	ctx, cancel := context.WithCancel(context.Background())
 	cron.Start(ctx)
 	defer func() {
 		cancel()
@@ -351,17 +351,18 @@ func TestRunningMultipleSchedules(t *testing.T) {
 		t.Fatal("unexpected error")
 	}
 
-	cron.AddJob(context.TODO(), Job{
+	ctx, cancel := context.WithCancel(context.Background())
+	cron.AddJob(ctx, Job{
 		Name:   "test-mschedule-1",
 		Rhythm: "0 0 0 1 1 ?",
 		Type:   "return-nil",
 	})
-	cron.AddJob(context.TODO(), Job{
+	cron.AddJob(ctx, Job{
 		Name:   "test-mschedule-2",
 		Rhythm: "0 0 0 31 12 ?",
 		Type:   "return-nil",
 	})
-	cron.AddJob(context.TODO(), Job{
+	cron.AddJob(ctx, Job{
 		Name:   "test-mschedule-3",
 		Rhythm: "* * * * * ?",
 	})
@@ -369,7 +370,6 @@ func TestRunningMultipleSchedules(t *testing.T) {
 	cron.schedule(Every(time.Second), Job{Name: "test-mschedule-5"})
 	cron.schedule(Every(time.Hour), Job{Name: "test-mschedule-6", Type: "return-nil"})
 
-	ctx, cancel := context.WithCancel(context.Background())
 	cron.Start(ctx)
 	defer func() {
 		cancel()
@@ -401,12 +401,12 @@ func TestLocalTimezone(t *testing.T) {
 	if err != nil {
 		t.Fatal("unexpected error")
 	}
-	cron.AddJob(context.TODO(), Job{
+	ctx, cancel := context.WithCancel(context.Background())
+	cron.AddJob(ctx, Job{
 		Name:   "test-local",
 		Rhythm: spec,
 	})
 
-	ctx, cancel := context.WithCancel(context.Background())
 	cron.Start(ctx)
 	defer func() {
 		cancel()
@@ -440,19 +440,20 @@ func TestJob(t *testing.T) {
 		t.Fatal("unexpected error")
 	}
 
-	cron.AddJob(context.TODO(), Job{
+	ctx, cancel := context.WithCancel(context.Background())
+	cron.AddJob(ctx, Job{
 		Name:   "job0",
 		Rhythm: "0 0 0 30 Feb ?",
 	})
-	cron.AddJob(context.TODO(), Job{
+	cron.AddJob(ctx, Job{
 		Name:   "job1",
 		Rhythm: "0 0 0 1 1 ?",
 	})
-	cron.AddJob(context.TODO(), Job{
+	cron.AddJob(ctx, Job{
 		Name:   "job2",
 		Rhythm: "* * * * * ?",
 	})
-	cron.AddJob(context.TODO(), Job{
+	cron.AddJob(ctx, Job{
 		Name:   "job3",
 		Rhythm: "1 0 0 1 1 ?",
 	})
@@ -463,7 +464,6 @@ func TestJob(t *testing.T) {
 		Name: "job5",
 	})
 
-	ctx, cancel := context.WithCancel(context.Background())
 	cron.Start(ctx)
 	defer func() {
 		cancel()
@@ -561,13 +561,13 @@ func TestTTL(t *testing.T) {
 	if err != nil {
 		t.Fatal("unexpected error")
 	}
-	cron.AddJob(context.TODO(), Job{
+	ctx, cancel := context.WithCancel(context.Background())
+	cron.AddJob(ctx, Job{
 		Name:   "test-twice-3",
 		Rhythm: "* * * * * ?",
 		TTL:    2,
 	})
 
-	ctx, cancel := context.WithCancel(context.Background())
 	cron.Start(ctx)
 	defer func() {
 		cancel()
