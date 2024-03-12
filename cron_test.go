@@ -9,6 +9,7 @@ import (
 	"context"
 	"fmt"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -549,12 +550,13 @@ func TestCron_Parallel(t *testing.T) {
 func TestTTL(t *testing.T) {
 	wg := &sync.WaitGroup{}
 	wg.Add(5)
-	firedOnce := false
+
+	firedOnce := atomic.Bool{}
 
 	cron, err := New(
 		WithNamespace(randomNamespace()),
 		WithTriggerFunc(func(ctx context.Context, s string, p *anypb.Any) error {
-			firedOnce = true
+			firedOnce.Store(true)
 			wg.Done()
 			return nil
 		}))
@@ -577,7 +579,7 @@ func TestTTL(t *testing.T) {
 	select {
 	case <-time.After(6 * ONE_SECOND):
 		// Success, it means it did not consume all the workgroup count because the job expired.
-		assert.True(t, firedOnce)
+		assert.True(t, firedOnce.Load())
 	case <-wait(wg):
 		// Fails because TTL should delete the job and make it stop consuming the workgroup count.
 		t.FailNow()

@@ -46,6 +46,7 @@ type Cron struct {
 	jobStore               JobStore
 	organizer              Organizer
 	partitioning           Partitioning
+	collector              *Collector
 }
 
 // Job contains 3 mandatory options to define a job
@@ -208,6 +209,8 @@ func New(opts ...CronOpt) (*Cron, error) {
 				return nil
 			})
 	}
+
+	cron.collector = NewCollector(int64(time.Hour), int64(time.Minute))
 	return cron, nil
 }
 
@@ -337,6 +340,7 @@ func (c *Cron) Start(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+	c.collector.Start(ctx)
 	c.running = true
 	c.runWaitingGroup.Add(1)
 	go c.run(ctx)
@@ -346,7 +350,8 @@ func (c *Cron) Start(ctx context.Context) error {
 // Run the scheduler.. this is private just due to the need to synchronize
 // access to the 'running' state variable.
 func (c *Cron) run(ctx context.Context) {
-	mutexStore := NewMutexStore(c.etcdclient)
+	localMutexer := NewMutexer(c.collector)
+	mutexStore := NewMutexStore(c.etcdclient, c.collector)
 	// Figure out the next activation times for each entry.
 	now := time.Now().Local()
 
@@ -425,6 +430,10 @@ func (c *Cron) run(ctx context.Context) {
 						go c.etcdErrorsHandler(ctx, e.Job, errors.Wrapf(err, "fail to create etcd mutex for job '%v'", e.Job.Name))
 						return
 					}
+
+					localMutexer.Lock(tickLock)
+					defer localMutexer.Unlock(tickLock)
+
 					lockCtx, cancel := context.WithTimeout(ctx, time.Second)
 					defer cancel()
 
