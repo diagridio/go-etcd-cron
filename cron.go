@@ -10,13 +10,17 @@ import (
 	"fmt"
 	"log"
 	"sort"
-	"strings"
 	"sync"
 	"time"
 
 	"github.com/pkg/errors"
 	etcdclient "go.etcd.io/etcd/client/v3"
 	anypb "google.golang.org/protobuf/types/known/anypb"
+
+	"github.com/diagridio/go-etcd-cron/collector"
+	"github.com/diagridio/go-etcd-cron/locking"
+	"github.com/diagridio/go-etcd-cron/partitioning"
+	"github.com/diagridio/go-etcd-cron/storage"
 )
 
 const (
@@ -41,25 +45,11 @@ type Cron struct {
 	triggerFunc            func(context.Context, string, *anypb.Any) error
 	running                bool
 	runWaitingGroup        sync.WaitGroup
-	etcdclient             EtcdMutexBuilder
-	jobStore               JobStore
-	organizer              Organizer
-	partitioning           Partitioning
-	collector              *Collector
-}
-
-// Job contains 3 mandatory options to define a job
-type Job struct {
-	// Name of the job
-	Name string
-	// Cron-formatted rhythm (ie. 0,10,30 1-5 0 * * *)
-	Rhythm string
-	// The type of trigger that client undertsands
-	Type string
-	// The payload containg all the information for the trigger
-	Payload *anypb.Any
-	// Optional number of seconds until this job expires (if > 0)
-	TTL int64
+	etcdclient             *etcdclient.Client
+	jobStore               storage.JobStore
+	organizer              partitioning.Organizer
+	partitioning           partitioning.Partitioner
+	collector              *collector.Collector
 }
 
 // The Schedule describes a job's duty cycle.
@@ -122,13 +112,13 @@ func WithErrorsHandler(f func(context.Context, Job, error)) CronOpt {
 	})
 }
 
-func WithEtcdMutexBuilder(b EtcdMutexBuilder) CronOpt {
+func WithEtcdClient(c *etcdclient.Client) CronOpt {
 	return CronOpt(func(cron *Cron) {
-		cron.etcdclient = b
+		cron.etcdclient = c
 	})
 }
 
-func WithJobStore(s JobStore) CronOpt {
+func WithJobStore(s storage.JobStore) CronOpt {
 	return CronOpt(func(cron *Cron) {
 		cron.jobStore = s
 	})
@@ -152,7 +142,7 @@ func WithNamespace(n string) CronOpt {
 	})
 }
 
-func WithPartitioning(p Partitioning) CronOpt {
+func WithPartitioning(p partitioning.Partitioner) CronOpt {
 	return CronOpt(func(cron *Cron) {
 		cron.partitioning = p
 	})
@@ -171,10 +161,10 @@ func New(opts ...CronOpt) (*Cron, error) {
 		opt(cron)
 	}
 	if cron.partitioning == nil {
-		cron.partitioning = NoPartitioning()
+		cron.partitioning = partitioning.NoPartitioning()
 	}
 	if cron.etcdclient == nil {
-		etcdClient, err := NewEtcdMutexBuilder(etcdclient.Config{
+		etcdClient, err := etcdclient.New(etcdclient.Config{
 			Endpoints: []string{defaultEtcdEndpoint},
 		})
 		if err != nil {
@@ -195,13 +185,14 @@ func New(opts ...CronOpt) (*Cron, error) {
 	if cron.namespace == "" {
 		cron.namespace = defaultNamespace
 	}
-	cron.organizer = NewOrganizer(cron.namespace, cron.partitioning)
+	cron.organizer = partitioning.NewOrganizer(cron.namespace, cron.partitioning)
 	if cron.jobStore == nil {
-		cron.jobStore = cron.etcdclient.NewJobStore(
+		cron.jobStore = storage.NewEtcdJobStore(
+			cron.etcdclient,
 			cron.organizer,
 			cron.partitioning,
-			func(ctx context.Context, j Job) error {
-				return cron.scheduleJob(j)
+			func(ctx context.Context, r *storage.JobRecord) error {
+				return cron.scheduleJob(jobFromJobRecord(r))
 			},
 			func(ctx context.Context, s string) error {
 				cron.killJob(s)
@@ -209,7 +200,7 @@ func New(opts ...CronOpt) (*Cron, error) {
 			})
 	}
 
-	cron.collector = NewCollector(int64(time.Hour), int64(time.Minute))
+	cron.collector = collector.New(time.Hour, time.Minute)
 	return cron, nil
 }
 
@@ -218,7 +209,8 @@ func (c *Cron) AddJob(ctx context.Context, job Job) error {
 	if c.jobStore == nil {
 		return fmt.Errorf("cannot persist job: no job store configured")
 	}
-	return c.jobStore.Put(ctx, job)
+	record, opts := job.toJobRecord()
+	return c.jobStore.Put(ctx, record, opts)
 }
 
 // DeleteJob removes a job.
@@ -251,24 +243,12 @@ func (c *Cron) GetJob(jobName string) *Job {
 		return nil
 	}
 
-	return &entry.Job
-}
-
-func (c *Cron) ListJobsByPrefix(prefix string) []*Job {
-	var appJobs []*Job
-	c.entriesMutex.RLock()
-	for _, entry := range c.entries {
-		if strings.HasPrefix(entry.Job.Name, prefix) {
-			// Job belongs to the specified app_id
-			appJobs = append(appJobs, &entry.Job)
-		}
-	}
-	c.entriesMutex.RUnlock()
-	return appJobs
+	//Avoids caller from modifying scheduler's job
+	return entry.Job.clone()
 }
 
 // Schedule adds a Job to the Cron to be run on the given schedule.
-func (c *Cron) scheduleJob(job Job) error {
+func (c *Cron) scheduleJob(job *Job) error {
 	s, err := Parse(job.Rhythm)
 	if err != nil {
 		return err
@@ -278,7 +258,7 @@ func (c *Cron) scheduleJob(job Job) error {
 }
 
 // Schedule adds a Job to the Cron to be run on the given schedule.
-func (c *Cron) schedule(schedule Schedule, job Job) error {
+func (c *Cron) schedule(schedule Schedule, job *Job) error {
 	partitionId := c.partitioning.CalculatePartitionId(job.Name)
 	if !c.partitioning.CheckPartitionLeader(partitionId) {
 		// It means the partitioning changed and persisted jobs are in the wrong partition now.
@@ -287,7 +267,7 @@ func (c *Cron) schedule(schedule Schedule, job Job) error {
 
 	entry := &Entry{
 		Schedule:        schedule,
-		Job:             job,
+		Job:             *job,
 		Prev:            time.Unix(0, 0),
 		distMutexPrefix: c.organizer.TicksPath(partitionId) + "/",
 	}
@@ -349,8 +329,8 @@ func (c *Cron) Start(ctx context.Context) error {
 // Run the scheduler.. this is private just due to the need to synchronize
 // access to the 'running' state variable.
 func (c *Cron) run(ctx context.Context) {
-	localMutexer := NewMutexer(c.collector)
-	mutexStore := NewMutexStore(c.etcdclient, c.collector)
+	localMutexer := locking.NewMutexer(c.collector)
+	mutexStore := locking.NewMutexStore(locking.NewDistributedMutexBuilderFunc(c.etcdclient), c.collector)
 	// Figure out the next activation times for each entry.
 	now := time.Now().Local()
 

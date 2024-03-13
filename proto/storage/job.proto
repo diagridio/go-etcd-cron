@@ -5,11 +5,11 @@ Licensed under the MIT License.
 
 syntax = "proto3";
 
-package etcdcron;
+package storage;
 
 import "google/protobuf/any.proto";
 
-option go_package = "github.com/diagridio/go-etcd-cron;etcdcron";
+option go_package = "github.com/diagridio/go-etcd-cron/storage;storage";
 
 // JobRecord is the record persisted as value in Etcd (not the key).
 // Namespace is handled by prefixing the key in the database.

@@ -3,7 +3,7 @@ Copyright (c) 2024 Diagrid Inc.
 Licensed under the MIT License.
 */
 
-package etcdcron
+package partitioning
 
 import (
 	"path/filepath"
@@ -18,11 +18,11 @@ type Organizer interface {
 }
 
 type organizer struct {
-	partitioning Partitioning
+	partitioning Partitioner
 	namespace    string
 }
 
-func NewOrganizer(namespace string, p Partitioning) Organizer {
+func NewOrganizer(namespace string, p Partitioner) Organizer {
 	return &organizer{
 		partitioning: p,
 		namespace:    namespace,

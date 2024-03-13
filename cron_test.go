@@ -367,9 +367,9 @@ func TestRunningMultipleSchedules(t *testing.T) {
 		Name:   "test-mschedule-3",
 		Rhythm: "* * * * * ?",
 	})
-	cron.schedule(Every(time.Minute), Job{Name: "test-mschedule-4", Type: "return-nil"})
-	cron.schedule(Every(time.Second), Job{Name: "test-mschedule-5"})
-	cron.schedule(Every(time.Hour), Job{Name: "test-mschedule-6", Type: "return-nil"})
+	cron.schedule(Every(time.Minute), &Job{Name: "test-mschedule-4", Type: "return-nil"})
+	cron.schedule(Every(time.Second), &Job{Name: "test-mschedule-5"})
+	cron.schedule(Every(time.Hour), &Job{Name: "test-mschedule-6", Type: "return-nil"})
 
 	cron.Start(ctx)
 	defer func() {
@@ -462,10 +462,10 @@ func TestJob(t *testing.T) {
 		Name:   "job3",
 		Rhythm: "1 0 0 1 1 ?",
 	})
-	cron.schedule(Every(5*time.Second+5*time.Nanosecond), Job{
+	cron.schedule(Every(5*time.Second+5*time.Nanosecond), &Job{
 		Name: "job4",
 	})
-	cron.schedule(Every(5*time.Minute), Job{
+	cron.schedule(Every(5*time.Minute), &Job{
 		Name: "job5",
 	})
 

@@ -79,11 +79,15 @@ Pre-requisites to run the tests locally:
   - Docker: [Running a single node etcd](https://etcd.io/docs/v3.5/op-guide/container/#running-a-single-node-etcd-1)
 
 ```bash
-go test -v --race
+make test
+```
+OR
+```bash
+go test -timeout 300s --race ./...
 ```
 
 ## History
 
 This is a fork of [https://github.com/Scalingo/go-etcd-cron](https://github.com/Scalingo/go-etcd-cron), which had been based on [https://github.com/robfig/cron](https://github.com/robfig/cron).
 
-This fork has similar but still different goals from Scalingo's go-etcd-cron library.
+This fork has different goals from Scalingo's go-etcd-cron library.
