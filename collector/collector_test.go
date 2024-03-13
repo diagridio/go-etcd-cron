@@ -122,7 +122,7 @@ func wait(wg *sync.WaitGroup) chan bool {
 	return ch
 }
 
-func stop(collector *Collector, cancel context.CancelFunc) chan bool {
+func stop(collector Collector, cancel context.CancelFunc) chan bool {
 	ch := make(chan bool)
 	go func() {
 		cancel()

@@ -12,7 +12,13 @@ import (
 )
 
 // Collector garbage collects items after a globally configured TTL.
-type Collector struct {
+type Collector interface {
+	Start(ctx context.Context)
+	Add(func(ctx context.Context))
+	Wait()
+}
+
+type collector struct {
 	ttl        time.Duration // time to wait to perform collection
 	bufferTime time.Duration // arbitrary delay to allow buffering of operations
 
@@ -28,8 +34,8 @@ type collectorEntry struct {
 	op         func(ctx context.Context)
 }
 
-func New(ttl time.Duration, bufferTime time.Duration) *Collector {
-	return &Collector{
+func New(ttl time.Duration, bufferTime time.Duration) Collector {
+	return &collector{
 		ttl:        ttl,
 		bufferTime: bufferTime,
 		running:    false,
@@ -38,7 +44,7 @@ func New(ttl time.Duration, bufferTime time.Duration) *Collector {
 	}
 }
 
-func (c *Collector) Start(ctx context.Context) {
+func (c *collector) Start(ctx context.Context) {
 	if c.running {
 		return
 	}
@@ -102,7 +108,7 @@ func (c *Collector) Start(ctx context.Context) {
 	}(ctx)
 }
 
-func (c *Collector) Add(op func(ctx context.Context)) {
+func (c *collector) Add(op func(ctx context.Context)) {
 	c.mutex.Lock()
 	defer c.mutex.Unlock()
 	c.operations = append(c.operations, &collectorEntry{
@@ -111,6 +117,6 @@ func (c *Collector) Add(op func(ctx context.Context)) {
 	})
 }
 
-func (c *Collector) Wait() {
+func (c *collector) Wait() {
 	c.runWaitingGroup.Wait()
 }

@@ -50,7 +50,7 @@ type Cron struct {
 	jobStore               storage.JobStore
 	organizer              partitioning.Organizer
 	partitioning           partitioning.Partitioner
-	collector              *collector.Collector
+	collector              collector.Collector
 }
 
 // Entry consists of a schedule and the func to execute on that schedule.

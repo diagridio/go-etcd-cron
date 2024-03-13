@@ -17,10 +17,10 @@ type Mutexer struct {
 	mutex sync.RWMutex
 
 	mutexes   map[string]*sync.RWMutex
-	collector *collector.Collector
+	collector collector.Collector
 }
 
-func NewMutexer(collector *collector.Collector) *Mutexer {
+func NewMutexer(collector collector.Collector) *Mutexer {
 	return &Mutexer{
 		mutexes:   map[string]*sync.RWMutex{},
 		collector: collector,

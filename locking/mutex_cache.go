@@ -17,10 +17,10 @@ type MutexStore struct {
 	lock             sync.RWMutex
 	cache            map[string]DistributedMutex
 	mutexBuilderFunc func(string) (DistributedMutex, error)
-	collector        *collector.Collector
+	collector        collector.Collector
 }
 
-func NewMutexStore(mutexBuilderFunc func(string) (DistributedMutex, error), collector *collector.Collector) *MutexStore {
+func NewMutexStore(mutexBuilderFunc func(string) (DistributedMutex, error), collector collector.Collector) *MutexStore {
 	return &MutexStore{
 		cache:            map[string]DistributedMutex{},
 		mutexBuilderFunc: mutexBuilderFunc,
