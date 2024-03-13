@@ -20,6 +20,7 @@ import (
 	"github.com/diagridio/go-etcd-cron/collector"
 	"github.com/diagridio/go-etcd-cron/locking"
 	"github.com/diagridio/go-etcd-cron/partitioning"
+	"github.com/diagridio/go-etcd-cron/rhythm"
 	"github.com/diagridio/go-etcd-cron/storage"
 )
 
@@ -52,17 +53,10 @@ type Cron struct {
 	collector              *collector.Collector
 }
 
-// The Schedule describes a job's duty cycle.
-type Schedule interface {
-	// Return the next activation time, later than the given time.
-	// Next is invoked initially, and then each time the job is run.
-	Next(time.Time) time.Time
-}
-
 // Entry consists of a schedule and the func to execute on that schedule.
 type Entry struct {
 	// The schedule on which this job should be run.
-	Schedule Schedule
+	Schedule rhythm.Schedule
 
 	// The next time the job will run. This is the zero time if Cron has not been
 	// started or this entry's schedule is unsatisfiable
@@ -249,7 +243,7 @@ func (c *Cron) GetJob(jobName string) *Job {
 
 // Schedule adds a Job to the Cron to be run on the given schedule.
 func (c *Cron) scheduleJob(job *Job) error {
-	s, err := Parse(job.Rhythm)
+	s, err := rhythm.Parse(job.Rhythm)
 	if err != nil {
 		return err
 	}
@@ -258,7 +252,7 @@ func (c *Cron) scheduleJob(job *Job) error {
 }
 
 // Schedule adds a Job to the Cron to be run on the given schedule.
-func (c *Cron) schedule(schedule Schedule, job *Job) error {
+func (c *Cron) schedule(schedule rhythm.Schedule, job *Job) error {
 	partitionId := c.partitioning.CalculatePartitionId(job.Name)
 	if !c.partitioning.CheckPartitionLeader(partitionId) {
 		// It means the partitioning changed and persisted jobs are in the wrong partition now.

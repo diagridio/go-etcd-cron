@@ -1,4 +1,9 @@
-package etcdcron
+/*
+Copyright (c) 2024 Diagrid Inc.
+Licensed under the MIT License.
+*/
+
+package rhythm
 
 import (
 	"fmt"
@@ -64,7 +69,8 @@ func getField(field string, r bounds) uint64 {
 }
 
 // getRange returns the bits indicated by the given expression:
-//   number | number "-" number [ "/" number ]
+//
+//	number | number "-" number [ "/" number ]
 func getRange(expr string, r bounds) uint64 {
 	var (
 		start, end, step uint

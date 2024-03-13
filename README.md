@@ -24,7 +24,10 @@ This package aims at implementing a distributed and fault tolerant cron in order
 By default the library creates an etcd client on `127.0.0.1:2379`
 
 ```go
-c, _ := etcdcron.NewEtcdMutexBuilder(clientv3.Config{
+import etcdclientv3 "go.etcd.io/etcd/client/v3"
+import etcdcron "github.com/diagridio/go-etcd-cron"
+
+c, _ := etcdclientv3.New(etcdclientv3.Config{
   Endpoints: []string{"etcd-host1:2379", "etcd-host2:2379"},
 })
 cron, _ := etcdcron.New(

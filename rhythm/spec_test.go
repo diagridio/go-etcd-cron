@@ -1,4 +1,9 @@
-package etcdcron
+/*
+Copyright (c) 2024 Diagrid Inc.
+Licensed under the MIT License.
+*/
+
+package rhythm
 
 import (
 	"testing"
