@@ -25,7 +25,7 @@ func NewMutexer(collector *Collector) *Mutexer {
 	}
 }
 
-func (o *Mutexer) Lock(key string) {
+func (o *Mutexer) Get(key string) *sync.RWMutex {
 	// Optimistic read lock.
 	o.mutex.RLock()
 	m, ok := o.mutexes[key]
@@ -33,6 +33,7 @@ func (o *Mutexer) Lock(key string) {
 	if !ok {
 		// Now we need to check again after getting lock, common pattern.
 		o.mutex.Lock()
+		defer o.mutex.Unlock()
 		m, ok = o.mutexes[key]
 		if !ok {
 			m = &sync.RWMutex{}
@@ -40,24 +41,11 @@ func (o *Mutexer) Lock(key string) {
 				o.Delete(key)
 			})
 			o.mutexes[key] = m
+			return m
 		}
-		o.mutex.Unlock()
 	}
 
-	m.Lock()
-}
-
-func (o *Mutexer) Unlock(key string) {
-	// Optimistic read lock.
-	o.mutex.RLock()
-	m, ok := o.mutexes[key]
-	o.mutex.RUnlock()
-	if !ok {
-		// Nothing to do since lock does not exist.
-		return
-	}
-
-	m.Unlock()
+	return m
 }
 
 func (o *Mutexer) Delete(keys ...string) {

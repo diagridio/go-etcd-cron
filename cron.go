@@ -422,9 +422,10 @@ func (c *Cron) run(ctx context.Context) {
 					defer cancel()
 
 					// Local mutex is needed to avoid race condition on reusing the etcd mutex object.
-					localMutexer.Lock(tickLock)
+					localMutex := localMutexer.Get(tickLock)
+					localMutex.Lock()
 					err = m.Lock(lockCtx)
-					localMutexer.Unlock(tickLock)
+					localMutex.Unlock()
 					if err == context.DeadlineExceeded {
 						return
 					} else if err != nil {

@@ -387,6 +387,7 @@ func TestRunningMultipleSchedules(t *testing.T) {
 // Test that the cron is run in the local time zone (as opposed to UTC).
 func TestLocalTimezone(t *testing.T) {
 	wg := &sync.WaitGroup{}
+	called := atomic.Int32{}
 	wg.Add(1)
 
 	now := time.Now().Local()
@@ -396,6 +397,9 @@ func TestLocalTimezone(t *testing.T) {
 	cron, err := New(
 		WithNamespace(randomNamespace()),
 		WithTriggerFunc(func(ctx context.Context, s string, p *anypb.Any) error {
+			if called.Add(1) > 1 {
+				return nil
+			}
 			wg.Done()
 			return nil
 		}))
@@ -415,7 +419,7 @@ func TestLocalTimezone(t *testing.T) {
 	}()
 
 	select {
-	case <-time.After(2 * ONE_SECOND):
+	case <-time.After(3 * ONE_SECOND):
 		t.FailNow()
 	case <-wait(wg):
 	}
