@@ -1,11 +1,21 @@
+/*
+Copyright (c) 2024 Diagrid Inc.
+Licensed under the MIT License.
+*/
+
 package etcdcron
 
 import (
 	"context"
 	"fmt"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/google/uuid"
+	"github.com/stretchr/testify/assert"
+	anypb "google.golang.org/protobuf/types/known/anypb"
 )
 
 // Many tests schedule a job for every second, and then wait at most a second
@@ -15,16 +25,17 @@ const ONE_SECOND = 1*time.Second + 200*time.Millisecond
 
 // Start and stop cron with no entries.
 func TestNoEntries(t *testing.T) {
-	cron, err := New()
+	cron, err := New(WithNamespace(randomNamespace()))
 	if err != nil {
 		t.Fatal("unexpected error")
 	}
-	cron.Start(context.Background())
+	ctx, cancel := context.WithCancel(context.Background())
+	cron.Start(ctx)
 
 	select {
 	case <-time.After(ONE_SECOND):
 		t.FailNow()
-	case <-stop(cron):
+	case <-stop(cron, cancel):
 	}
 }
 
@@ -33,19 +44,22 @@ func TestStopCausesJobsToNotRun(t *testing.T) {
 	wg := &sync.WaitGroup{}
 	wg.Add(1)
 
-	cron, err := New()
+	cron, err := New(
+		WithNamespace(randomNamespace()),
+		WithTriggerFunc(func(ctx context.Context, s string, p *anypb.Any) error {
+			wg.Done()
+			return nil
+		}))
 	if err != nil {
 		t.Fatal("unexpected error")
 	}
-	cron.Start(context.Background())
-	cron.Stop()
-	cron.AddJob(Job{
+	ctx, cancel := context.WithCancel(context.Background())
+	cron.Start(ctx)
+	cancel()
+	cron.Wait()
+	cron.AddJob(ctx, Job{
 		Name:   "test-stop",
 		Rhythm: "* * * * * ?",
-		Func: func(ctx context.Context) error {
-			wg.Done()
-			return nil
-		},
 	})
 
 	select {
@@ -59,23 +73,37 @@ func TestStopCausesJobsToNotRun(t *testing.T) {
 // Add a job, start cron, expect it runs.
 func TestAddBeforeRunning(t *testing.T) {
 	wg := &sync.WaitGroup{}
+	calledAlready := false
 	wg.Add(1)
 
-	cron, err := New()
+	cron, err := New(
+		WithNamespace(randomNamespace()),
+		WithTriggerFunc(func(ctx context.Context, s string, p *anypb.Any) error {
+			if calledAlready {
+				return nil
+			}
+
+			calledAlready = true
+			wg.Done()
+			return nil
+		}))
 	if err != nil {
 		t.Fatal("unexpected error")
 	}
-	cron.AddJob(Job{
+	ctx, cancel := context.WithCancel(context.Background())
+	cron.AddJob(ctx, Job{
 		Name:   "test-add-before-running",
-		Rhythm: "* * * * * ?",
-		Func:   func(context.Context) error { wg.Done(); return nil },
+		Rhythm: "* * * * * *",
 	})
-	cron.Start(context.Background())
-	defer cron.Stop()
+	cron.Start(ctx)
+	defer func() {
+		cancel()
+		cron.Wait()
+	}()
 
 	// Give cron 2 seconds to run our job (which is always activated).
 	select {
-	case <-time.After(ONE_SECOND):
+	case <-time.After(2 * ONE_SECOND):
 		t.FailNow()
 	case <-wait(wg):
 	}
@@ -84,26 +112,31 @@ func TestAddBeforeRunning(t *testing.T) {
 // Start cron, add a job, expect it runs.
 func TestAddWhileRunning(t *testing.T) {
 	wg := &sync.WaitGroup{}
-	wg.Add(1)
+	wg.Add(2)
 
-	cron, err := New()
+	cron, err := New(
+		WithNamespace(randomNamespace()),
+		WithTriggerFunc(func(ctx context.Context, s string, p *anypb.Any) error {
+			wg.Done()
+			return nil
+		}))
 	if err != nil {
 		t.Fatal("unexpected error")
 	}
-	cron.Start(context.Background())
-	defer cron.Stop()
+	ctx, cancel := context.WithCancel(context.Background())
+	cron.Start(ctx)
+	defer func() {
+		cancel()
+		cron.Wait()
+	}()
 
-	cron.AddJob(Job{
+	cron.AddJob(ctx, Job{
 		Name:   "test-run",
 		Rhythm: "* * * * * ?",
-		Func: func(context.Context) error {
-			wg.Done()
-			return nil
-		},
 	})
 
 	select {
-	case <-time.After(ONE_SECOND):
+	case <-time.After(2 * ONE_SECOND):
 		t.FailNow()
 	case <-wait(wg):
 	}
@@ -112,32 +145,89 @@ func TestAddWhileRunning(t *testing.T) {
 // Test timing with Entries.
 func TestSnapshotEntries(t *testing.T) {
 	wg := &sync.WaitGroup{}
-	wg.Add(1)
+	wg.Add(2)
 
-	cron, err := New()
+	cron, err := New(
+		WithNamespace(randomNamespace()),
+		WithTriggerFunc(func(ctx context.Context, s string, p *anypb.Any) error {
+			wg.Done()
+			return nil
+		}))
 	if err != nil {
 		t.Fatal("unexpected error")
 	}
-	cron.AddJob(Job{
+	ctx, cancel := context.WithCancel(context.Background())
+	cron.AddJob(ctx, Job{
 		Name:   "test-snapshot-entries",
 		Rhythm: "@every 2s",
-		Func: func(context.Context) error {
-			wg.Done()
-			return nil
-		},
 	})
-	cron.Start(context.Background())
-	defer cron.Stop()
+	cron.Start(ctx)
+	defer func() {
+		cancel()
+		cron.Wait()
+	}()
 
-	// Cron should fire in 2 seconds. After 1 second, call Entries.
+	// After 1 second, call Entries.
 	select {
 	case <-time.After(ONE_SECOND):
 		cron.Entries()
 	}
 
-	// Even though Entries was called, the cron should fire at the 2 second mark.
+	// Even though Entries was called, the cron should fire twice within 3 seconds (1 + 3).
 	select {
-	case <-time.After(ONE_SECOND):
+	case <-time.After(3 * ONE_SECOND):
+		t.FailNow()
+	case <-wait(wg):
+	}
+}
+
+// Test delayed add after un starts for a while.
+func TestDelayedAdd(t *testing.T) {
+	wg := &sync.WaitGroup{}
+	wg.Add(1)
+	called := false
+
+	cron, err := New(
+		WithNamespace(randomNamespace()),
+		WithTriggerFunc(func(ctx context.Context, s string, p *anypb.Any) error {
+			if s == "noop" {
+				return nil
+			}
+			if called {
+				t.Fatal("cannot call twice")
+			}
+			called = true
+			wg.Done()
+			return nil
+		}))
+	if err != nil {
+		t.Fatal("unexpected error")
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cron.AddJob(ctx, Job{
+		Name:   "test-noop",
+		Rhythm: "@every 1s",
+		Type:   "noop",
+	})
+
+	cron.Start(ctx)
+	defer func() {
+		cancel()
+		cron.Wait()
+	}()
+
+	// Artificial delay before add another record.
+	time.Sleep(10 * time.Second)
+
+	cron.AddJob(ctx, Job{
+		Name:   "test-ev-2s",
+		Rhythm: "@every 2s",
+	})
+
+	// Event should be called only once within 2 seconds.
+	select {
+	case <-time.After(3 * ONE_SECOND):
 		t.FailNow()
 	case <-wait(wg):
 	}
@@ -151,36 +241,47 @@ func TestMultipleEntries(t *testing.T) {
 	wg := &sync.WaitGroup{}
 	wg.Add(2)
 
-	cron, err := New()
+	cron, err := New(
+		WithNamespace(randomNamespace()),
+		WithTriggerFunc(func(ctx context.Context, s string, p *anypb.Any) error {
+			if s == "return-nil" {
+				return nil
+			}
+
+			wg.Done()
+			return nil
+		}))
 	if err != nil {
 		t.Fatal("unexpected error")
 	}
-	cron.AddJob(Job{
+	ctx, cancel := context.WithCancel(context.Background())
+	cron.AddJob(ctx, Job{
 		Name:   "test-multiple-1",
 		Rhythm: "0 0 0 1 1 ?",
-		Func:   func(context.Context) error { return nil },
+		Type:   "return-nil",
 	})
-	cron.AddJob(Job{
+	cron.AddJob(ctx, Job{
 		Name:   "test-multiple-2",
 		Rhythm: "* * * * * ?",
-		Func:   func(context.Context) error { wg.Done(); return nil },
 	})
-	cron.AddJob(Job{
+	cron.AddJob(ctx, Job{
 		Name:   "test-multiple-3",
 		Rhythm: "0 0 0 31 12 ?",
-		Func:   func(context.Context) error { return nil },
+		Type:   "return-nil",
 	})
-	cron.AddJob(Job{
+	cron.AddJob(ctx, Job{
 		Name:   "test-multiple-4",
 		Rhythm: "* * * * * ?",
-		Func:   func(context.Context) error { wg.Done(); return nil },
 	})
 
-	cron.Start(context.Background())
-	defer cron.Stop()
+	cron.Start(ctx)
+	defer func() {
+		cancel()
+		cron.Wait()
+	}()
 
 	select {
-	case <-time.After(ONE_SECOND):
+	case <-time.After(2 * ONE_SECOND):
 		t.FailNow()
 	case <-wait(wg):
 	}
@@ -191,28 +292,40 @@ func TestRunningJobTwice(t *testing.T) {
 	wg := &sync.WaitGroup{}
 	wg.Add(2)
 
-	cron, err := New()
+	cron, err := New(
+		WithNamespace(randomNamespace()),
+		WithTriggerFunc(func(ctx context.Context, s string, p *anypb.Any) error {
+			if s == "return-nil" {
+				return nil
+			}
+
+			wg.Done()
+			return nil
+		}))
 	if err != nil {
 		t.Fatal("unexpected error")
 	}
-	cron.AddJob(Job{
+	ctx, cancel := context.WithCancel(context.Background())
+	cron.AddJob(ctx, Job{
 		Name:   "test-twice-1",
 		Rhythm: "0 0 0 1 1 ?",
-		Func:   func(context.Context) error { return nil },
+		Type:   "return-nil",
 	})
-	cron.AddJob(Job{
+	cron.AddJob(ctx, Job{
 		Name:   "test-twice-2",
 		Rhythm: "0 0 0 31 12 ?",
-		Func:   func(context.Context) error { return nil },
+		Type:   "return-nil",
 	})
-	cron.AddJob(Job{
+	cron.AddJob(ctx, Job{
 		Name:   "test-twice-3",
 		Rhythm: "* * * * * ?",
-		Func:   func(context.Context) error { wg.Done(); return nil },
 	})
 
-	cron.Start(context.Background())
-	defer cron.Stop()
+	cron.Start(ctx)
+	defer func() {
+		cancel()
+		cron.Wait()
+	}()
 
 	select {
 	case <-time.After(2 * ONE_SECOND):
@@ -225,32 +338,44 @@ func TestRunningMultipleSchedules(t *testing.T) {
 	wg := &sync.WaitGroup{}
 	wg.Add(2)
 
-	cron, err := New()
+	cron, err := New(
+		WithNamespace(randomNamespace()),
+		WithTriggerFunc(func(ctx context.Context, s string, p *anypb.Any) error {
+			if s == "return-nil" {
+				return nil
+			}
+
+			wg.Done()
+			return nil
+		}))
 	if err != nil {
 		t.Fatal("unexpected error")
 	}
 
-	cron.AddJob(Job{
+	ctx, cancel := context.WithCancel(context.Background())
+	cron.AddJob(ctx, Job{
 		Name:   "test-mschedule-1",
 		Rhythm: "0 0 0 1 1 ?",
-		Func:   func(context.Context) error { return nil },
+		Type:   "return-nil",
 	})
-	cron.AddJob(Job{
+	cron.AddJob(ctx, Job{
 		Name:   "test-mschedule-2",
 		Rhythm: "0 0 0 31 12 ?",
-		Func:   func(context.Context) error { return nil },
+		Type:   "return-nil",
 	})
-	cron.AddJob(Job{
+	cron.AddJob(ctx, Job{
 		Name:   "test-mschedule-3",
 		Rhythm: "* * * * * ?",
-		Func:   func(context.Context) error { wg.Done(); return nil },
 	})
-	cron.Schedule(Every(time.Minute), Job{Name: "test-mschedule-4", Func: func(context.Context) error { return nil }})
-	cron.Schedule(Every(time.Second), Job{Name: "test-mschedule-5", Func: func(context.Context) error { wg.Done(); return nil }})
-	cron.Schedule(Every(time.Hour), Job{Name: "test-mschedule-6", Func: func(context.Context) error { return nil }})
+	cron.schedule(Every(time.Minute), Job{Name: "test-mschedule-4", Type: "return-nil"})
+	cron.schedule(Every(time.Second), Job{Name: "test-mschedule-5"})
+	cron.schedule(Every(time.Hour), Job{Name: "test-mschedule-6", Type: "return-nil"})
 
-	cron.Start(context.Background())
-	defer cron.Stop()
+	cron.Start(ctx)
+	defer func() {
+		cancel()
+		cron.Wait()
+	}()
 
 	select {
 	case <-time.After(2 * ONE_SECOND):
@@ -262,30 +387,39 @@ func TestRunningMultipleSchedules(t *testing.T) {
 // Test that the cron is run in the local time zone (as opposed to UTC).
 func TestLocalTimezone(t *testing.T) {
 	wg := &sync.WaitGroup{}
+	called := atomic.Int32{}
 	wg.Add(1)
 
 	now := time.Now().Local()
 	spec := fmt.Sprintf("%d %d %d %d %d ?",
-		now.Second()+1, now.Minute(), now.Hour(), now.Day(), now.Month())
+		now.Second()+2, now.Minute(), now.Hour(), now.Day(), now.Month())
 
-	cron, err := New()
+	cron, err := New(
+		WithNamespace(randomNamespace()),
+		WithTriggerFunc(func(ctx context.Context, s string, p *anypb.Any) error {
+			if called.Add(1) > 1 {
+				return nil
+			}
+			wg.Done()
+			return nil
+		}))
 	if err != nil {
 		t.Fatal("unexpected error")
 	}
-	cron.AddJob(Job{
+	ctx, cancel := context.WithCancel(context.Background())
+	cron.AddJob(ctx, Job{
 		Name:   "test-local",
 		Rhythm: spec,
-		Func: func(context.Context) error {
-			wg.Done()
-			return nil
-		},
 	})
 
-	cron.Start(context.Background())
-	defer cron.Stop()
+	cron.Start(ctx)
+	defer func() {
+		cancel()
+		cron.Wait()
+	}()
 
 	select {
-	case <-time.After(ONE_SECOND):
+	case <-time.After(3 * ONE_SECOND):
 		t.FailNow()
 	case <-wait(wg):
 	}
@@ -294,47 +428,55 @@ func TestLocalTimezone(t *testing.T) {
 // Simple test using Runnables.
 func TestJob(t *testing.T) {
 	wg := &sync.WaitGroup{}
+	calledAlready := false
 	wg.Add(1)
 
-	cron, err := New()
+	cron, err := New(
+		WithNamespace(randomNamespace()),
+		WithTriggerFunc(func(ctx context.Context, s string, p *anypb.Any) error {
+			if calledAlready {
+				return nil
+			}
+			calledAlready = true
+			wg.Done()
+			return nil
+		}))
 	if err != nil {
 		t.Fatal("unexpected error")
 	}
 
-	cron.AddJob(Job{
+	ctx, cancel := context.WithCancel(context.Background())
+	cron.AddJob(ctx, Job{
 		Name:   "job0",
 		Rhythm: "0 0 0 30 Feb ?",
-		Func:   func(context.Context) error { wg.Done(); return nil },
 	})
-	cron.AddJob(Job{
+	cron.AddJob(ctx, Job{
 		Name:   "job1",
 		Rhythm: "0 0 0 1 1 ?",
-		Func:   func(context.Context) error { wg.Done(); return nil },
 	})
-	cron.AddJob(Job{
+	cron.AddJob(ctx, Job{
 		Name:   "job2",
 		Rhythm: "* * * * * ?",
-		Func:   func(context.Context) error { wg.Done(); return nil },
 	})
-	cron.AddJob(Job{
+	cron.AddJob(ctx, Job{
 		Name:   "job3",
 		Rhythm: "1 0 0 1 1 ?",
-		Func:   func(context.Context) error { wg.Done(); return nil },
 	})
-	cron.Schedule(Every(5*time.Second+5*time.Nanosecond), Job{
+	cron.schedule(Every(5*time.Second+5*time.Nanosecond), Job{
 		Name: "job4",
-		Func: func(context.Context) error { wg.Done(); return nil },
 	})
-	cron.Schedule(Every(5*time.Minute), Job{
+	cron.schedule(Every(5*time.Minute), Job{
 		Name: "job5",
-		Func: func(context.Context) error { wg.Done(); return nil },
 	})
 
-	cron.Start(context.Background())
-	defer cron.Stop()
+	cron.Start(ctx)
+	defer func() {
+		cancel()
+		cron.Wait()
+	}()
 
 	select {
-	case <-time.After(ONE_SECOND):
+	case <-time.After(2 * ONE_SECOND):
 		t.FailNow()
 	case <-wait(wg):
 	}
@@ -361,36 +503,90 @@ func TestCron_Parallel(t *testing.T) {
 	wg := &sync.WaitGroup{}
 	wg.Add(2)
 
-	cron1, err := New()
+	cron1, err := New(
+		WithNamespace(randomNamespace()),
+		WithTriggerFunc(func(ctx context.Context, s string, p *anypb.Any) error {
+			wg.Done()
+			return nil
+		}))
 	if err != nil {
 		t.Fatal("unexpected error")
 	}
-	defer cron1.Stop()
+	ctx1, cancel1 := context.WithCancel(context.Background())
+	defer func() {
+		cancel1()
+		cron1.Wait()
+	}()
 
-	cron2, err := New()
+	cron2, err := New(
+		WithNamespace(randomNamespace()),
+		WithTriggerFunc(func(ctx context.Context, s string, p *anypb.Any) error {
+			wg.Done()
+			return nil
+		}))
 	if err != nil {
 		t.Fatal("unexpected error")
 	}
-	defer cron2.Stop()
+	ctx2, cancel2 := context.WithCancel(context.Background())
+	defer func() {
+		cancel2()
+		cron2.Wait()
+	}()
 
 	job := Job{
 		Name:   "test-parallel",
 		Rhythm: "* * * * * ?",
-		Func: func(context.Context) error {
-			wg.Done()
-			return nil
-		},
 	}
-	cron1.AddJob(job)
-	cron2.AddJob(job)
+	cron1.AddJob(ctx1, job)
+	cron2.AddJob(ctx2, job)
 
-	cron1.Start(context.Background())
-	cron2.Start(context.Background())
+	cron1.Start(ctx1)
+	cron2.Start(ctx2)
 
 	select {
 	case <-time.After(time.Duration(2) * ONE_SECOND):
 		t.FailNow()
 	case <-wait(wg):
+	}
+}
+
+// Test job expires.
+func TestTTL(t *testing.T) {
+	wg := &sync.WaitGroup{}
+	wg.Add(5)
+
+	firedOnce := atomic.Bool{}
+
+	cron, err := New(
+		WithNamespace(randomNamespace()),
+		WithTriggerFunc(func(ctx context.Context, s string, p *anypb.Any) error {
+			firedOnce.Store(true)
+			wg.Done()
+			return nil
+		}))
+	if err != nil {
+		t.Fatal("unexpected error")
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	cron.AddJob(ctx, Job{
+		Name:   "test-twice-3",
+		Rhythm: "* * * * * ?",
+		TTL:    2,
+	})
+
+	cron.Start(ctx)
+	defer func() {
+		cancel()
+		cron.Wait()
+	}()
+
+	select {
+	case <-time.After(6 * ONE_SECOND):
+		// Success, it means it did not consume all the workgroup count because the job expired.
+		assert.True(t, firedOnce.Load())
+	case <-wait(wg):
+		// Fails because TTL should delete the job and make it stop consuming the workgroup count.
+		t.FailNow()
 	}
 }
 
@@ -403,11 +599,16 @@ func wait(wg *sync.WaitGroup) chan bool {
 	return ch
 }
 
-func stop(cron *Cron) chan bool {
+func stop(cron *Cron, cancel context.CancelFunc) chan bool {
 	ch := make(chan bool)
 	go func() {
-		cron.Stop()
+		cancel()
+		cron.Wait()
 		ch <- true
 	}()
 	return ch
+}
+
+func randomNamespace() string {
+	return uuid.New().String()
 }
