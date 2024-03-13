@@ -107,6 +107,7 @@ func (c *Collector) Add(op func(ctx context.Context)) {
 	defer c.mutex.Unlock()
 	c.operations = append(c.operations, &collectorEntry{
 		expiration: time.Now().Add(c.ttl),
+		op:         op,
 	})
 }
 
