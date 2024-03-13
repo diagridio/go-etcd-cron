@@ -34,7 +34,7 @@ check-proto-version: ## Checking the version of proto related tools
 define genProtoc
 .PHONY: gen-proto-$(1)
 gen-proto-$(1):
-	$(PROTOC) --go_out=. --go_opt=module=$(PROTO_PREFIX) --go-grpc_out=. --go-grpc_opt=require_unimplemented_servers=false,module=$(PROTO_PREFIX) ./proto/$(1)
+	$(PROTOC) --go_out=. --go_opt=module=$(PROTO_PREFIX) --go-grpc_out=. --go-grpc_opt=require_unimplemented_servers=false,module=$(PROTO_PREFIX) ./proto/$(1)/*
 endef
 
 $(foreach ITEM,$(PROTOS),$(eval $(call genProtoc,$(ITEM))))
@@ -43,3 +43,6 @@ GEN_PROTOS:=$(foreach ITEM,$(PROTOS),gen-proto-$(ITEM))
 
 .PHONY: gen-proto
 gen-proto: check-proto-version $(GEN_PROTOS) modtidy
+
+test:
+	go test -timeout 300s --race ./...

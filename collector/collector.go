@@ -3,7 +3,7 @@ Copyright (c) 2024 Diagrid Inc.
 Licensed under the MIT License.
 */
 
-package etcdcron
+package collector
 
 import (
 	"context"
@@ -11,10 +11,16 @@ import (
 	"time"
 )
 
-// collector garbage collects items after a globally configured TTL.
-type Collector struct {
-	ttl        int64 // time to wait to perform collection
-	bufferTime int64 // arbitrary delay to allow buffering of operations
+// Collector garbage collects items after a globally configured TTL.
+type Collector interface {
+	Start(ctx context.Context)
+	Add(func(ctx context.Context))
+	Wait()
+}
+
+type collector struct {
+	ttl        time.Duration // time to wait to perform collection
+	bufferTime time.Duration // arbitrary delay to allow buffering of operations
 
 	running         bool
 	mutex           sync.RWMutex
@@ -24,12 +30,12 @@ type Collector struct {
 }
 
 type collectorEntry struct {
-	expiration int64
+	expiration time.Time
 	op         func(ctx context.Context)
 }
 
-func NewCollector(ttl int64, bufferTime int64) *Collector {
-	return &Collector{
+func New(ttl time.Duration, bufferTime time.Duration) Collector {
+	return &collector{
 		ttl:        ttl,
 		bufferTime: bufferTime,
 		running:    false,
@@ -38,7 +44,7 @@ func NewCollector(ttl int64, bufferTime int64) *Collector {
 	}
 }
 
-func (c *Collector) Start(ctx context.Context) {
+func (c *collector) Start(ctx context.Context) {
 	if c.running {
 		return
 	}
@@ -49,10 +55,10 @@ func (c *Collector) Start(ctx context.Context) {
 		c.mutex.Lock()
 		defer c.mutex.Unlock()
 
-		now := time.Now().Unix()
+		now := time.Now()
 		nextStartIndex := -1
 		for i, o := range c.operations {
-			if o.expiration <= now {
+			if o.expiration.Before(now) {
 				o.op(ctx)
 			} else {
 				nextStartIndex = i
@@ -71,14 +77,14 @@ func (c *Collector) Start(ctx context.Context) {
 		c.mutex.RLock()
 		defer c.mutex.RUnlock()
 
-		now := time.Now().Unix()
+		now := time.Now()
 		if len(c.operations) > 0 {
-			diff := c.operations[0].expiration - now
-			if diff <= 0 {
+			op := c.operations[0]
+			if op.expiration.Before(now) {
 				return 0
 			}
 
-			return time.Duration(diff)
+			return now.Sub(op.expiration)
 		}
 
 		// Some arbitrarily large number that gives us certainty that some record will be added.
@@ -102,14 +108,15 @@ func (c *Collector) Start(ctx context.Context) {
 	}(ctx)
 }
 
-func (c *Collector) Add(op func(ctx context.Context)) {
+func (c *collector) Add(op func(ctx context.Context)) {
 	c.mutex.Lock()
 	defer c.mutex.Unlock()
 	c.operations = append(c.operations, &collectorEntry{
-		expiration: time.Now().Unix() + c.ttl,
+		expiration: time.Now().Add(c.ttl),
+		op:         op,
 	})
 }
 
-func (c *Collector) Wait() {
+func (c *collector) Wait() {
 	c.runWaitingGroup.Wait()
 }

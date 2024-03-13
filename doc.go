@@ -6,8 +6,8 @@ Package cron implements a cron spec parser and job runner.
 Callers registers a single callback function and crons provide context via `type` and `payload`. Cron will run
 them in their own goroutines.
 
-	c := cron.New(
-		cron.WithTriggerFunc(func(ctx context.Context, triggerType string, payload *anypb.Any) error {
+	c := etcdcron.New(
+		etcdcron.WithTriggerFunc(func(ctx context.Context, triggerType string, payload *anypb.Any) error {
 			log.Printf("Trigger from pid %d: %s %s\n", os.Getpid(), triggerType, string(payload.Value))
 			return nil
 		}),

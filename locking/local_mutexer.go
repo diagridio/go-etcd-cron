@@ -3,11 +3,13 @@ Copyright (c) 2024 Diagrid Inc.
 Licensed under the MIT License.
 */
 
-package etcdcron
+package locking
 
 import (
 	"context"
 	"sync"
+
+	"github.com/diagridio/go-etcd-cron/collector"
 )
 
 // Mutexer locks and unlocks mutexes locally based on key, with garbage collection method.
@@ -15,10 +17,10 @@ type Mutexer struct {
 	mutex sync.RWMutex
 
 	mutexes   map[string]*sync.RWMutex
-	collector *Collector
+	collector collector.Collector
 }
 
-func NewMutexer(collector *Collector) *Mutexer {
+func NewMutexer(collector collector.Collector) *Mutexer {
 	return &Mutexer{
 		mutexes:   map[string]*sync.RWMutex{},
 		collector: collector,

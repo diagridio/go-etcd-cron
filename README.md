@@ -24,7 +24,10 @@ This package aims at implementing a distributed and fault tolerant cron in order
 By default the library creates an etcd client on `127.0.0.1:2379`
 
 ```go
-c, _ := etcdcron.NewEtcdMutexBuilder(clientv3.Config{
+import etcdclientv3 "go.etcd.io/etcd/client/v3"
+import etcdcron "github.com/diagridio/go-etcd-cron"
+
+c, _ := etcdclientv3.New(etcdclientv3.Config{
   Endpoints: []string{"etcd-host1:2379", "etcd-host2:2379"},
 })
 cron, _ := etcdcron.New(
@@ -79,11 +82,15 @@ Pre-requisites to run the tests locally:
   - Docker: [Running a single node etcd](https://etcd.io/docs/v3.5/op-guide/container/#running-a-single-node-etcd-1)
 
 ```bash
-go test -v --race
+make test
+```
+OR
+```bash
+go test -timeout 300s --race ./...
 ```
 
 ## History
 
 This is a fork of [https://github.com/Scalingo/go-etcd-cron](https://github.com/Scalingo/go-etcd-cron), which had been based on [https://github.com/robfig/cron](https://github.com/robfig/cron).
 
-This fork has similar but still different goals from Scalingo's go-etcd-cron library.
+This fork has different goals from Scalingo's go-etcd-cron library.

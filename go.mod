@@ -1,6 +1,8 @@
 module github.com/diagridio/go-etcd-cron
 
-go 1.20
+go 1.21
+
+toolchain go1.21.8
 
 require (
 	github.com/pkg/errors v0.9.1

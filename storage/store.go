@@ -3,7 +3,7 @@ Copyright (c) 2024 Diagrid Inc.
 Licensed under the MIT License.
 */
 
-package etcdcron
+package storage
 
 import (
 	"context"
@@ -17,61 +17,38 @@ import (
 	etcdclient "go.etcd.io/etcd/client/v3"
 	"go.etcd.io/etcd/client/v3/mirror"
 	"google.golang.org/protobuf/proto"
+
+	"github.com/diagridio/go-etcd-cron/partitioning"
 )
 
 // The JobStore persists and reads jobs from Etcd.
 type JobStore interface {
 	Start(ctx context.Context) error
-	Put(ctx context.Context, job Job) error
+	Put(ctx context.Context, job *JobRecord, options JobRecordOptions) error
 	Delete(ctx context.Context, jobName string) error
 	Wait()
+}
+
+// Optional params to store a job
+type JobRecordOptions struct {
+	TTL int64
 }
 
 type etcdStore struct {
 	runWaitingGroup sync.WaitGroup
 	etcdClient      *etcdclient.Client
 	kvStore         etcdclient.KV
-	partitioning    Partitioning
-	organizer       Organizer
-	putCallback     func(context.Context, Job) error
+	partitioning    partitioning.Partitioner
+	organizer       partitioning.Organizer
+	putCallback     func(context.Context, *JobRecord) error
 	deleteCallback  func(context.Context, string) error
 }
 
-type noStore struct {
-	putCallback    func(context.Context, Job) error
-	deleteCallback func(context.Context, string) error
-}
-
-func NoStore(
-	putCallback func(context.Context, Job) error,
-	deleteCallback func(context.Context, string) error) JobStore {
-	return &noStore{
-		putCallback:    putCallback,
-		deleteCallback: deleteCallback,
-	}
-}
-
-func (s *noStore) Start(ctx context.Context) error {
-	return nil
-}
-
-func (s *noStore) Put(ctx context.Context, job Job) error {
-	s.putCallback(ctx, job)
-	return nil
-}
-
-func (s *noStore) Delete(ctx context.Context, jobName string) error {
-	s.deleteCallback(ctx, jobName)
-	return nil
-}
-
-func (s *noStore) Wait() {}
-
 func NewEtcdJobStore(
 	client *etcdclient.Client,
-	organizer Organizer,
-	partitioning Partitioning,
-	putCallback func(context.Context, Job) error,
+	organizer partitioning.Organizer,
+	partitioning partitioning.Partitioner,
+	putCallback func(context.Context, *JobRecord) error,
 	deleteCallback func(context.Context, string) error) JobStore {
 	return &etcdStore{
 		etcdClient:     client,
@@ -110,11 +87,11 @@ func (s *etcdStore) Start(ctx context.Context) error {
 	return nil
 }
 
-func (s *etcdStore) Put(ctx context.Context, job Job) error {
+func (s *etcdStore) Put(ctx context.Context, job *JobRecord, options JobRecordOptions) error {
 	opts := []etcdclient.OpOption{}
-	if job.TTL > 0 {
+	if options.TTL > 0 {
 		// Create a lease
-		lease, err := s.etcdClient.Grant(ctx, job.TTL)
+		lease, err := s.etcdClient.Grant(ctx, options.TTL)
 		if err != nil {
 			return errors.Errorf("failed to create lease to save job %s: %v", job.Name, err)
 		}
@@ -122,13 +99,7 @@ func (s *etcdStore) Put(ctx context.Context, job Job) error {
 		opts = append(opts, etcdclient.WithLease(lease.ID))
 	}
 
-	record := &JobRecord{
-		Name:    job.Name,
-		Rhythm:  job.Rhythm,
-		Type:    job.Type,
-		Payload: job.Payload,
-	}
-	bytes, err := proto.Marshal(record)
+	bytes, err := proto.Marshal(job)
 	if err != nil {
 		return err
 	}
@@ -152,7 +123,7 @@ func (s *etcdStore) Wait() {
 	s.runWaitingGroup.Wait()
 }
 
-func (s *etcdStore) notifyPut(ctx context.Context, kv *mvccpb.KeyValue, callback func(context.Context, Job) error) error {
+func (s *etcdStore) notifyPut(ctx context.Context, kv *mvccpb.KeyValue, callback func(context.Context, *JobRecord) error) error {
 	record := JobRecord{}
 	err := proto.Unmarshal(kv.Value, &record)
 	if err != nil {
@@ -162,12 +133,7 @@ func (s *etcdStore) notifyPut(ctx context.Context, kv *mvccpb.KeyValue, callback
 		return fmt.Errorf("could not deserialize job for key %s", string(kv.Key))
 	}
 
-	return callback(ctx, Job{
-		Name:    record.Name,
-		Rhythm:  record.Rhythm,
-		Type:    record.Type,
-		Payload: record.Payload,
-	})
+	return callback(ctx, &record)
 }
 
 func (s *etcdStore) notifyDelete(ctx context.Context, name string, callback func(context.Context, string) error) error {

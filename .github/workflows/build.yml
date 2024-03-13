@@ -42,4 +42,4 @@ jobs:
           git diff --exit-code ./go.mod # check no changes
           git diff --exit-code ./go.sum # check no changes
       - name: Run test
-        run: go test -v -timeout 300s --race
+        run: make test
