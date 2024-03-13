@@ -55,7 +55,7 @@ type Job struct {
 	Name string
 	// Cron-formatted rhythm (ie. 0,10,30 1-5 0 * * *)
 	Rhythm string
-	// The type of trigger
+	// The type of trigger that client undertsands
 	Type string
 	// The payload containg all the information for the trigger
 	Payload *anypb.Any
@@ -336,7 +336,7 @@ func (c *Cron) Entries() []*Entry {
 
 // Start the cron scheduler in its own go-routine.
 func (c *Cron) Start(ctx context.Context) error {
-	err := c.jobStore.Init(ctx)
+	err := c.jobStore.Start(ctx)
 	if err != nil {
 		return err
 	}

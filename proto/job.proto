@@ -11,8 +11,8 @@ import "google/protobuf/any.proto";
 
 option go_package = "github.com/diagridio/go-etcd-cron;etcdcron";
 
-// Namespace is handled by prefixing the key in the database.
 // JobRecord is the record persisted as value in Etcd (not the key).
+// Namespace is handled by prefixing the key in the database.
 message JobRecord {
   string name = 1;
   string rhythm = 2;

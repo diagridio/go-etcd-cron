@@ -21,7 +21,7 @@ import (
 
 // The JobStore persists and reads jobs from Etcd.
 type JobStore interface {
-	Init(ctx context.Context) error
+	Start(ctx context.Context) error
 	Put(ctx context.Context, job Job) error
 	Delete(ctx context.Context, jobName string) error
 	Wait()
@@ -51,7 +51,7 @@ func NoStore(
 	}
 }
 
-func (s *noStore) Init(ctx context.Context) error {
+func (s *noStore) Start(ctx context.Context) error {
 	return nil
 }
 
@@ -83,7 +83,7 @@ func NewEtcdJobStore(
 	}
 }
 
-func (s *etcdStore) Init(ctx context.Context) error {
+func (s *etcdStore) Start(ctx context.Context) error {
 	for _, partitionId := range s.partitioning.ListPartitions() {
 		// TODO(artursouza): parallelize this per partition.
 		partitionPrefix := s.organizer.JobsPath(partitionId) + "/"
