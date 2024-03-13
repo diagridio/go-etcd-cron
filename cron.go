@@ -9,7 +9,6 @@ import (
 	"context"
 	"fmt"
 	"log"
-	"runtime/debug"
 	"sort"
 	"strings"
 	"sync"
@@ -408,18 +407,6 @@ func (c *Cron) run(ctx context.Context) {
 				e.Next = e.Schedule.Next(effective)
 
 				go func(ctx context.Context, e *Entry) {
-					defer func() {
-						r := recover()
-						if r != nil {
-							err, ok := r.(error)
-							if !ok {
-								err = fmt.Errorf("%v", r)
-							}
-							err = fmt.Errorf("panic: %v, stacktrace: %s", err, string(debug.Stack()))
-							go c.errorsHandler(ctx, e.Job, err)
-						}
-					}()
-
 					if c.funcCtx != nil {
 						ctx = c.funcCtx(ctx, e.Job)
 					}
