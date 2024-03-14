@@ -43,7 +43,7 @@ type Cron struct {
 	etcdErrorsHandler      func(context.Context, Job, error)
 	errorsHandler          func(context.Context, Job, error)
 	funcCtx                func(context.Context, Job) context.Context
-	triggerFunc            func(context.Context, string, *anypb.Any) error
+	triggerFunc            func(context.Context, map[string]string, *anypb.Any) error
 	running                bool
 	runWaitingGroup        sync.WaitGroup
 	etcdclient             *etcdclient.Client
@@ -124,7 +124,7 @@ func WithFuncCtx(f func(context.Context, Job) context.Context) CronOpt {
 	})
 }
 
-func WithTriggerFunc(f func(context.Context, string, *anypb.Any) error) CronOpt {
+func WithTriggerFunc(f func(context.Context, map[string]string, *anypb.Any) error) CronOpt {
 	return CronOpt(func(cron *Cron) {
 		cron.triggerFunc = f
 	})
@@ -237,8 +237,7 @@ func (c *Cron) GetJob(jobName string) *Job {
 		return nil
 	}
 
-	//Avoids caller from modifying scheduler's job
-	return entry.Job.clone()
+	return &entry.Job
 }
 
 // Schedule adds a Job to the Cron to be run on the given schedule.
@@ -407,7 +406,7 @@ func (c *Cron) run(ctx context.Context) {
 						return
 					}
 
-					err = c.triggerFunc(ctx, e.Job.Type, e.Job.Payload)
+					err = c.triggerFunc(ctx, e.Job.Metadata, e.Job.Payload)
 					if err != nil {
 						go c.errorsHandler(ctx, e.Job, err)
 						return
