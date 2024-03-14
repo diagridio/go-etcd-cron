@@ -17,7 +17,7 @@ import (
 	"time"
 
 	etcdcron "github.com/diagridio/go-etcd-cron"
-	partitioning "github.com/diagridio/go-etcd-cron/partitioning"
+	"github.com/diagridio/go-etcd-cron/partitioning"
 	"google.golang.org/protobuf/types/known/anypb"
 )
 
