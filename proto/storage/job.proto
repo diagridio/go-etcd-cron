@@ -16,6 +16,7 @@ option go_package = "github.com/diagridio/go-etcd-cron/storage;storage";
 message JobRecord {
   string name = 1;
   string rhythm = 2;
-  map<string, string> metadata = 3;
-  google.protobuf.Any payload = 4;
+  int64 startTimestamp = 3;  // time that the schedule starts
+  map<string, string> metadata = 4;
+  google.protobuf.Any payload = 5;
 }

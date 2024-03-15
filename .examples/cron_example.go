@@ -72,18 +72,19 @@ func main() {
 		wg.Done()
 	}()
 
+	now := time.Now()
 	if os.Getenv("ADD") == "1" {
 		cron.AddJob(ctx, etcdcron.Job{
 			Name:      "every-2s-dFG3F3DSGSGds",
-			Rhythm:    "*/2 * * * * *",
-			StartTime: time.Time{}, // even seconds
-			Payload:   &anypb.Any{Value: []byte("ev 2s even")},
+			Rhythm:    "@every 2s",
+			StartTime: now,
+			Payload:   &anypb.Any{Value: []byte("ev 2s from now")},
 		})
 		cron.AddJob(ctx, etcdcron.Job{
 			Name:      "every-2s-b34w5y5hbwthjs",
-			Rhythm:    "*/2 * * * * *",
-			StartTime: time.Time{}.Add(time.Second), // odd seconds
-			Payload:   &anypb.Any{Value: []byte("ev 2s odd")},
+			Rhythm:    "@every 2s",
+			StartTime: now.Add(time.Second), // odd seconds
+			Payload:   &anypb.Any{Value: []byte("ev 2s from now+1s")},
 		})
 		cron.AddJob(ctx, etcdcron.Job{
 			Name:    "every-10s-bnsf45354wbdsnd",
@@ -91,9 +92,10 @@ func main() {
 			Payload: &anypb.Any{Value: []byte("ev 10s")},
 		})
 		cron.AddJob(ctx, etcdcron.Job{
-			Name:    "every-3s-mdhgm764324rqdg",
-			Rhythm:  "*/3 * * * * *",
-			Payload: &anypb.Any{Value: []byte("ev 3s")},
+			Name:      "every-3s-mdhgm764324rqdg",
+			Rhythm:    "@every 3s",
+			StartTime: time.Now().Add(10 * time.Second),
+			Payload:   &anypb.Any{Value: []byte("waits 10s then ev 3s")},
 		})
 		cron.AddJob(ctx, etcdcron.Job{
 			Name:    "every-4s-vdafbrtjnysh245",

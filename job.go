@@ -22,16 +22,19 @@ type Job struct {
 	Metadata map[string]string
 	// The payload containg all the information for the trigger
 	Payload *anypb.Any
+	// Optional start time for the first trigger of the schedule
+	StartTime time.Time
 	// Optional number of seconds until this job expires (if > 0)
 	TTL time.Duration
 }
 
 func (j *Job) toJobRecord() (*storage.JobRecord, storage.JobRecordOptions) {
 	return &storage.JobRecord{
-			Name:     j.Name,
-			Rhythm:   j.Rhythm,
-			Metadata: j.Metadata,
-			Payload:  j.Payload,
+			Name:           j.Name,
+			Rhythm:         j.Rhythm,
+			Metadata:       j.Metadata,
+			Payload:        j.Payload,
+			StartTimestamp: j.StartTime.Unix(),
 		}, storage.JobRecordOptions{
 			TTL: j.TTL,
 		}
@@ -43,9 +46,10 @@ func jobFromJobRecord(r *storage.JobRecord) *Job {
 	}
 
 	return &Job{
-		Name:     r.Name,
-		Rhythm:   r.Rhythm,
-		Metadata: r.Metadata,
-		Payload:  r.Payload,
+		Name:      r.Name,
+		Rhythm:    r.Rhythm,
+		Metadata:  r.Metadata,
+		Payload:   r.Payload,
+		StartTime: time.Unix(r.StartTimestamp, 0),
 	}
 }

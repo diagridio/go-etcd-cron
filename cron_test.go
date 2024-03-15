@@ -110,6 +110,55 @@ func TestAddBeforeRunning(t *testing.T) {
 	}
 }
 
+// Add jobs with delayed start.
+func TestDelayedStart(t *testing.T) {
+	calledCount1 := atomic.Int32{}
+	calledCount2 := atomic.Int32{}
+
+	cron, err := New(
+		WithNamespace(randomNamespace()),
+		WithTriggerFunc(func(ctx context.Context, m map[string]string, p *anypb.Any) error {
+			if m["id"] == "one" {
+				calledCount1.Add(1)
+			}
+			if m["id"] == "two" {
+				calledCount2.Add(1)
+			}
+			return nil
+		}))
+	if err != nil {
+		t.Fatal("unexpected error")
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	cron.AddJob(ctx, Job{
+		Name:      "test-delayed-start-1",
+		Rhythm:    "* * * * * *",
+		Metadata:  singleMetadata("id", "one"),
+		StartTime: time.Now().Add(5 * time.Second),
+	})
+	cron.AddJob(ctx, Job{
+		Name:      "test-delayed-start-2",
+		Rhythm:    "@every 1s",
+		Metadata:  singleMetadata("id", "two"),
+		StartTime: time.Now().Add(5 * time.Second),
+	})
+	cron.Start(ctx)
+	defer func() {
+		cancel()
+		cron.Wait()
+	}()
+
+	time.Sleep(4 * time.Second)
+	assert.Equal(t, int32(0), calledCount1.Load())
+	assert.Equal(t, int32(0), calledCount2.Load())
+
+	time.Sleep(5 * time.Second)
+	count1 := calledCount1.Load()
+	count2 := calledCount2.Load()
+	assert.True(t, (count1 == 4) || (count1 == 5), "count1 was: %d", count1)
+	assert.True(t, (count2 == 4) || (count2 == 5), "count2 was: %d", count2)
+}
+
 // Start cron, add a job, expect it runs.
 func TestAddWhileRunning(t *testing.T) {
 	wg := &sync.WaitGroup{}

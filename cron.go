@@ -73,6 +73,17 @@ type Entry struct {
 	distMutexPrefix string
 }
 
+func (e *Entry) tick(now time.Time) {
+	e.Prev = e.Next
+
+	if e.Job.StartTime.After(now) {
+		e.Next = e.Job.StartTime
+		return
+	}
+
+	e.Next = e.Schedule.Next(e.Job.StartTime, now)
+}
+
 // byTime is a wrapper for sorting the entry array by time
 // (with zero time at the end).
 type byTime []*Entry
@@ -261,7 +272,6 @@ func (c *Cron) schedule(schedule rhythm.Schedule, job *Job) error {
 	entry := &Entry{
 		Schedule:        schedule,
 		Job:             *job,
-		Prev:            time.Unix(0, 0),
 		distMutexPrefix: c.organizer.TicksPath(partitionId) + "/",
 	}
 
@@ -335,7 +345,7 @@ func (c *Cron) run(ctx context.Context) {
 	for _, op := range c.pendingOperations {
 		newEntry := op(ctx)
 		if newEntry != nil {
-			newEntry.Next = newEntry.Schedule.Next(now)
+			newEntry.tick(now)
 		}
 	}
 	for _, e := range c.entries {
@@ -362,7 +372,7 @@ func (c *Cron) run(ctx context.Context) {
 			c.entriesMutex.Lock()
 			newEntry := op(ctx)
 			if newEntry != nil {
-				newEntry.Next = newEntry.Schedule.Next(now)
+				newEntry.tick(now)
 			}
 			entries = []*Entry{}
 			for _, e := range c.entries {
@@ -377,7 +387,7 @@ func (c *Cron) run(ctx context.Context) {
 					break
 				}
 				e.Prev = e.Next
-				e.Next = e.Schedule.Next(effective)
+				e.tick(effective)
 
 				go func(ctx context.Context, e *Entry) {
 					if c.funcCtx != nil {
