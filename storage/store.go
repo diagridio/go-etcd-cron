@@ -11,6 +11,7 @@ import (
 	"log"
 	"path/filepath"
 	"sync"
+	"time"
 
 	"github.com/pkg/errors"
 	"go.etcd.io/etcd/api/v3/mvccpb"
@@ -31,7 +32,7 @@ type JobStore interface {
 
 // Optional params to store a job
 type JobRecordOptions struct {
-	TTL int64
+	TTL time.Duration
 }
 
 type etcdStore struct {
@@ -91,7 +92,7 @@ func (s *etcdStore) Put(ctx context.Context, job *JobRecord, options JobRecordOp
 	opts := []etcdclient.OpOption{}
 	if options.TTL > 0 {
 		// Create a lease
-		lease, err := s.etcdClient.Grant(ctx, options.TTL)
+		lease, err := s.etcdClient.Grant(ctx, int64(options.TTL.Seconds()))
 		if err != nil {
 			return errors.Errorf("failed to create lease to save job %s: %v", job.Name, err)
 		}

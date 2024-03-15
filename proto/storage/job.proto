@@ -16,6 +16,6 @@ option go_package = "github.com/diagridio/go-etcd-cron/storage;storage";
 message JobRecord {
   string name = 1;
   string rhythm = 2;
-  string type = 3;
+  map<string, string> metadata = 3;
   google.protobuf.Any payload = 4;
 }

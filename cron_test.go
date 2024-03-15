@@ -47,7 +47,7 @@ func TestStopCausesJobsToNotRun(t *testing.T) {
 
 	cron, err := New(
 		WithNamespace(randomNamespace()),
-		WithTriggerFunc(func(ctx context.Context, s string, p *anypb.Any) error {
+		WithTriggerFunc(func(ctx context.Context, m map[string]string, p *anypb.Any) error {
 			wg.Done()
 			return nil
 		}))
@@ -79,7 +79,7 @@ func TestAddBeforeRunning(t *testing.T) {
 
 	cron, err := New(
 		WithNamespace(randomNamespace()),
-		WithTriggerFunc(func(ctx context.Context, s string, p *anypb.Any) error {
+		WithTriggerFunc(func(ctx context.Context, m map[string]string, p *anypb.Any) error {
 			if calledAlready {
 				return nil
 			}
@@ -117,7 +117,7 @@ func TestAddWhileRunning(t *testing.T) {
 
 	cron, err := New(
 		WithNamespace(randomNamespace()),
-		WithTriggerFunc(func(ctx context.Context, s string, p *anypb.Any) error {
+		WithTriggerFunc(func(ctx context.Context, m map[string]string, p *anypb.Any) error {
 			wg.Done()
 			return nil
 		}))
@@ -150,7 +150,7 @@ func TestSnapshotEntries(t *testing.T) {
 
 	cron, err := New(
 		WithNamespace(randomNamespace()),
-		WithTriggerFunc(func(ctx context.Context, s string, p *anypb.Any) error {
+		WithTriggerFunc(func(ctx context.Context, m map[string]string, p *anypb.Any) error {
 			wg.Done()
 			return nil
 		}))
@@ -190,8 +190,8 @@ func TestDelayedAdd(t *testing.T) {
 
 	cron, err := New(
 		WithNamespace(randomNamespace()),
-		WithTriggerFunc(func(ctx context.Context, s string, p *anypb.Any) error {
-			if s == "noop" {
+		WithTriggerFunc(func(ctx context.Context, m map[string]string, p *anypb.Any) error {
+			if m["op"] == "noop" {
 				return nil
 			}
 			if called {
@@ -207,9 +207,9 @@ func TestDelayedAdd(t *testing.T) {
 
 	ctx, cancel := context.WithCancel(context.Background())
 	cron.AddJob(ctx, Job{
-		Name:   "test-noop",
-		Rhythm: "@every 1s",
-		Type:   "noop",
+		Name:     "test-noop",
+		Rhythm:   "@every 1s",
+		Metadata: singleMetadata("op", "noop"),
 	})
 
 	cron.Start(ctx)
@@ -244,8 +244,8 @@ func TestMultipleEntries(t *testing.T) {
 
 	cron, err := New(
 		WithNamespace(randomNamespace()),
-		WithTriggerFunc(func(ctx context.Context, s string, p *anypb.Any) error {
-			if s == "return-nil" {
+		WithTriggerFunc(func(ctx context.Context, m map[string]string, p *anypb.Any) error {
+			if m["op"] == "return-nil" {
 				return nil
 			}
 
@@ -257,18 +257,18 @@ func TestMultipleEntries(t *testing.T) {
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	cron.AddJob(ctx, Job{
-		Name:   "test-multiple-1",
-		Rhythm: "0 0 0 1 1 ?",
-		Type:   "return-nil",
+		Name:     "test-multiple-1",
+		Rhythm:   "0 0 0 1 1 ?",
+		Metadata: singleMetadata("op", "return-nil"),
 	})
 	cron.AddJob(ctx, Job{
 		Name:   "test-multiple-2",
 		Rhythm: "* * * * * ?",
 	})
 	cron.AddJob(ctx, Job{
-		Name:   "test-multiple-3",
-		Rhythm: "0 0 0 31 12 ?",
-		Type:   "return-nil",
+		Name:     "test-multiple-3",
+		Rhythm:   "0 0 0 31 12 ?",
+		Metadata: singleMetadata("op", "return-nil"),
 	})
 	cron.AddJob(ctx, Job{
 		Name:   "test-multiple-4",
@@ -295,8 +295,8 @@ func TestRunningJobTwice(t *testing.T) {
 
 	cron, err := New(
 		WithNamespace(randomNamespace()),
-		WithTriggerFunc(func(ctx context.Context, s string, p *anypb.Any) error {
-			if s == "return-nil" {
+		WithTriggerFunc(func(ctx context.Context, m map[string]string, p *anypb.Any) error {
+			if m["op"] == "return-nil" {
 				return nil
 			}
 
@@ -308,14 +308,14 @@ func TestRunningJobTwice(t *testing.T) {
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	cron.AddJob(ctx, Job{
-		Name:   "test-twice-1",
-		Rhythm: "0 0 0 1 1 ?",
-		Type:   "return-nil",
+		Name:     "test-twice-1",
+		Rhythm:   "0 0 0 1 1 ?",
+		Metadata: singleMetadata("op", "return-nil"),
 	})
 	cron.AddJob(ctx, Job{
-		Name:   "test-twice-2",
-		Rhythm: "0 0 0 31 12 ?",
-		Type:   "return-nil",
+		Name:     "test-twice-2",
+		Rhythm:   "0 0 0 31 12 ?",
+		Metadata: singleMetadata("op", "return-nil"),
 	})
 	cron.AddJob(ctx, Job{
 		Name:   "test-twice-3",
@@ -341,8 +341,8 @@ func TestRunningMultipleSchedules(t *testing.T) {
 
 	cron, err := New(
 		WithNamespace(randomNamespace()),
-		WithTriggerFunc(func(ctx context.Context, s string, p *anypb.Any) error {
-			if s == "return-nil" {
+		WithTriggerFunc(func(ctx context.Context, m map[string]string, p *anypb.Any) error {
+			if m["op"] == "return-nil" {
 				return nil
 			}
 
@@ -355,22 +355,22 @@ func TestRunningMultipleSchedules(t *testing.T) {
 
 	ctx, cancel := context.WithCancel(context.Background())
 	cron.AddJob(ctx, Job{
-		Name:   "test-mschedule-1",
-		Rhythm: "0 0 0 1 1 ?",
-		Type:   "return-nil",
+		Name:     "test-mschedule-1",
+		Rhythm:   "0 0 0 1 1 ?",
+		Metadata: singleMetadata("op", "return-nil"),
 	})
 	cron.AddJob(ctx, Job{
-		Name:   "test-mschedule-2",
-		Rhythm: "0 0 0 31 12 ?",
-		Type:   "return-nil",
+		Name:     "test-mschedule-2",
+		Rhythm:   "0 0 0 31 12 ?",
+		Metadata: singleMetadata("op", "return-nil"),
 	})
 	cron.AddJob(ctx, Job{
 		Name:   "test-mschedule-3",
 		Rhythm: "* * * * * ?",
 	})
-	cron.schedule(rhythm.Every(time.Minute), &Job{Name: "test-mschedule-4", Type: "return-nil"})
+	cron.schedule(rhythm.Every(time.Minute), &Job{Name: "test-mschedule-4", Metadata: singleMetadata("op", "return-nil")})
 	cron.schedule(rhythm.Every(time.Second), &Job{Name: "test-mschedule-5"})
-	cron.schedule(rhythm.Every(time.Hour), &Job{Name: "test-mschedule-6", Type: "return-nil"})
+	cron.schedule(rhythm.Every(time.Hour), &Job{Name: "test-mschedule-6", Metadata: singleMetadata("op", "return-nil")})
 
 	cron.Start(ctx)
 	defer func() {
@@ -397,7 +397,7 @@ func TestLocalTimezone(t *testing.T) {
 
 	cron, err := New(
 		WithNamespace(randomNamespace()),
-		WithTriggerFunc(func(ctx context.Context, s string, p *anypb.Any) error {
+		WithTriggerFunc(func(ctx context.Context, m map[string]string, p *anypb.Any) error {
 			if called.Add(1) > 1 {
 				return nil
 			}
@@ -434,7 +434,7 @@ func TestJob(t *testing.T) {
 
 	cron, err := New(
 		WithNamespace(randomNamespace()),
-		WithTriggerFunc(func(ctx context.Context, s string, p *anypb.Any) error {
+		WithTriggerFunc(func(ctx context.Context, m map[string]string, p *anypb.Any) error {
 			if calledAlready {
 				return nil
 			}
@@ -506,7 +506,7 @@ func TestCron_Parallel(t *testing.T) {
 
 	cron1, err := New(
 		WithNamespace(randomNamespace()),
-		WithTriggerFunc(func(ctx context.Context, s string, p *anypb.Any) error {
+		WithTriggerFunc(func(ctx context.Context, m map[string]string, p *anypb.Any) error {
 			wg.Done()
 			return nil
 		}))
@@ -521,7 +521,7 @@ func TestCron_Parallel(t *testing.T) {
 
 	cron2, err := New(
 		WithNamespace(randomNamespace()),
-		WithTriggerFunc(func(ctx context.Context, s string, p *anypb.Any) error {
+		WithTriggerFunc(func(ctx context.Context, m map[string]string, p *anypb.Any) error {
 			wg.Done()
 			return nil
 		}))
@@ -560,7 +560,7 @@ func TestTTL(t *testing.T) {
 
 	cron, err := New(
 		WithNamespace(randomNamespace()),
-		WithTriggerFunc(func(ctx context.Context, s string, p *anypb.Any) error {
+		WithTriggerFunc(func(ctx context.Context, m map[string]string, p *anypb.Any) error {
 			firedOnce.Store(true)
 			wg.Done()
 			return nil
@@ -612,4 +612,10 @@ func stop(cron *Cron, cancel context.CancelFunc) chan bool {
 
 func randomNamespace() string {
 	return uuid.New().String()
+}
+
+func singleMetadata(key, value string) map[string]string {
+	m := map[string]string{}
+	m[key] = value
+	return m
 }

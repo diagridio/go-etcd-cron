@@ -15,25 +15,21 @@ them in their own goroutines.
 	c.AddJob(ctx, etcdcron.Job{
 		Name:    "job-100",
 		Rhythm:  "*\/2 * * * * *",
-		Type:    "stdout",
 		Payload: &anypb.Any{Value: []byte("Hello every 2s")},
 	})
 	c.AddJob(ctx, etcdcron.Job{
 		Name:    "job-101",
 		Rhythm:  "0 30 * * * *",
-		Type:    "stdout",
 		Payload: &anypb.Any{Value: []byte("Every hour on the half hour")},
 	})
 	c.AddJob(ctx, etcdcron.Job{
 		Name:    "job-102",
 		Rhythm:  "@hourly",
-		Type:    "stdout",
 		Payload: &anypb.Any{Value: []byte("Every hour")},
 	})
 	c.AddJob(ctx, etcdcron.Job{
 		Name:    "job-103",
 		Rhythm:  "@every 1h30m",
-		Type:    "stdout",
 		Payload: &anypb.Any{Value: []byte("Every hour thirty")},
 	})
 
@@ -46,7 +42,6 @@ them in their own goroutines.
 	c.AddJob(ctx, etcdcron.Job{
 		Name:    "job-103",
 		Rhythm:  "@daily",
-		Type:    "stdout",
 		Payload: &anypb.Any{Value: []byte("Every day")},
 	})
 	..

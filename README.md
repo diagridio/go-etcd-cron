@@ -41,7 +41,9 @@ cron, _ := etcdcron.New(
 cron.AddJob(Job{
   Name: "job0",
   Rhythm: "*/2 * * * * *",
-  Type: "my-job-type",
+  Metadata: map[string]string{
+    "type", "my-job-type"
+  },
 	Payload: &anypb.Any{Value: []byte("hello every 2s")},
 })
 ```
@@ -69,7 +71,6 @@ cron, _ := etcdcron.New(
 cron.AddJob(context.TODO(), Job{
   Name: "job0",
   Rhythm: "*/2 * * * * *",
-  Type: "my-job-type",
 	Payload: &anypb.Any{Value: []byte("hello every 2s")},
 })
 ```

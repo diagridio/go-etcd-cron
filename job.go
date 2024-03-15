@@ -6,6 +6,8 @@ Licensed under the MIT License.
 package etcdcron
 
 import (
+	"time"
+
 	"github.com/diagridio/go-etcd-cron/storage"
 	anypb "google.golang.org/protobuf/types/known/anypb"
 )
@@ -16,30 +18,20 @@ type Job struct {
 	Name string
 	// Cron-formatted rhythm (ie. 0,10,30 1-5 0 * * *)
 	Rhythm string
-	// The type of trigger that client undertsands
-	Type string
+	// Any metadata that the client understands.
+	Metadata map[string]string
 	// The payload containg all the information for the trigger
 	Payload *anypb.Any
 	// Optional number of seconds until this job expires (if > 0)
-	TTL int64
-}
-
-func (j *Job) clone() *Job {
-	return &Job{
-		Name:    j.Name,
-		Rhythm:  j.Rhythm,
-		Type:    j.Type,
-		Payload: j.Payload,
-		TTL:     j.TTL,
-	}
+	TTL time.Duration
 }
 
 func (j *Job) toJobRecord() (*storage.JobRecord, storage.JobRecordOptions) {
 	return &storage.JobRecord{
-			Name:    j.Name,
-			Rhythm:  j.Rhythm,
-			Type:    j.Type,
-			Payload: j.Payload,
+			Name:     j.Name,
+			Rhythm:   j.Rhythm,
+			Metadata: j.Metadata,
+			Payload:  j.Payload,
 		}, storage.JobRecordOptions{
 			TTL: j.TTL,
 		}
@@ -51,9 +43,9 @@ func jobFromJobRecord(r *storage.JobRecord) *Job {
 	}
 
 	return &Job{
-		Name:    r.Name,
-		Rhythm:  r.Rhythm,
-		Type:    r.Type,
-		Payload: r.Payload,
+		Name:     r.Name,
+		Rhythm:   r.Rhythm,
+		Metadata: r.Metadata,
+		Payload:  r.Payload,
 	}
 }
