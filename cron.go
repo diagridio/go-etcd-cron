@@ -18,6 +18,7 @@ import (
 	anypb "google.golang.org/protobuf/types/known/anypb"
 
 	"github.com/diagridio/go-etcd-cron/collector"
+	"github.com/diagridio/go-etcd-cron/counting"
 	"github.com/diagridio/go-etcd-cron/locking"
 	"github.com/diagridio/go-etcd-cron/partitioning"
 	"github.com/diagridio/go-etcd-cron/rhythm"
@@ -71,17 +72,21 @@ type Entry struct {
 
 	// Prefix for the ticker mutex
 	distMutexPrefix string
+
+	// Counter if has limit on number of triggers
+	counter counting.Counter
 }
 
 func (e *Entry) tick(now time.Time) {
 	e.Prev = e.Next
+	start := e.Job.StartTime.Truncate(time.Second)
 
-	if e.Job.StartTime.After(now) {
-		e.Next = e.Job.StartTime
+	if start.After(now) {
+		e.Next = start
 		return
 	}
 
-	e.Next = e.Schedule.Next(e.Job.StartTime, now)
+	e.Next = e.Schedule.Next(start, now)
 }
 
 // byTime is a wrapper for sorting the entry array by time
@@ -269,10 +274,19 @@ func (c *Cron) schedule(schedule rhythm.Schedule, job *Job) error {
 		return fmt.Errorf("host does not own partition %d", partitionId)
 	}
 
+	var counter counting.Counter
+	if job.Repeats > 0 {
+		counterKey := c.organizer.CounterPath(partitionId, job.Name)
+		// Needs to count the number of invocations
+		// TODO(artursouza): get ttl param for counter instead of hardcode it.
+		counter = counting.NewEtcdCounter(c.etcdclient, counterKey, 48*time.Hour)
+	}
+
 	entry := &Entry{
 		Schedule:        schedule,
 		Job:             *job,
 		distMutexPrefix: c.organizer.TicksPath(partitionId) + "/",
+		counter:         counter,
 	}
 
 	c.appendOperation(func(ctx context.Context) *Entry {
@@ -389,7 +403,7 @@ func (c *Cron) run(ctx context.Context) {
 				e.Prev = e.Next
 				e.tick(effective)
 
-				go func(ctx context.Context, e *Entry) {
+				go func(ctx context.Context, e *Entry, next time.Time) {
 					if c.funcCtx != nil {
 						ctx = c.funcCtx(ctx, e.Job)
 					}
@@ -421,10 +435,29 @@ func (c *Cron) run(ctx context.Context) {
 						go c.errorsHandler(ctx, e.Job, err)
 						return
 					}
+
+					if e.counter != nil {
+						// Needs to check number of triggers
+						count, updated, err := e.counter.Add(ctx, 1, next)
+						if err != nil {
+							go c.errorsHandler(ctx, e.Job, err)
+							// No need to abort if updating the count failed.
+							// The count solution is not transactional anyway.
+						}
+
+						if updated {
+							if count >= int(e.Job.Repeats) {
+								err = c.DeleteJob(ctx, e.Job.Name)
+								if err != nil {
+									go c.errorsHandler(ctx, e.Job, err)
+								}
+							}
+						}
+					}
 					// Cannot unlock because it can open a chance for double trigger since two instances
 					// can have a clock skew and compete for the lock at slight different windows.
 					// So, we keep the lock during its ttl
-				}(ctx, e)
+				}(ctx, e, e.Next)
 			}
 			continue
 

@@ -17,6 +17,7 @@ message JobRecord {
   string name = 1;
   string rhythm = 2;
   int64 startTimestamp = 3;  // time that the schedule starts
-  map<string, string> metadata = 4;
-  google.protobuf.Any payload = 5;
+  int32 repeats = 4;  // time total time the job should trigger
+  map<string, string> metadata = 5;
+  google.protobuf.Any payload = 6;
 }

@@ -100,7 +100,8 @@ func main() {
 		cron.AddJob(ctx, etcdcron.Job{
 			Name:    "every-4s-vdafbrtjnysh245",
 			Rhythm:  "*/4 * * * * *",
-			Payload: &anypb.Any{Value: []byte("ev 4s")},
+			Repeats: 3, // Only triggers 3 times
+			Payload: &anypb.Any{Value: []byte("ev 4s 3 times only")},
 		})
 		cron.AddJob(ctx, etcdcron.Job{
 			Name:    "every-5s-adjbg43q5rbafbr44",

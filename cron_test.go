@@ -159,6 +159,36 @@ func TestDelayedStart(t *testing.T) {
 	assert.True(t, (count2 == 4) || (count2 == 5), "count2 was: %d", count2)
 }
 
+// Job with repeat limit.
+func TestRepeatLimit(t *testing.T) {
+	calledCount := atomic.Int32{}
+
+	cron, err := New(
+		WithNamespace(randomNamespace()),
+		WithTriggerFunc(func(ctx context.Context, m map[string]string, p *anypb.Any) error {
+			calledCount.Add(1)
+			return nil
+		}))
+	if err != nil {
+		t.Fatal("unexpected error")
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	cron.AddJob(ctx, Job{
+		Name:    "test-repeat-limit",
+		Rhythm:  "* * * * * *",
+		Repeats: 3,
+	})
+	cron.Start(ctx)
+	defer func() {
+		cancel()
+		cron.Wait()
+	}()
+
+	time.Sleep(5 * time.Second)
+	assert.Equal(t, int32(3), calledCount.Load())
+	assert.Nil(t, cron.GetJob("test-repeat-limit"))
+}
+
 // Start cron, add a job, expect it runs.
 func TestAddWhileRunning(t *testing.T) {
 	wg := &sync.WaitGroup{}

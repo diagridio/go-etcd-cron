@@ -18,10 +18,12 @@ type Job struct {
 	Name string
 	// Cron-formatted rhythm (ie. 0,10,30 1-5 0 * * *)
 	Rhythm string
-	// Any metadata that the client understands.
+	// Optional metadata that the client understands.
 	Metadata map[string]string
-	// The payload containg all the information for the trigger
+	// Optional payload containg all the information for the trigger
 	Payload *anypb.Any
+	// Optional start time for the first trigger of the schedule
+	Repeats int32
 	// Optional start time for the first trigger of the schedule
 	StartTime time.Time
 	// Optional number of seconds until this job expires (if > 0)
@@ -34,6 +36,7 @@ func (j *Job) toJobRecord() (*storage.JobRecord, storage.JobRecordOptions) {
 			Rhythm:         j.Rhythm,
 			Metadata:       j.Metadata,
 			Payload:        j.Payload,
+			Repeats:        j.Repeats,
 			StartTimestamp: j.StartTime.Unix(),
 		}, storage.JobRecordOptions{
 			TTL: j.TTL,
@@ -50,6 +53,7 @@ func jobFromJobRecord(r *storage.JobRecord) *Job {
 		Rhythm:    r.Rhythm,
 		Metadata:  r.Metadata,
 		Payload:   r.Payload,
+		Repeats:   r.Repeats,
 		StartTime: time.Unix(r.StartTimestamp, 0),
 	}
 }
