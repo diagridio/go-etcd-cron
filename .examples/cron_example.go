@@ -9,6 +9,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"math/rand"
 	"os"
 	"os/signal"
 	"strconv"
@@ -48,9 +49,18 @@ func main() {
 	cron, err := etcdcron.New(
 		etcdcron.WithNamespace(namespace),
 		etcdcron.WithPartitioning(p),
-		etcdcron.WithTriggerFunc(func(ctx context.Context, metadata map[string]string, payload *anypb.Any) error {
+		etcdcron.WithTriggerFunc(func(ctx context.Context, metadata map[string]string, payload *anypb.Any) (etcdcron.TriggerResult, error) {
+			if metadata["failure"] == "yes" {
+				// Failure does not trigger the errorsHandler() callback. It just skips the counter update.
+				return etcdcron.Failure, nil
+			}
+			if metadata["stop"] == "random" {
+				if rand.Int()%3 == 0 {
+					return etcdcron.Delete, nil
+				}
+			}
 			log.Printf("Trigger from pid %d: %s\n", os.Getpid(), string(payload.Value))
-			return nil
+			return etcdcron.OK, nil
 		}),
 	)
 	if err != nil {
@@ -102,6 +112,19 @@ func main() {
 			Rhythm:  "*/4 * * * * *",
 			Repeats: 3, // Only triggers 3 times
 			Payload: &anypb.Any{Value: []byte("ev 4s 3 times only")},
+		})
+		cron.AddJob(ctx, etcdcron.Job{
+			Name:     "every-4s-nmdjfgx35u7jfsgjgsf",
+			Rhythm:   "*/4 * * * * *",
+			Repeats:  3, // Only triggers 3 times
+			Metadata: map[string]string{"failure": "yes"},
+			Payload:  &anypb.Any{Value: []byte("ev 4s never expires because it returns a failure condition")},
+		})
+		cron.AddJob(ctx, etcdcron.Job{
+			Name:     "every-1s-agdg42y645ydfdha",
+			Rhythm:   "@every 1s",
+			Metadata: map[string]string{"stop": "random"},
+			Payload:  &anypb.Any{Value: []byte("ev 1s with random stop")},
 		})
 		cron.AddJob(ctx, etcdcron.Job{
 			Name:    "every-5s-adjbg43q5rbafbr44",

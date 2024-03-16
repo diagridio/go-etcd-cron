@@ -44,7 +44,7 @@ type Cron struct {
 	etcdErrorsHandler      func(context.Context, Job, error)
 	errorsHandler          func(context.Context, Job, error)
 	funcCtx                func(context.Context, Job) context.Context
-	triggerFunc            func(context.Context, map[string]string, *anypb.Any) error
+	triggerFunc            TriggerFunction
 	running                bool
 	runWaitingGroup        sync.WaitGroup
 	etcdclient             *etcdclient.Client
@@ -53,6 +53,16 @@ type Cron struct {
 	partitioning           partitioning.Partitioner
 	collector              collector.Collector
 }
+
+type TriggerFunction func(ctx context.Context, metadata map[string]string, payload *anypb.Any) (TriggerResult, error)
+
+type TriggerResult int
+
+const (
+	OK TriggerResult = iota
+	Failure
+	Delete
+)
 
 // Entry consists of a schedule and the func to execute on that schedule.
 type Entry struct {
@@ -140,7 +150,7 @@ func WithFuncCtx(f func(context.Context, Job) context.Context) CronOpt {
 	})
 }
 
-func WithTriggerFunc(f func(context.Context, map[string]string, *anypb.Any) error) CronOpt {
+func WithTriggerFunc(f TriggerFunction) CronOpt {
 	return CronOpt(func(cron *Cron) {
 		cron.triggerFunc = f
 	})
@@ -430,15 +440,34 @@ func (c *Cron) run(ctx context.Context) {
 						return
 					}
 
-					err = c.triggerFunc(ctx, e.Job.Metadata, e.Job.Payload)
+					result, err := c.triggerFunc(ctx, e.Job.Metadata, e.Job.Payload)
 					if err != nil {
 						go c.errorsHandler(ctx, e.Job, err)
 						return
 					}
 
+					if result == Delete {
+						// Job must be deleted.
+						// This is handy if client wants to have a custom logic to decide if job is over.
+						// One example, is having a more efficient way to count number of invocations.
+						err = c.DeleteJob(ctx, e.Job.Name)
+						if err != nil {
+							go c.errorsHandler(ctx, e.Job, err)
+						}
+
+						// No need to check (and delete) a counter since every counter has a TTL.
+						return
+					}
+
+					increment := 1
+					if result == Failure {
+						// Does not increment counter, but refreshes the TTL.
+						increment = 0
+					}
+
 					if e.counter != nil {
 						// Needs to check number of triggers
-						count, updated, err := e.counter.Add(ctx, 1, next)
+						count, updated, err := e.counter.Add(ctx, increment, next)
 						if err != nil {
 							go c.errorsHandler(ctx, e.Job, err)
 							// No need to abort if updating the count failed.

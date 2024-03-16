@@ -22,7 +22,7 @@ import (
 // Many tests schedule a job for every second, and then wait at most a second
 // for it to run.  This amount is just slightly larger than 1 second to
 // compensate for a few milliseconds of runtime.
-const ONE_SECOND = 1*time.Second + 200*time.Millisecond
+const ONE_SECOND_PLUS_SOME = 1*time.Second + 200*time.Millisecond
 
 // Start and stop cron with no entries.
 func TestNoEntries(t *testing.T) {
@@ -34,7 +34,7 @@ func TestNoEntries(t *testing.T) {
 	cron.Start(ctx)
 
 	select {
-	case <-time.After(ONE_SECOND):
+	case <-time.After(ONE_SECOND_PLUS_SOME):
 		t.FailNow()
 	case <-stop(cron, cancel):
 	}
@@ -47,9 +47,9 @@ func TestStopCausesJobsToNotRun(t *testing.T) {
 
 	cron, err := New(
 		WithNamespace(randomNamespace()),
-		WithTriggerFunc(func(ctx context.Context, m map[string]string, p *anypb.Any) error {
+		WithTriggerFunc(func(ctx context.Context, m map[string]string, p *anypb.Any) (TriggerResult, error) {
 			wg.Done()
-			return nil
+			return OK, nil
 		}))
 	if err != nil {
 		t.Fatal("unexpected error")
@@ -64,7 +64,7 @@ func TestStopCausesJobsToNotRun(t *testing.T) {
 	})
 
 	select {
-	case <-time.After(ONE_SECOND):
+	case <-time.After(ONE_SECOND_PLUS_SOME):
 		// No job ran!
 	case <-wait(wg):
 		t.FailNow()
@@ -79,14 +79,14 @@ func TestAddBeforeRunning(t *testing.T) {
 
 	cron, err := New(
 		WithNamespace(randomNamespace()),
-		WithTriggerFunc(func(ctx context.Context, m map[string]string, p *anypb.Any) error {
+		WithTriggerFunc(func(ctx context.Context, m map[string]string, p *anypb.Any) (TriggerResult, error) {
 			if calledAlready {
-				return nil
+				return OK, nil
 			}
 
 			calledAlready = true
 			wg.Done()
-			return nil
+			return OK, nil
 		}))
 	if err != nil {
 		t.Fatal("unexpected error")
@@ -104,7 +104,7 @@ func TestAddBeforeRunning(t *testing.T) {
 
 	// Give cron 2 seconds to run our job (which is always activated).
 	select {
-	case <-time.After(2 * ONE_SECOND):
+	case <-time.After(2 * ONE_SECOND_PLUS_SOME):
 		t.FailNow()
 	case <-wait(wg):
 	}
@@ -117,14 +117,14 @@ func TestDelayedStart(t *testing.T) {
 
 	cron, err := New(
 		WithNamespace(randomNamespace()),
-		WithTriggerFunc(func(ctx context.Context, m map[string]string, p *anypb.Any) error {
+		WithTriggerFunc(func(ctx context.Context, m map[string]string, p *anypb.Any) (TriggerResult, error) {
 			if m["id"] == "one" {
 				calledCount1.Add(1)
 			}
 			if m["id"] == "two" {
 				calledCount2.Add(1)
 			}
-			return nil
+			return OK, nil
 		}))
 	if err != nil {
 		t.Fatal("unexpected error")
@@ -165,9 +165,9 @@ func TestRepeatLimit(t *testing.T) {
 
 	cron, err := New(
 		WithNamespace(randomNamespace()),
-		WithTriggerFunc(func(ctx context.Context, m map[string]string, p *anypb.Any) error {
+		WithTriggerFunc(func(ctx context.Context, m map[string]string, p *anypb.Any) (TriggerResult, error) {
 			calledCount.Add(1)
-			return nil
+			return OK, nil
 		}))
 	if err != nil {
 		t.Fatal("unexpected error")
@@ -189,6 +189,69 @@ func TestRepeatLimit(t *testing.T) {
 	assert.Nil(t, cron.GetJob("test-repeat-limit"))
 }
 
+// Job with failure never increments the counter.
+func TestFailureDoesNotIncrementCounter(t *testing.T) {
+	calledCount := atomic.Int32{}
+
+	cron, err := New(
+		WithNamespace(randomNamespace()),
+		WithTriggerFunc(func(ctx context.Context, m map[string]string, p *anypb.Any) (TriggerResult, error) {
+			calledCount.Add(1)
+			return Failure, nil
+		}))
+	if err != nil {
+		t.Fatal("unexpected error")
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	cron.AddJob(ctx, Job{
+		Name:    "test-failure-does-not-count",
+		Rhythm:  "* * * * * *",
+		Repeats: 2,
+	})
+	cron.Start(ctx)
+	defer func() {
+		cancel()
+		cron.Wait()
+	}()
+
+	time.Sleep(3 * ONE_SECOND_PLUS_SOME)
+	assert.Equal(t, int32(3), calledCount.Load())
+	assert.NotNil(t, cron.GetJob("test-failure-does-not-count"))
+}
+
+// Job with custom limit.
+func TestCustomLimit(t *testing.T) {
+	calledCount := atomic.Int32{}
+	maxCount := int32(2)
+
+	cron, err := New(
+		WithNamespace(randomNamespace()),
+		WithTriggerFunc(func(ctx context.Context, m map[string]string, p *anypb.Any) (TriggerResult, error) {
+			calledCount.Add(1)
+			if calledCount.Load() == maxCount {
+				return Delete, nil
+			}
+			return OK, nil
+		}))
+	if err != nil {
+		t.Fatal("unexpected error")
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	cron.AddJob(ctx, Job{
+		Name:   "test-custom-limit",
+		Rhythm: "* * * * * *",
+	})
+	cron.Start(ctx)
+	defer func() {
+		cancel()
+		cron.Wait()
+	}()
+
+	time.Sleep(2 * ONE_SECOND_PLUS_SOME)
+	assert.Equal(t, maxCount, calledCount.Load())
+	assert.Nil(t, cron.GetJob("test-repeat-limit"))
+}
+
 // Start cron, add a job, expect it runs.
 func TestAddWhileRunning(t *testing.T) {
 	wg := &sync.WaitGroup{}
@@ -196,9 +259,9 @@ func TestAddWhileRunning(t *testing.T) {
 
 	cron, err := New(
 		WithNamespace(randomNamespace()),
-		WithTriggerFunc(func(ctx context.Context, m map[string]string, p *anypb.Any) error {
+		WithTriggerFunc(func(ctx context.Context, m map[string]string, p *anypb.Any) (TriggerResult, error) {
 			wg.Done()
-			return nil
+			return OK, nil
 		}))
 	if err != nil {
 		t.Fatal("unexpected error")
@@ -216,7 +279,7 @@ func TestAddWhileRunning(t *testing.T) {
 	})
 
 	select {
-	case <-time.After(2 * ONE_SECOND):
+	case <-time.After(2 * ONE_SECOND_PLUS_SOME):
 		t.FailNow()
 	case <-wait(wg):
 	}
@@ -229,9 +292,9 @@ func TestSnapshotEntries(t *testing.T) {
 
 	cron, err := New(
 		WithNamespace(randomNamespace()),
-		WithTriggerFunc(func(ctx context.Context, m map[string]string, p *anypb.Any) error {
+		WithTriggerFunc(func(ctx context.Context, m map[string]string, p *anypb.Any) (TriggerResult, error) {
 			wg.Done()
-			return nil
+			return OK, nil
 		}))
 	if err != nil {
 		t.Fatal("unexpected error")
@@ -249,13 +312,13 @@ func TestSnapshotEntries(t *testing.T) {
 
 	// After 1 second, call Entries.
 	select {
-	case <-time.After(ONE_SECOND):
+	case <-time.After(ONE_SECOND_PLUS_SOME):
 		cron.Entries()
 	}
 
 	// Even though Entries was called, the cron should fire twice within 3 seconds (1 + 3).
 	select {
-	case <-time.After(3 * ONE_SECOND):
+	case <-time.After(3 * ONE_SECOND_PLUS_SOME):
 		t.FailNow()
 	case <-wait(wg):
 	}
@@ -269,16 +332,16 @@ func TestDelayedAdd(t *testing.T) {
 
 	cron, err := New(
 		WithNamespace(randomNamespace()),
-		WithTriggerFunc(func(ctx context.Context, m map[string]string, p *anypb.Any) error {
+		WithTriggerFunc(func(ctx context.Context, m map[string]string, p *anypb.Any) (TriggerResult, error) {
 			if m["op"] == "noop" {
-				return nil
+				return OK, nil
 			}
 			if called {
 				t.Fatal("cannot call twice")
 			}
 			called = true
 			wg.Done()
-			return nil
+			return OK, nil
 		}))
 	if err != nil {
 		t.Fatal("unexpected error")
@@ -307,7 +370,7 @@ func TestDelayedAdd(t *testing.T) {
 
 	// Event should be called only once within 2 seconds.
 	select {
-	case <-time.After(3 * ONE_SECOND):
+	case <-time.After(3 * ONE_SECOND_PLUS_SOME):
 		t.FailNow()
 	case <-wait(wg):
 	}
@@ -323,13 +386,13 @@ func TestMultipleEntries(t *testing.T) {
 
 	cron, err := New(
 		WithNamespace(randomNamespace()),
-		WithTriggerFunc(func(ctx context.Context, m map[string]string, p *anypb.Any) error {
+		WithTriggerFunc(func(ctx context.Context, m map[string]string, p *anypb.Any) (TriggerResult, error) {
 			if m["op"] == "return-nil" {
-				return nil
+				return OK, nil
 			}
 
 			wg.Done()
-			return nil
+			return OK, nil
 		}))
 	if err != nil {
 		t.Fatal("unexpected error")
@@ -361,7 +424,7 @@ func TestMultipleEntries(t *testing.T) {
 	}()
 
 	select {
-	case <-time.After(2 * ONE_SECOND):
+	case <-time.After(2 * ONE_SECOND_PLUS_SOME):
 		t.FailNow()
 	case <-wait(wg):
 	}
@@ -374,13 +437,13 @@ func TestRunningJobTwice(t *testing.T) {
 
 	cron, err := New(
 		WithNamespace(randomNamespace()),
-		WithTriggerFunc(func(ctx context.Context, m map[string]string, p *anypb.Any) error {
+		WithTriggerFunc(func(ctx context.Context, m map[string]string, p *anypb.Any) (TriggerResult, error) {
 			if m["op"] == "return-nil" {
-				return nil
+				return OK, nil
 			}
 
 			wg.Done()
-			return nil
+			return OK, nil
 		}))
 	if err != nil {
 		t.Fatal("unexpected error")
@@ -408,7 +471,7 @@ func TestRunningJobTwice(t *testing.T) {
 	}()
 
 	select {
-	case <-time.After(2 * ONE_SECOND):
+	case <-time.After(2 * ONE_SECOND_PLUS_SOME):
 		t.FailNow()
 	case <-wait(wg):
 	}
@@ -420,13 +483,13 @@ func TestRunningMultipleSchedules(t *testing.T) {
 
 	cron, err := New(
 		WithNamespace(randomNamespace()),
-		WithTriggerFunc(func(ctx context.Context, m map[string]string, p *anypb.Any) error {
+		WithTriggerFunc(func(ctx context.Context, m map[string]string, p *anypb.Any) (TriggerResult, error) {
 			if m["op"] == "return-nil" {
-				return nil
+				return OK, nil
 			}
 
 			wg.Done()
-			return nil
+			return OK, nil
 		}))
 	if err != nil {
 		t.Fatal("unexpected error")
@@ -458,7 +521,7 @@ func TestRunningMultipleSchedules(t *testing.T) {
 	}()
 
 	select {
-	case <-time.After(2 * ONE_SECOND):
+	case <-time.After(2 * ONE_SECOND_PLUS_SOME):
 		t.FailNow()
 	case <-wait(wg):
 	}
@@ -476,12 +539,12 @@ func TestLocalTimezone(t *testing.T) {
 
 	cron, err := New(
 		WithNamespace(randomNamespace()),
-		WithTriggerFunc(func(ctx context.Context, m map[string]string, p *anypb.Any) error {
+		WithTriggerFunc(func(ctx context.Context, m map[string]string, p *anypb.Any) (TriggerResult, error) {
 			if called.Add(1) > 1 {
-				return nil
+				return OK, nil
 			}
 			wg.Done()
-			return nil
+			return OK, nil
 		}))
 	if err != nil {
 		t.Fatal("unexpected error")
@@ -499,7 +562,7 @@ func TestLocalTimezone(t *testing.T) {
 	}()
 
 	select {
-	case <-time.After(3 * ONE_SECOND):
+	case <-time.After(3 * ONE_SECOND_PLUS_SOME):
 		t.FailNow()
 	case <-wait(wg):
 	}
@@ -513,13 +576,13 @@ func TestJob(t *testing.T) {
 
 	cron, err := New(
 		WithNamespace(randomNamespace()),
-		WithTriggerFunc(func(ctx context.Context, m map[string]string, p *anypb.Any) error {
+		WithTriggerFunc(func(ctx context.Context, m map[string]string, p *anypb.Any) (TriggerResult, error) {
 			if calledAlready {
-				return nil
+				return OK, nil
 			}
 			calledAlready = true
 			wg.Done()
-			return nil
+			return OK, nil
 		}))
 	if err != nil {
 		t.Fatal("unexpected error")
@@ -556,7 +619,7 @@ func TestJob(t *testing.T) {
 	}()
 
 	select {
-	case <-time.After(2 * ONE_SECOND):
+	case <-time.After(2 * ONE_SECOND_PLUS_SOME):
 		t.FailNow()
 	case <-wait(wg):
 	}
@@ -585,9 +648,9 @@ func TestCron_Parallel(t *testing.T) {
 
 	cron1, err := New(
 		WithNamespace(randomNamespace()),
-		WithTriggerFunc(func(ctx context.Context, m map[string]string, p *anypb.Any) error {
+		WithTriggerFunc(func(ctx context.Context, m map[string]string, p *anypb.Any) (TriggerResult, error) {
 			wg.Done()
-			return nil
+			return OK, nil
 		}))
 	if err != nil {
 		t.Fatal("unexpected error")
@@ -600,9 +663,9 @@ func TestCron_Parallel(t *testing.T) {
 
 	cron2, err := New(
 		WithNamespace(randomNamespace()),
-		WithTriggerFunc(func(ctx context.Context, m map[string]string, p *anypb.Any) error {
+		WithTriggerFunc(func(ctx context.Context, m map[string]string, p *anypb.Any) (TriggerResult, error) {
 			wg.Done()
-			return nil
+			return OK, nil
 		}))
 	if err != nil {
 		t.Fatal("unexpected error")
@@ -624,7 +687,7 @@ func TestCron_Parallel(t *testing.T) {
 	cron2.Start(ctx2)
 
 	select {
-	case <-time.After(time.Duration(2) * ONE_SECOND):
+	case <-time.After(time.Duration(2) * ONE_SECOND_PLUS_SOME):
 		t.FailNow()
 	case <-wait(wg):
 	}
@@ -639,10 +702,10 @@ func TestTTL(t *testing.T) {
 
 	cron, err := New(
 		WithNamespace(randomNamespace()),
-		WithTriggerFunc(func(ctx context.Context, m map[string]string, p *anypb.Any) error {
+		WithTriggerFunc(func(ctx context.Context, m map[string]string, p *anypb.Any) (TriggerResult, error) {
 			firedOnce.Store(true)
 			wg.Done()
-			return nil
+			return OK, nil
 		}))
 	if err != nil {
 		t.Fatal("unexpected error")
@@ -661,7 +724,7 @@ func TestTTL(t *testing.T) {
 	}()
 
 	select {
-	case <-time.After(6 * ONE_SECOND):
+	case <-time.After(6 * ONE_SECOND_PLUS_SOME):
 		// Success, it means it did not consume all the workgroup count because the job expired.
 		assert.True(t, firedOnce.Load())
 	case <-wait(wg):
