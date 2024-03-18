@@ -7,10 +7,10 @@ package counting
 
 import (
 	"context"
+	"fmt"
 	"strconv"
 	"time"
 
-	"github.com/pkg/errors"
 	etcdclientv3 "go.etcd.io/etcd/client/v3"
 )
 
@@ -54,10 +54,10 @@ func (c *etcdcounter) Add(ctx context.Context, delta int, next time.Time) (int, 
 			c.loaded = true
 		} else {
 			if res.Kvs[0].Value == nil {
-				return 0, false, errors.Errorf("nil value for key %s", c.key)
+				return 0, false, fmt.Errorf("nil value for key %s", c.key)
 			}
 			if len(res.Kvs[0].Value) == 0 {
-				return 0, false, errors.Errorf("empty value for key %s", c.key)
+				return 0, false, fmt.Errorf("empty value for key %s", c.key)
 			}
 
 			c.value, err = strconv.Atoi(string(res.Kvs[0].Value))
