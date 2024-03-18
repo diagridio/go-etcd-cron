@@ -8,6 +8,8 @@ package rhythm
 import (
 	"testing"
 	"time"
+
+	"github.com/stretchr/testify/require"
 )
 
 func TestActivation(t *testing.T) {
@@ -200,7 +202,7 @@ func TestNextWithDelayedStart(t *testing.T) {
 
 	for _, c := range runs {
 		sched, err := Parse(c.spec)
-  require.NoError(t, err)
+		require.NoError(t, err)
 		actual := sched.Next(getTime(c.start), getTime(c.time))
 		expected := getTime(c.expected)
 		if !actual.Equal(expected) {
