@@ -9,6 +9,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"math/rand"
 	"os"
 	"os/signal"
 	"strconv"
@@ -48,9 +49,18 @@ func main() {
 	cron, err := etcdcron.New(
 		etcdcron.WithNamespace(namespace),
 		etcdcron.WithPartitioning(p),
-		etcdcron.WithTriggerFunc(func(ctx context.Context, metadata map[string]string, payload *anypb.Any) error {
+		etcdcron.WithTriggerFunc(func(ctx context.Context, metadata map[string]string, payload *anypb.Any) (etcdcron.TriggerResult, error) {
+			if metadata["failure"] == "yes" {
+				// Failure does not trigger the errorsHandler() callback. It just skips the counter update.
+				return etcdcron.Failure, nil
+			}
+			if metadata["stop"] == "random" {
+				if rand.Int()%3 == 0 {
+					return etcdcron.Delete, nil
+				}
+			}
 			log.Printf("Trigger from pid %d: %s\n", os.Getpid(), string(payload.Value))
-			return nil
+			return etcdcron.OK, nil
 		}),
 	)
 	if err != nil {
@@ -72,18 +82,19 @@ func main() {
 		wg.Done()
 	}()
 
+	now := time.Now()
 	if os.Getenv("ADD") == "1" {
 		cron.AddJob(ctx, etcdcron.Job{
 			Name:      "every-2s-dFG3F3DSGSGds",
-			Rhythm:    "*/2 * * * * *",
-			StartTime: time.Time{}, // even seconds
-			Payload:   &anypb.Any{Value: []byte("ev 2s even")},
+			Rhythm:    "@every 2s",
+			StartTime: now,
+			Payload:   &anypb.Any{Value: []byte("ev 2s from now")},
 		})
 		cron.AddJob(ctx, etcdcron.Job{
 			Name:      "every-2s-b34w5y5hbwthjs",
-			Rhythm:    "*/2 * * * * *",
-			StartTime: time.Time{}.Add(time.Second), // odd seconds
-			Payload:   &anypb.Any{Value: []byte("ev 2s odd")},
+			Rhythm:    "@every 2s",
+			StartTime: now.Add(time.Second), // odd seconds
+			Payload:   &anypb.Any{Value: []byte("ev 2s from now+1s")},
 		})
 		cron.AddJob(ctx, etcdcron.Job{
 			Name:    "every-10s-bnsf45354wbdsnd",
@@ -91,14 +102,29 @@ func main() {
 			Payload: &anypb.Any{Value: []byte("ev 10s")},
 		})
 		cron.AddJob(ctx, etcdcron.Job{
-			Name:    "every-3s-mdhgm764324rqdg",
-			Rhythm:  "*/3 * * * * *",
-			Payload: &anypb.Any{Value: []byte("ev 3s")},
+			Name:      "every-3s-mdhgm764324rqdg",
+			Rhythm:    "@every 3s",
+			StartTime: time.Now().Add(10 * time.Second),
+			Payload:   &anypb.Any{Value: []byte("waits 10s then ev 3s")},
 		})
 		cron.AddJob(ctx, etcdcron.Job{
 			Name:    "every-4s-vdafbrtjnysh245",
 			Rhythm:  "*/4 * * * * *",
-			Payload: &anypb.Any{Value: []byte("ev 4s")},
+			Repeats: 3, // Only triggers 3 times
+			Payload: &anypb.Any{Value: []byte("ev 4s 3 times only")},
+		})
+		cron.AddJob(ctx, etcdcron.Job{
+			Name:     "every-4s-nmdjfgx35u7jfsgjgsf",
+			Rhythm:   "*/4 * * * * *",
+			Repeats:  3, // Only triggers 3 times
+			Metadata: map[string]string{"failure": "yes"},
+			Payload:  &anypb.Any{Value: []byte("ev 4s never expires because it returns a failure condition")},
+		})
+		cron.AddJob(ctx, etcdcron.Job{
+			Name:     "every-1s-agdg42y645ydfdha",
+			Rhythm:   "@every 1s",
+			Metadata: map[string]string{"stop": "random"},
+			Payload:  &anypb.Any{Value: []byte("ev 1s with random stop")},
 		})
 		cron.AddJob(ctx, etcdcron.Job{
 			Name:    "every-5s-adjbg43q5rbafbr44",

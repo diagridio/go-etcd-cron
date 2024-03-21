@@ -10,9 +10,6 @@ import (
 
 	etcdclient "go.etcd.io/etcd/client/v3"
 	"go.etcd.io/etcd/client/v3/concurrency"
-
-	"github.com/diagridio/go-etcd-cron/partitioning"
-	"github.com/diagridio/go-etcd-cron/storage"
 )
 
 type DistributedMutex interface {
@@ -20,15 +17,6 @@ type DistributedMutex interface {
 	Lock(ctx context.Context) error
 	TryLock(ctx context.Context) error
 	Unlock(ctx context.Context) error
-}
-
-type EtcdMutexBuilder interface {
-	NewMutex(pfx string) (DistributedMutex, error)
-	NewJobStore(
-		organizer partitioning.Organizer,
-		partitioning partitioning.Partitioner,
-		putCallback func(context.Context, *storage.JobRecord) error,
-		deleteCallback func(context.Context, string) error) storage.JobStore
 }
 
 func NewDistributedMutex(etcdclient *etcdclient.Client, pfx string) (DistributedMutex, error) {

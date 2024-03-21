@@ -15,6 +15,7 @@ type Organizer interface {
 	JobPath(jobName string) string
 	JobsPath(partitionId int) string
 	TicksPath(partitionId int) string
+	CounterPath(partitionId int, name string) string
 }
 
 type organizer struct {
@@ -39,4 +40,8 @@ func (o *organizer) JobsPath(partitionId int) string {
 
 func (o *organizer) TicksPath(partitionId int) string {
 	return filepath.Join(o.namespace, "partitions", strconv.Itoa(partitionId), "ticks")
+}
+
+func (o *organizer) CounterPath(partitionId int, name string) string {
+	return filepath.Join(o.namespace, "partitions", strconv.Itoa(partitionId), "counts", name)
 }

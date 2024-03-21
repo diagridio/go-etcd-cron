@@ -11,5 +11,6 @@ import "time"
 type Schedule interface {
 	// Return the next activation time, later than the given time.
 	// Next is invoked initially, and then each time the job is run.
-	Next(time.Time) time.Time
+	// The result must be after the given start time.
+	Next(start time.Time, now time.Time) time.Time
 }

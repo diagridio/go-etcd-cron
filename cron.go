@@ -18,6 +18,7 @@ import (
 	anypb "google.golang.org/protobuf/types/known/anypb"
 
 	"github.com/diagridio/go-etcd-cron/collector"
+	"github.com/diagridio/go-etcd-cron/counting"
 	"github.com/diagridio/go-etcd-cron/locking"
 	"github.com/diagridio/go-etcd-cron/partitioning"
 	"github.com/diagridio/go-etcd-cron/rhythm"
@@ -43,7 +44,7 @@ type Cron struct {
 	etcdErrorsHandler      func(context.Context, Job, error)
 	errorsHandler          func(context.Context, Job, error)
 	funcCtx                func(context.Context, Job) context.Context
-	triggerFunc            func(context.Context, map[string]string, *anypb.Any) error
+	triggerFunc            TriggerFunction
 	running                bool
 	runWaitingGroup        sync.WaitGroup
 	etcdclient             *etcdclient.Client
@@ -52,6 +53,16 @@ type Cron struct {
 	partitioning           partitioning.Partitioner
 	collector              collector.Collector
 }
+
+type TriggerFunction func(ctx context.Context, metadata map[string]string, payload *anypb.Any) (TriggerResult, error)
+
+type TriggerResult int
+
+const (
+	OK TriggerResult = iota
+	Failure
+	Delete
+)
 
 // Entry consists of a schedule and the func to execute on that schedule.
 type Entry struct {
@@ -71,6 +82,21 @@ type Entry struct {
 
 	// Prefix for the ticker mutex
 	distMutexPrefix string
+
+	// Counter if has limit on number of triggers
+	counter counting.Counter
+}
+
+func (e *Entry) tick(now time.Time) {
+	e.Prev = e.Next
+	start := e.Job.StartTime.Truncate(time.Second)
+
+	if start.After(now) {
+		e.Next = start
+		return
+	}
+
+	e.Next = e.Schedule.Next(start, now)
 }
 
 // byTime is a wrapper for sorting the entry array by time
@@ -124,7 +150,7 @@ func WithFuncCtx(f func(context.Context, Job) context.Context) CronOpt {
 	})
 }
 
-func WithTriggerFunc(f func(context.Context, map[string]string, *anypb.Any) error) CronOpt {
+func WithTriggerFunc(f TriggerFunction) CronOpt {
 	return CronOpt(func(cron *Cron) {
 		cron.triggerFunc = f
 	})
@@ -258,11 +284,19 @@ func (c *Cron) schedule(schedule rhythm.Schedule, job *Job) error {
 		return fmt.Errorf("host does not own partition %d", partitionId)
 	}
 
+	var counter counting.Counter
+	if job.Repeats > 0 {
+		counterKey := c.organizer.CounterPath(partitionId, job.Name)
+		// Needs to count the number of invocations
+		// TODO(artursouza): get ttl param for counter instead of hardcode it.
+		counter = counting.NewEtcdCounter(c.etcdclient, counterKey, 48*time.Hour)
+	}
+
 	entry := &Entry{
 		Schedule:        schedule,
 		Job:             *job,
-		Prev:            time.Unix(0, 0),
 		distMutexPrefix: c.organizer.TicksPath(partitionId) + "/",
+		counter:         counter,
 	}
 
 	c.appendOperation(func(ctx context.Context) *Entry {
@@ -335,7 +369,7 @@ func (c *Cron) run(ctx context.Context) {
 	for _, op := range c.pendingOperations {
 		newEntry := op(ctx)
 		if newEntry != nil {
-			newEntry.Next = newEntry.Schedule.Next(now)
+			newEntry.tick(now)
 		}
 	}
 	for _, e := range c.entries {
@@ -362,7 +396,7 @@ func (c *Cron) run(ctx context.Context) {
 			c.entriesMutex.Lock()
 			newEntry := op(ctx)
 			if newEntry != nil {
-				newEntry.Next = newEntry.Schedule.Next(now)
+				newEntry.tick(now)
 			}
 			entries = []*Entry{}
 			for _, e := range c.entries {
@@ -377,9 +411,9 @@ func (c *Cron) run(ctx context.Context) {
 					break
 				}
 				e.Prev = e.Next
-				e.Next = e.Schedule.Next(effective)
+				e.tick(effective)
 
-				go func(ctx context.Context, e *Entry) {
+				go func(ctx context.Context, e *Entry, next time.Time) {
 					if c.funcCtx != nil {
 						ctx = c.funcCtx(ctx, e.Job)
 					}
@@ -406,15 +440,53 @@ func (c *Cron) run(ctx context.Context) {
 						return
 					}
 
-					err = c.triggerFunc(ctx, e.Job.Metadata, e.Job.Payload)
+					result, err := c.triggerFunc(ctx, e.Job.Metadata, e.Job.Payload)
 					if err != nil {
 						go c.errorsHandler(ctx, e.Job, err)
 						return
 					}
+
+					if result == Delete {
+						// Job must be deleted.
+						// This is handy if client wants to have a custom logic to decide if job is over.
+						// One example, is having a more efficient way to count number of invocations.
+						err = c.DeleteJob(ctx, e.Job.Name)
+						if err != nil {
+							go c.errorsHandler(ctx, e.Job, err)
+						}
+
+						// No need to check (and delete) a counter since every counter has a TTL.
+						return
+					}
+
+					increment := 1
+					if result == Failure {
+						// Does not increment counter, but refreshes the TTL.
+						increment = 0
+					}
+
+					if e.counter != nil {
+						// Needs to check number of triggers
+						count, updated, err := e.counter.Add(ctx, increment, next)
+						if err != nil {
+							go c.errorsHandler(ctx, e.Job, err)
+							// No need to abort if updating the count failed.
+							// The count solution is not transactional anyway.
+						}
+
+						if updated {
+							if count >= int(e.Job.Repeats) {
+								err = c.DeleteJob(ctx, e.Job.Name)
+								if err != nil {
+									go c.errorsHandler(ctx, e.Job, err)
+								}
+							}
+						}
+					}
 					// Cannot unlock because it can open a chance for double trigger since two instances
 					// can have a clock skew and compete for the lock at slight different windows.
 					// So, we keep the lock during its ttl
-				}(ctx, e)
+				}(ctx, e, e.Next)
 			}
 			continue
 

@@ -8,6 +8,8 @@ package rhythm
 import (
 	"testing"
 	"time"
+
+	"github.com/stretchr/testify/require"
 )
 
 func TestActivation(t *testing.T) {
@@ -66,7 +68,7 @@ func TestActivation(t *testing.T) {
 			t.Error(err)
 			continue
 		}
-		actual := sched.Next(getTime(test.time).Add(-1 * time.Second))
+		actual := sched.Next(time.Time{}, getTime(test.time).Add(-1*time.Second))
 		expected := getTime(test.time)
 		if test.expected && expected != actual || !test.expected && expected == actual {
 			t.Errorf("Fail evaluating %s on %s: (expected) %s != %s (actual)",
@@ -84,6 +86,8 @@ func TestNext(t *testing.T) {
 		{"Mon Jul 9 14:45 2012", "0 0/15 * * *", "Mon Jul 9 15:00 2012"},
 		{"Mon Jul 9 14:59 2012", "0 0/15 * * *", "Mon Jul 9 15:00 2012"},
 		{"Mon Jul 9 14:59:59 2012", "0 0/15 * * *", "Mon Jul 9 15:00 2012"},
+		{"Mon Jul 9 15:00 2015", "0 0/15 * * *", "Mon Jul 9 15:15 2015"},
+		{"Mon Jul 9 15:00:01 2015", "0 0/15 * * *", "Mon Jul 9 15:15 2015"},
 
 		// Wrap around hours
 		{"Mon Jul 9 15:45 2012", "0 20-35/15 * * *", "Mon Jul 9 16:20 2012"},
@@ -132,7 +136,74 @@ func TestNext(t *testing.T) {
 			t.Error(err)
 			continue
 		}
-		actual := sched.Next(getTime(c.time))
+		actual := sched.Next(time.Time{}, getTime(c.time))
+		expected := getTime(c.expected)
+		if !actual.Equal(expected) {
+			t.Errorf("%s, \"%s\": (expected) %v != %v (actual)", c.time, c.spec, expected, actual)
+		}
+	}
+}
+
+func TestNextWithDelayedStart(t *testing.T) {
+	runs := []struct {
+		time, start, spec string
+		expected          string
+	}{
+		// Simple cases
+		{"Mon Jul 9 14:45 2012", "Mon Jul 9 14:45 2012", "0 0/15 * * *", "Mon Jul 9 15:00 2012"},
+		{"Mon Jul 9 14:44 2013", "Mon Jul 9 14:45:01 2013", "0 0/15 * * *", "Mon Jul 9 15:00 2013"},
+		{"Mon Jul 9 14:44 2011", "Mon Jul 9 14:44:59 2011", "0 0/15 * * *", "Mon Jul 9 14:45 2011"},
+		{"Mon Jul 9 14:45 2014", "Mon Jul 9 15:00:01 2014", "0 0/15 * * *", "Mon Jul 9 15:15 2014"},
+		{"Mon Jul 9 14:45 2015", "Mon Jul 9 15:01:00 2015", "0 0/15 * * *", "Mon Jul 9 15:15 2015"},
+		{"Mon Jul 9 15:00 2016", "Mon Jul 9 15:00:00 2016", "0 0/15 * * *", "Mon Jul 9 15:15 2016"},
+		{"Mon Jul 9 15:00 2012", "Mon Jul 9 15:00 2012", "0 0/15 * * *", "Mon Jul 9 15:15 2012"},
+		{"Mon Jul 9 15:00:01 2012", "Mon Jul 9 15:00 2012", "0 0/15 * * *", "Mon Jul 9 15:15 2012"},
+
+		// Wrap around hours
+		{"Mon Jul 9 15:45 2012", "Mon Jul 9 15:45 2012", "0 20-35/15 * * *", "Mon Jul 9 16:20 2012"},
+
+		// Wrap around days
+		{"Mon Jul 9 23:46 2012", "Mon Jul 9 23:46 2012", "0 */15 * * *", "Tue Jul 10 00:00 2012"},
+		{"Mon Jul 9 23:45 2012", "Mon Jul 9 23:45 2012", "0 20-35/15 * * *", "Tue Jul 10 00:20 2012"},
+		{"Mon Jul 9 23:35:51 2012", "Mon Jul 9 23:35:51 2012", "15/35 20-35/15 * * *", "Tue Jul 10 00:20:15 2012"},
+		{"Mon Jul 9 23:35:51 2012", "Mon Jul 9 23:35:51 2012", "15/35 20-35/15 1/2 * *", "Tue Jul 10 01:20:15 2012"},
+		{"Mon Jul 9 23:35:51 2012", "Mon Jul 9 23:35:51 2012", "15/35 20-35/15 10-12 * *", "Tue Jul 10 10:20:15 2012"},
+
+		{"Mon Jul 9 23:35:51 2012", "Mon Jul 9 23:35:51 2012", "15/35 20-35/15 1/2 */2 * *", "Thu Jul 11 01:20:15 2012"},
+		{"Mon Jul 9 23:35:51 2012", "Mon Jul 9 23:35:51 2012", "15/35 20-35/15 * 9-20 * *", "Wed Jul 10 00:20:15 2012"},
+		{"Mon Jul 9 23:35:51 2012", "Mon Jul 9 23:35:51 2012", "15/35 20-35/15 * 9-20 Jul *", "Wed Jul 10 00:20:15 2012"},
+
+		// Wrap around months
+		{"Mon Jul 9 23:35 2012", "Mon Jul 9 23:35 2012", "0 0 0 9 Apr-Oct ?", "Thu Aug 9 00:00 2012"},
+		{"Mon Jul 9 23:35 2012", "Mon Jul 9 23:35 2012", "0 0 0 */5 Apr,Aug,Oct Mon", "Mon Aug 6 00:00 2012"},
+		{"Mon Jul 9 23:35 2012", "Mon Jul 9 23:35 2012", "0 0 0 */5 Oct Mon", "Mon Oct 1 00:00 2012"},
+
+		// Wrap around years
+		{"Mon Jul 9 23:35 2012", "Mon Jul 9 23:35 2012", "0 0 0 * Feb Mon", "Mon Feb 4 00:00 2013"},
+		{"Mon Jul 9 23:35 2012", "Mon Jul 9 23:35 2012", "0 0 0 * Feb Mon/2", "Fri Feb 1 00:00 2013"},
+
+		// Wrap around minute, hour, day, month, and year
+		{"Mon Dec 31 23:59:45 2012", "Mon Dec 31 23:59:45 2012", "0 * * * * *", "Tue Jan 1 00:00:00 2013"},
+
+		// Leap year
+		{"Mon Jul 9 23:35 2012", "Mon Jul 9 23:35 2012", "0 0 0 29 Feb ?", "Mon Feb 29 00:00 2016"},
+
+		// Daylight savings time EST -> EDT
+		{"2012-03-11T00:00:00-0500", "2012-03-11T00:00:00-0500", "0 30 2 11 Mar ?", "2013-03-11T02:30:00-0400"},
+
+		// Daylight savings time EDT -> EST
+		{"2012-11-04T00:00:00-0400", "2012-11-04T00:00:00-0400", "0 30 2 04 Nov ?", "2012-11-04T02:30:00-0500"},
+		{"2012-11-04T01:45:00-0400", "2012-11-04T01:45:00-0400", "0 30 1 04 Nov ?", "2012-11-04T01:30:00-0500"},
+
+		// Unsatisfiable
+		{"Mon Jul 9 23:35 2012", "Mon Jul 9 23:35 2012", "0 0 0 30 Feb ?", ""},
+		{"Mon Jul 9 23:35 2012", "Mon Jul 9 23:35 2012", "0 0 0 31 Apr ?", ""},
+	}
+
+	for _, c := range runs {
+		sched, err := Parse(c.spec)
+		require.NoError(t, err)
+		actual := sched.Next(getTime(c.start), getTime(c.time))
 		expected := getTime(c.expected)
 		if !actual.Equal(expected) {
 			t.Errorf("%s, \"%s\": (expected) %v != %v (actual)", c.time, c.spec, expected, actual)

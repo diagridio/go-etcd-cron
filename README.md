@@ -31,7 +31,7 @@ c, _ := etcdclientv3.New(etcdclientv3.Config{
   Endpoints: []string{"etcd-host1:2379", "etcd-host2:2379"},
 })
 cron, _ := etcdcron.New(
-  WithEtcdMutexBuilder(c),
+  WithEtcdClient(c),
   WithNamespace("my-example"),  // multi-tenancy
 	WithTriggerFunc(func(ctx context.Context, triggerType string, payload *anypb.Any) error {
     log.Printf("Trigger from pid %d: %s %s\n", os.Getpid(), triggerType, string(payload.Value))

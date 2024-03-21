@@ -59,7 +59,15 @@ const (
 
 // Next returns the next time this schedule is activated, greater than the given
 // time.  If no time can be found to satisfy the schedule, return the zero time.
-func (s *SpecSchedule) Next(t time.Time) time.Time {
+func (s *SpecSchedule) Next(start, tick time.Time) time.Time {
+	// The cron logic only matters after the start time.
+	t := tick
+	if t.Before(start) {
+		// The cron logic does not guarantee delta from the start, since it is an
+		// schedule based on the absolute clock.
+		t = start
+	}
+
 	// General approach:
 	// For Month, Day, Hour, Minute, Second:
 	// Check if the time value matches.  If yes, continue to the next field.
