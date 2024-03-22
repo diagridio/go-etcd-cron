@@ -9,6 +9,8 @@ import (
 	"reflect"
 	"testing"
 	"time"
+
+	"github.com/stretchr/testify/assert"
 )
 
 func TestRange(t *testing.T) {
@@ -105,16 +107,21 @@ func TestSpecSchedule(t *testing.T) {
 	entries := []struct {
 		expr     string
 		expected Schedule
+		repeats  int
 	}{
-		{"* 5 * * * *", &SpecSchedule{all(seconds), 1 << 5, all(hours), all(dom), all(months), all(dow)}},
-		{"@every 5m", ConstantDelaySchedule{Delay: time.Duration(5) * time.Minute}},
+		{"* 5 * * * *", &SpecSchedule{all(seconds), 1 << 5, all(hours), all(dom), all(months), all(dow)}, -1},
+		{"@every 5m", ConstantDelaySchedule{Delay: time.Duration(5) * time.Minute}, -1},
+		{"@every 2h30m", ConstantDelaySchedule{Delay: time.Duration(150) * time.Minute}, -1},
+		{"@every R3/P2WT1M", CalendarDelaySchedule{years: 0, months: 0, days: 14, Delay: time.Duration(1) * time.Minute}, 3},
+		{"@every R4/PT1S", ConstantDelaySchedule{Delay: 1 * time.Second}, 4},
 	}
 
 	for _, c := range entries {
-		actual, err := Parse(c.expr)
+		actual, repeats, err := Parse(c.expr)
 		if err != nil {
 			t.Error(err)
 		}
+		assert.Equalf(t, c.repeats, repeats, "%s => (expected) %b != %b (actual)", c.expr, c.repeats, repeats)
 		if !reflect.DeepEqual(actual, c.expected) {
 			t.Errorf("%s => (expected) %b != %b (actual)", c.expr, c.expected, actual)
 		}

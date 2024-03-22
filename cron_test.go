@@ -189,6 +189,35 @@ func TestRepeatLimit(t *testing.T) {
 	assert.Nil(t, cron.GetJob("test-repeat-limit"))
 }
 
+// Job with repeat limit in ISO8601.
+func TestRepeatWithISO8601(t *testing.T) {
+	calledCount := atomic.Int32{}
+
+	cron, err := New(
+		WithNamespace(randomNamespace()),
+		WithTriggerFunc(func(ctx context.Context, m map[string]string, p *anypb.Any) (TriggerResult, error) {
+			calledCount.Add(1)
+			return OK, nil
+		}))
+	if err != nil {
+		t.Fatal("unexpected error")
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	cron.AddJob(ctx, Job{
+		Name:   "test-repeat-limit-iso8601",
+		Rhythm: "@every R3/PT1S",
+	})
+	cron.Start(ctx)
+	defer func() {
+		cancel()
+		cron.Wait()
+	}()
+
+	time.Sleep(5 * time.Second)
+	assert.Equal(t, int32(3), calledCount.Load())
+	assert.Nil(t, cron.GetJob("test-repeat-limit-iso8601"))
+}
+
 // Job with failure never increments the counter.
 func TestFailureDoesNotIncrementCounter(t *testing.T) {
 	calledCount := atomic.Int32{}

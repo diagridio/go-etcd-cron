@@ -63,7 +63,7 @@ func TestActivation(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		sched, err := Parse(test.spec)
+		sched, _, err := Parse(test.spec)
 		if err != nil {
 			t.Error(err)
 			continue
@@ -131,7 +131,7 @@ func TestNext(t *testing.T) {
 	}
 
 	for _, c := range runs {
-		sched, err := Parse(c.spec)
+		sched, _, err := Parse(c.spec)
 		if err != nil {
 			t.Error(err)
 			continue
@@ -201,7 +201,7 @@ func TestNextWithDelayedStart(t *testing.T) {
 	}
 
 	for _, c := range runs {
-		sched, err := Parse(c.spec)
+		sched, _, err := Parse(c.spec)
 		require.NoError(t, err)
 		actual := sched.Next(getTime(c.start), getTime(c.time))
 		expected := getTime(c.expected)
@@ -219,7 +219,7 @@ func TestErrors(t *testing.T) {
 		"0 0 * * XYZ",
 	}
 	for _, spec := range invalidSpecs {
-		_, err := Parse(spec)
+		_, _, err := Parse(spec)
 		if err == nil {
 			t.Error("expected an error parsing: ", spec)
 		}
