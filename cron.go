@@ -248,7 +248,7 @@ func (c *Cron) onJobDeleted(ctx context.Context, jobName string) error {
 	counter := counting.NewEtcdCounter(c.etcdclient, counterKey, 0, time.Duration(0))
 	err := counter.Delete(ctx)
 	if err != nil {
-		go c.errorsHandler(ctx, Job{Name: jobName}, err)
+		c.errorsHandler(ctx, Job{Name: jobName}, err)
 	}
 	// Ignore error as it is a best effort.
 	return nil
@@ -442,7 +442,7 @@ func (c *Cron) run(ctx context.Context) {
 					tickLock := e.distMutexPrefix + fmt.Sprintf("%v", effective.Unix())
 					m, err := mutexStore.Get(tickLock)
 					if err != nil {
-						go c.etcdErrorsHandler(ctx, e.Job, errors.Wrapf(err, "fail to create etcd mutex for job '%v'", e.Job.Name))
+						c.etcdErrorsHandler(ctx, e.Job, errors.Wrapf(err, "fail to create etcd mutex for job '%v'", e.Job.Name))
 						return
 					}
 
@@ -457,13 +457,13 @@ func (c *Cron) run(ctx context.Context) {
 					if err == context.DeadlineExceeded {
 						return
 					} else if err != nil {
-						go c.etcdErrorsHandler(ctx, e.Job, errors.Wrapf(err, "fail to lock mutex '%v'", m.Key()))
+						c.etcdErrorsHandler(ctx, e.Job, errors.Wrapf(err, "fail to lock mutex '%v'", m.Key()))
 						return
 					}
 
 					result, err := c.triggerFunc(ctx, e.Job.Metadata, e.Job.Payload)
 					if err != nil {
-						go c.errorsHandler(ctx, e.Job, err)
+						c.errorsHandler(ctx, e.Job, err)
 						return
 					}
 
@@ -473,7 +473,7 @@ func (c *Cron) run(ctx context.Context) {
 						// One example, is having a more efficient way to count number of invocations.
 						err = c.DeleteJob(ctx, e.Job.Name)
 						if err != nil {
-							go c.errorsHandler(ctx, e.Job, err)
+							c.errorsHandler(ctx, e.Job, err)
 						}
 
 						// No need to check (and delete) a counter since every counter has a TTL.
@@ -484,7 +484,7 @@ func (c *Cron) run(ctx context.Context) {
 						// Needs to check number of triggers
 						remaining, updated, err := e.counter.Increment(ctx, -1)
 						if err != nil {
-							go c.errorsHandler(ctx, e.Job, err)
+							c.errorsHandler(ctx, e.Job, err)
 							// No need to abort if updating the count failed.
 							// The count solution is not transactional anyway.
 						}
@@ -493,12 +493,12 @@ func (c *Cron) run(ctx context.Context) {
 							if remaining <= 0 {
 								err = c.DeleteJob(ctx, e.Job.Name)
 								if err != nil {
-									go c.errorsHandler(ctx, e.Job, err)
+									c.errorsHandler(ctx, e.Job, err)
 								}
 								// Tries to delete the counter here
 								err = e.counter.Delete(ctx)
 								if err != nil {
-									go c.errorsHandler(ctx, e.Job, err)
+									c.errorsHandler(ctx, e.Job, err)
 								}
 							}
 						}
