@@ -16,6 +16,7 @@ import (
 	"github.com/diagridio/go-etcd-cron/rhythm"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	anypb "google.golang.org/protobuf/types/known/anypb"
 )
 
@@ -27,9 +28,7 @@ const ONE_SECOND_PLUS_SOME = 1*time.Second + 200*time.Millisecond
 // Start and stop cron with no entries.
 func TestNoEntries(t *testing.T) {
 	cron, err := New(WithNamespace(randomNamespace()))
-	if err != nil {
-		t.Fatal("unexpected error")
-	}
+	require.NoError(t, err)
 	ctx, cancel := context.WithCancel(context.Background())
 	cron.Start(ctx)
 
@@ -51,9 +50,7 @@ func TestStopCausesJobsToNotRun(t *testing.T) {
 			wg.Done()
 			return OK, nil
 		}))
-	if err != nil {
-		t.Fatal("unexpected error")
-	}
+	require.NoError(t, err)
 	ctx, cancel := context.WithCancel(context.Background())
 	cron.Start(ctx)
 	cancel()
@@ -88,9 +85,7 @@ func TestAddBeforeRunning(t *testing.T) {
 			wg.Done()
 			return OK, nil
 		}))
-	if err != nil {
-		t.Fatal("unexpected error")
-	}
+	require.NoError(t, err)
 	ctx, cancel := context.WithCancel(context.Background())
 	cron.AddJob(ctx, Job{
 		Name:   "test-add-before-running",
@@ -126,9 +121,7 @@ func TestDelayedStart(t *testing.T) {
 			}
 			return OK, nil
 		}))
-	if err != nil {
-		t.Fatal("unexpected error")
-	}
+	require.NoError(t, err)
 	ctx, cancel := context.WithCancel(context.Background())
 	cron.AddJob(ctx, Job{
 		Name:      "test-delayed-start-1",
@@ -169,9 +162,7 @@ func TestRepeatLimit(t *testing.T) {
 			calledCount.Add(1)
 			return OK, nil
 		}))
-	if err != nil {
-		t.Fatal("unexpected error")
-	}
+	require.NoError(t, err)
 	ctx, cancel := context.WithCancel(context.Background())
 	cron.AddJob(ctx, Job{
 		Name:    "test-repeat-limit",
@@ -199,9 +190,7 @@ func TestRepeatWithISO8601(t *testing.T) {
 			calledCount.Add(1)
 			return OK, nil
 		}))
-	if err != nil {
-		t.Fatal("unexpected error")
-	}
+	require.NoError(t, err)
 	ctx, cancel := context.WithCancel(context.Background())
 	cron.AddJob(ctx, Job{
 		Name:   "test-repeat-limit-iso8601",
@@ -228,9 +217,7 @@ func TestFailureDoesNotIncrementCounter(t *testing.T) {
 			calledCount.Add(1)
 			return Failure, nil
 		}))
-	if err != nil {
-		t.Fatal("unexpected error")
-	}
+	require.NoError(t, err)
 	ctx, cancel := context.WithCancel(context.Background())
 	cron.AddJob(ctx, Job{
 		Name:    "test-failure-does-not-count",
@@ -262,9 +249,7 @@ func TestCustomLimit(t *testing.T) {
 			}
 			return OK, nil
 		}))
-	if err != nil {
-		t.Fatal("unexpected error")
-	}
+	require.NoError(t, err)
 	ctx, cancel := context.WithCancel(context.Background())
 	cron.AddJob(ctx, Job{
 		Name:   "test-custom-limit",
@@ -292,9 +277,7 @@ func TestAddWhileRunning(t *testing.T) {
 			wg.Done()
 			return OK, nil
 		}))
-	if err != nil {
-		t.Fatal("unexpected error")
-	}
+	require.NoError(t, err)
 	ctx, cancel := context.WithCancel(context.Background())
 	cron.Start(ctx)
 	defer func() {
@@ -325,9 +308,7 @@ func TestSnapshotEntries(t *testing.T) {
 			wg.Done()
 			return OK, nil
 		}))
-	if err != nil {
-		t.Fatal("unexpected error")
-	}
+	require.NoError(t, err)
 	ctx, cancel := context.WithCancel(context.Background())
 	cron.AddJob(ctx, Job{
 		Name:   "test-snapshot-entries",
@@ -372,9 +353,7 @@ func TestDelayedAdd(t *testing.T) {
 			wg.Done()
 			return OK, nil
 		}))
-	if err != nil {
-		t.Fatal("unexpected error")
-	}
+	require.NoError(t, err)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	cron.AddJob(ctx, Job{
@@ -423,9 +402,7 @@ func TestMultipleEntries(t *testing.T) {
 			wg.Done()
 			return OK, nil
 		}))
-	if err != nil {
-		t.Fatal("unexpected error")
-	}
+	require.NoError(t, err)
 	ctx, cancel := context.WithCancel(context.Background())
 	cron.AddJob(ctx, Job{
 		Name:     "test-multiple-1",
@@ -474,9 +451,7 @@ func TestRunningJobTwice(t *testing.T) {
 			wg.Done()
 			return OK, nil
 		}))
-	if err != nil {
-		t.Fatal("unexpected error")
-	}
+	require.NoError(t, err)
 	ctx, cancel := context.WithCancel(context.Background())
 	cron.AddJob(ctx, Job{
 		Name:     "test-twice-1",
@@ -520,9 +495,7 @@ func TestRunningMultipleSchedules(t *testing.T) {
 			wg.Done()
 			return OK, nil
 		}))
-	if err != nil {
-		t.Fatal("unexpected error")
-	}
+	require.NoError(t, err)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	cron.AddJob(ctx, Job{
@@ -575,9 +548,7 @@ func TestLocalTimezone(t *testing.T) {
 			wg.Done()
 			return OK, nil
 		}))
-	if err != nil {
-		t.Fatal("unexpected error")
-	}
+	require.NoError(t, err)
 	ctx, cancel := context.WithCancel(context.Background())
 	cron.AddJob(ctx, Job{
 		Name:   "test-local",
@@ -613,9 +584,7 @@ func TestJob(t *testing.T) {
 			wg.Done()
 			return OK, nil
 		}))
-	if err != nil {
-		t.Fatal("unexpected error")
-	}
+	require.NoError(t, err)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	cron.AddJob(ctx, Job{
@@ -681,9 +650,7 @@ func TestCron_Parallel(t *testing.T) {
 			wg.Done()
 			return OK, nil
 		}))
-	if err != nil {
-		t.Fatal("unexpected error")
-	}
+	require.NoError(t, err)
 	ctx1, cancel1 := context.WithCancel(context.Background())
 	defer func() {
 		cancel1()
@@ -696,9 +663,7 @@ func TestCron_Parallel(t *testing.T) {
 			wg.Done()
 			return OK, nil
 		}))
-	if err != nil {
-		t.Fatal("unexpected error")
-	}
+	require.NoError(t, err)
 	ctx2, cancel2 := context.WithCancel(context.Background())
 	defer func() {
 		cancel2()
@@ -736,9 +701,7 @@ func TestTTL(t *testing.T) {
 			wg.Done()
 			return OK, nil
 		}))
-	if err != nil {
-		t.Fatal("unexpected error")
-	}
+	require.NoError(t, err)
 	ctx, cancel := context.WithCancel(context.Background())
 	cron.AddJob(ctx, Job{
 		Name:   "test-twice-3",
