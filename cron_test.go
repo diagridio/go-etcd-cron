@@ -55,10 +55,11 @@ func TestStopCausesJobsToNotRun(t *testing.T) {
 	cron.Start(ctx)
 	cancel()
 	cron.Wait()
-	cron.AddJob(ctx, Job{
+	err = cron.AddJob(ctx, Job{
 		Name:   "test-stop",
 		Rhythm: "* * * * * ?",
 	})
+	require.Error(t, err)
 
 	select {
 	case <-time.After(ONE_SECOND_PLUS_SOME):
@@ -87,7 +88,7 @@ func TestAddBeforeRunning(t *testing.T) {
 		}))
 	require.NoError(t, err)
 	ctx, cancel := context.WithCancel(context.Background())
-	cron.AddJob(ctx, Job{
+	addJob(t, ctx, cron, Job{
 		Name:   "test-add-before-running",
 		Rhythm: "* * * * * *",
 	})
@@ -123,13 +124,13 @@ func TestDelayedStart(t *testing.T) {
 		}))
 	require.NoError(t, err)
 	ctx, cancel := context.WithCancel(context.Background())
-	cron.AddJob(ctx, Job{
+	addJob(t, ctx, cron, Job{
 		Name:      "test-delayed-start-1",
 		Rhythm:    "* * * * * *",
 		Metadata:  singleMetadata("id", "one"),
 		StartTime: time.Now().Add(5 * time.Second),
 	})
-	cron.AddJob(ctx, Job{
+	addJob(t, ctx, cron, Job{
 		Name:      "test-delayed-start-2",
 		Rhythm:    "@every 1s",
 		Metadata:  singleMetadata("id", "two"),
@@ -164,7 +165,7 @@ func TestRepeatLimit(t *testing.T) {
 		}))
 	require.NoError(t, err)
 	ctx, cancel := context.WithCancel(context.Background())
-	cron.AddJob(ctx, Job{
+	addJob(t, ctx, cron, Job{
 		Name:    "test-repeat-limit",
 		Rhythm:  "* * * * * *",
 		Repeats: 3,
@@ -192,10 +193,11 @@ func TestRepeatWithISO8601(t *testing.T) {
 		}))
 	require.NoError(t, err)
 	ctx, cancel := context.WithCancel(context.Background())
-	cron.AddJob(ctx, Job{
+	addJob(t, ctx, cron, Job{
 		Name:   "test-repeat-limit-iso8601",
 		Rhythm: "@every R3/PT1S",
 	})
+
 	cron.Start(ctx)
 	defer func() {
 		cancel()
@@ -219,7 +221,7 @@ func TestFailureDoesNotIncrementCounter(t *testing.T) {
 		}))
 	require.NoError(t, err)
 	ctx, cancel := context.WithCancel(context.Background())
-	cron.AddJob(ctx, Job{
+	addJob(t, ctx, cron, Job{
 		Name:    "test-failure-does-not-count",
 		Rhythm:  "* * * * * *",
 		Repeats: 2,
@@ -251,7 +253,7 @@ func TestCustomLimit(t *testing.T) {
 		}))
 	require.NoError(t, err)
 	ctx, cancel := context.WithCancel(context.Background())
-	cron.AddJob(ctx, Job{
+	addJob(t, ctx, cron, Job{
 		Name:   "test-custom-limit",
 		Rhythm: "* * * * * *",
 	})
@@ -285,7 +287,7 @@ func TestAddWhileRunning(t *testing.T) {
 		cron.Wait()
 	}()
 
-	cron.AddJob(ctx, Job{
+	addJob(t, ctx, cron, Job{
 		Name:   "test-run",
 		Rhythm: "* * * * * ?",
 	})
@@ -310,7 +312,7 @@ func TestSnapshotEntries(t *testing.T) {
 		}))
 	require.NoError(t, err)
 	ctx, cancel := context.WithCancel(context.Background())
-	cron.AddJob(ctx, Job{
+	addJob(t, ctx, cron, Job{
 		Name:   "test-snapshot-entries",
 		Rhythm: "@every 2s",
 	})
@@ -356,7 +358,7 @@ func TestDelayedAdd(t *testing.T) {
 	require.NoError(t, err)
 
 	ctx, cancel := context.WithCancel(context.Background())
-	cron.AddJob(ctx, Job{
+	addJob(t, ctx, cron, Job{
 		Name:     "test-noop",
 		Rhythm:   "@every 1s",
 		Metadata: singleMetadata("op", "noop"),
@@ -371,7 +373,7 @@ func TestDelayedAdd(t *testing.T) {
 	// Artificial delay before add another record.
 	time.Sleep(10 * time.Second)
 
-	cron.AddJob(ctx, Job{
+	addJob(t, ctx, cron, Job{
 		Name:   "test-ev-2s",
 		Rhythm: "@every 2s",
 	})
@@ -404,21 +406,21 @@ func TestMultipleEntries(t *testing.T) {
 		}))
 	require.NoError(t, err)
 	ctx, cancel := context.WithCancel(context.Background())
-	cron.AddJob(ctx, Job{
+	addJob(t, ctx, cron, Job{
 		Name:     "test-multiple-1",
 		Rhythm:   "0 0 0 1 1 ?",
 		Metadata: singleMetadata("op", "return-nil"),
 	})
-	cron.AddJob(ctx, Job{
+	addJob(t, ctx, cron, Job{
 		Name:   "test-multiple-2",
 		Rhythm: "* * * * * ?",
 	})
-	cron.AddJob(ctx, Job{
+	addJob(t, ctx, cron, Job{
 		Name:     "test-multiple-3",
 		Rhythm:   "0 0 0 31 12 ?",
 		Metadata: singleMetadata("op", "return-nil"),
 	})
-	cron.AddJob(ctx, Job{
+	addJob(t, ctx, cron, Job{
 		Name:   "test-multiple-4",
 		Rhythm: "* * * * * ?",
 	})
@@ -453,17 +455,17 @@ func TestRunningJobTwice(t *testing.T) {
 		}))
 	require.NoError(t, err)
 	ctx, cancel := context.WithCancel(context.Background())
-	cron.AddJob(ctx, Job{
+	addJob(t, ctx, cron, Job{
 		Name:     "test-twice-1",
 		Rhythm:   "0 0 0 1 1 ?",
 		Metadata: singleMetadata("op", "return-nil"),
 	})
-	cron.AddJob(ctx, Job{
+	addJob(t, ctx, cron, Job{
 		Name:     "test-twice-2",
 		Rhythm:   "0 0 0 31 12 ?",
 		Metadata: singleMetadata("op", "return-nil"),
 	})
-	cron.AddJob(ctx, Job{
+	addJob(t, ctx, cron, Job{
 		Name:   "test-twice-3",
 		Rhythm: "* * * * * ?",
 	})
@@ -498,17 +500,17 @@ func TestRunningMultipleSchedules(t *testing.T) {
 	require.NoError(t, err)
 
 	ctx, cancel := context.WithCancel(context.Background())
-	cron.AddJob(ctx, Job{
+	addJob(t, ctx, cron, Job{
 		Name:     "test-mschedule-1",
 		Rhythm:   "0 0 0 1 1 ?",
 		Metadata: singleMetadata("op", "return-nil"),
 	})
-	cron.AddJob(ctx, Job{
+	addJob(t, ctx, cron, Job{
 		Name:     "test-mschedule-2",
 		Rhythm:   "0 0 0 31 12 ?",
 		Metadata: singleMetadata("op", "return-nil"),
 	})
-	cron.AddJob(ctx, Job{
+	addJob(t, ctx, cron, Job{
 		Name:   "test-mschedule-3",
 		Rhythm: "* * * * * ?",
 	})
@@ -550,7 +552,7 @@ func TestLocalTimezone(t *testing.T) {
 		}))
 	require.NoError(t, err)
 	ctx, cancel := context.WithCancel(context.Background())
-	cron.AddJob(ctx, Job{
+	addJob(t, ctx, cron, Job{
 		Name:   "test-local",
 		Rhythm: spec,
 	})
@@ -587,19 +589,19 @@ func TestJob(t *testing.T) {
 	require.NoError(t, err)
 
 	ctx, cancel := context.WithCancel(context.Background())
-	cron.AddJob(ctx, Job{
+	addJob(t, ctx, cron, Job{
 		Name:   "job0",
 		Rhythm: "0 0 0 30 Feb ?",
 	})
-	cron.AddJob(ctx, Job{
+	addJob(t, ctx, cron, Job{
 		Name:   "job1",
 		Rhythm: "0 0 0 1 1 ?",
 	})
-	cron.AddJob(ctx, Job{
+	addJob(t, ctx, cron, Job{
 		Name:   "job2",
 		Rhythm: "* * * * * ?",
 	})
-	cron.AddJob(ctx, Job{
+	addJob(t, ctx, cron, Job{
 		Name:   "job3",
 		Rhythm: "1 0 0 1 1 ?",
 	})
@@ -703,7 +705,7 @@ func TestTTL(t *testing.T) {
 		}))
 	require.NoError(t, err)
 	ctx, cancel := context.WithCancel(context.Background())
-	cron.AddJob(ctx, Job{
+	addJob(t, ctx, cron, Job{
 		Name:   "test-twice-3",
 		Rhythm: "* * * * * ?",
 		TTL:    2,
@@ -742,6 +744,11 @@ func stop(cron *Cron, cancel context.CancelFunc) chan bool {
 		ch <- true
 	}()
 	return ch
+}
+
+func addJob(t require.TestingT, ctx context.Context, cron *Cron, job Job) {
+	err := cron.AddJob(ctx, job)
+	require.NoError(t, err)
 }
 
 func randomNamespace() string {
