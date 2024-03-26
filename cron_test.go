@@ -204,9 +204,11 @@ func TestRepeatWithISO8601(t *testing.T) {
 		cron.Wait()
 	}()
 
-	time.Sleep(5 * time.Second)
-	assert.Equal(t, int32(3), calledCount.Load())
-	assert.Nil(t, cron.GetJob("test-repeat-limit-iso8601"))
+	assert.EventuallyWithT(t, func(c *assert.CollectT) {
+		assert.Equal(c, int32(3), calledCount.Load())
+		assert.Nil(c, cron.GetJob("test-repeat-limit-iso8601"))
+	}, 5*time.Second, time.Second)
+
 }
 
 // Job with failure never increments the counter.
