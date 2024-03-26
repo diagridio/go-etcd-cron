@@ -236,7 +236,7 @@ func parseDescriptor(spec string) (Schedule, int, error) {
 			return Every(duration), repeats, nil
 		}
 
-		return EveryCalendar(years, months, days, duration), repeats, nil
+		return EveryCalendar(CalendarStep{years, months, days}, duration), repeats, nil
 	}
 
 	return nil, -1, fmt.Errorf("unrecognized descriptor: %s", spec)

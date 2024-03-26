@@ -112,7 +112,7 @@ func TestSpecSchedule(t *testing.T) {
 		{"* 5 * * * *", &SpecSchedule{all(seconds), 1 << 5, all(hours), all(dom), all(months), all(dow)}, -1},
 		{"@every 5m", ConstantDelaySchedule{Delay: time.Duration(5) * time.Minute}, -1},
 		{"@every 2h30m", ConstantDelaySchedule{Delay: time.Duration(150) * time.Minute}, -1},
-		{"@every R3/P2WT1M", CalendarDelaySchedule{years: 0, months: 0, days: 14, Delay: time.Duration(1) * time.Minute}, 3},
+		{"@every R3/P2WT1M", CalendarDelaySchedule{CalendarStep{years: 0, months: 0, days: 14}, time.Duration(1) * time.Minute}, 3},
 		{"@every R4/PT1S", ConstantDelaySchedule{Delay: 1 * time.Second}, 4},
 	}
 

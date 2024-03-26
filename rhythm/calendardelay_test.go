@@ -68,7 +68,7 @@ func TestCalendarDelayNext(t *testing.T) {
 	}
 
 	for _, c := range tests {
-		actual := EveryCalendar(c.years, c.months, c.days, c.delay).Next(time.Time{}, getTime(c.time))
+		actual := EveryCalendar(CalendarStep{c.years, c.months, c.days}, c.delay).Next(time.Time{}, getTime(c.time))
 		expected := getTime(c.expected)
 		if actual != expected {
 			t.Errorf("%s, \"%s\": (expected) %v != %v (actual)", c.time, c.delay, expected, actual)
@@ -148,7 +148,7 @@ func TestCalendarDelayFromStartNext(t *testing.T) {
 	}
 
 	for _, c := range tests {
-		actual := EveryCalendar(c.years, c.months, c.days, c.delay).Next(getTime(c.start), getTime(c.time))
+		actual := EveryCalendar(CalendarStep{c.years, c.months, c.days}, c.delay).Next(getTime(c.start), getTime(c.time))
 		expected := getTime(c.expected)
 		if actual != expected {
 			t.Errorf("%s, \"%s\": (expected) %v != %v (actual)", c.time, c.delay, expected, actual)
