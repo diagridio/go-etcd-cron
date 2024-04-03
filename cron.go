@@ -215,8 +215,7 @@ func New(opts ...CronOpt) (*Cron, error) {
 				return cron.scheduleJob(jobFromJobRecord(r))
 			},
 			func(ctx context.Context, s string) error {
-				cron.killJob(s)
-				return nil
+				return cron.onJobDeleted(ctx, s)
 			})
 	}
 
@@ -239,6 +238,20 @@ func (c *Cron) DeleteJob(ctx context.Context, jobName string) error {
 		return fmt.Errorf("cannot delete job: no job store configured")
 	}
 	return c.jobStore.Delete(ctx, jobName)
+}
+
+func (c *Cron) onJobDeleted(ctx context.Context, jobName string) error {
+	c.killJob(jobName)
+	// Best effort to delete the counter.
+	partitionId := c.partitioning.CalculatePartitionId(jobName)
+	counterKey := c.organizer.CounterPath(partitionId, jobName)
+	counter := counting.NewEtcdCounter(c.etcdclient, counterKey, 0, time.Duration(0))
+	err := counter.Delete(ctx)
+	if err != nil {
+		c.errorsHandler(ctx, Job{Name: jobName}, err)
+	}
+	// Ignore error as it is a best effort.
+	return nil
 }
 
 func (c *Cron) killJob(name string) {
@@ -268,9 +281,17 @@ func (c *Cron) GetJob(jobName string) *Job {
 
 // Schedule adds a Job to the Cron to be run on the given schedule.
 func (c *Cron) scheduleJob(job *Job) error {
-	s, err := rhythm.Parse(job.Rhythm)
+	s, repeats, err := rhythm.Parse(job.Rhythm)
 	if err != nil {
 		return err
+	}
+
+	if (repeats > 0) && (job.Repeats > 0) && (job.Repeats != int32(repeats)) {
+		return fmt.Errorf("conflicting number of repeats: %v vs %v", repeats, job.Repeats)
+	}
+
+	if repeats > 0 {
+		job.Repeats = int32(repeats)
 	}
 
 	return c.schedule(s, job)
@@ -287,9 +308,9 @@ func (c *Cron) schedule(schedule rhythm.Schedule, job *Job) error {
 	var counter counting.Counter
 	if job.Repeats > 0 {
 		counterKey := c.organizer.CounterPath(partitionId, job.Name)
-		// Needs to count the number of invocations
-		// TODO(artursouza): get ttl param for counter instead of hardcode it.
-		counter = counting.NewEtcdCounter(c.etcdclient, counterKey, 48*time.Hour)
+		// Needs to count the number of invocations.
+		// Follows the job's TTL (if set).
+		counter = counting.NewEtcdCounter(c.etcdclient, counterKey, int(job.Repeats), job.TTL)
 	}
 
 	entry := &Entry{
@@ -421,7 +442,7 @@ func (c *Cron) run(ctx context.Context) {
 					tickLock := e.distMutexPrefix + fmt.Sprintf("%v", effective.Unix())
 					m, err := mutexStore.Get(tickLock)
 					if err != nil {
-						go c.etcdErrorsHandler(ctx, e.Job, errors.Wrapf(err, "fail to create etcd mutex for job '%v'", e.Job.Name))
+						c.etcdErrorsHandler(ctx, e.Job, errors.Wrapf(err, "fail to create etcd mutex for job '%v'", e.Job.Name))
 						return
 					}
 
@@ -436,13 +457,13 @@ func (c *Cron) run(ctx context.Context) {
 					if err == context.DeadlineExceeded {
 						return
 					} else if err != nil {
-						go c.etcdErrorsHandler(ctx, e.Job, errors.Wrapf(err, "fail to lock mutex '%v'", m.Key()))
+						c.etcdErrorsHandler(ctx, e.Job, errors.Wrapf(err, "fail to lock mutex '%v'", m.Key()))
 						return
 					}
 
 					result, err := c.triggerFunc(ctx, e.Job.Metadata, e.Job.Payload)
 					if err != nil {
-						go c.errorsHandler(ctx, e.Job, err)
+						c.errorsHandler(ctx, e.Job, err)
 						return
 					}
 
@@ -452,33 +473,32 @@ func (c *Cron) run(ctx context.Context) {
 						// One example, is having a more efficient way to count number of invocations.
 						err = c.DeleteJob(ctx, e.Job.Name)
 						if err != nil {
-							go c.errorsHandler(ctx, e.Job, err)
+							c.errorsHandler(ctx, e.Job, err)
 						}
 
 						// No need to check (and delete) a counter since every counter has a TTL.
 						return
 					}
 
-					increment := 1
-					if result == Failure {
-						// Does not increment counter, but refreshes the TTL.
-						increment = 0
-					}
-
-					if e.counter != nil {
+					if result == OK && e.counter != nil {
 						// Needs to check number of triggers
-						count, updated, err := e.counter.Add(ctx, increment, next)
+						remaining, updated, err := e.counter.Increment(ctx, -1)
 						if err != nil {
-							go c.errorsHandler(ctx, e.Job, err)
+							c.errorsHandler(ctx, e.Job, err)
 							// No need to abort if updating the count failed.
 							// The count solution is not transactional anyway.
 						}
 
 						if updated {
-							if count >= int(e.Job.Repeats) {
+							if remaining <= 0 {
 								err = c.DeleteJob(ctx, e.Job.Name)
 								if err != nil {
-									go c.errorsHandler(ctx, e.Job, err)
+									c.errorsHandler(ctx, e.Job, err)
+								}
+								// Tries to delete the counter here
+								err = e.counter.Delete(ctx)
+								if err != nil {
+									c.errorsHandler(ctx, e.Job, err)
 								}
 							}
 						}
