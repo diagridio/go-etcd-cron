@@ -26,21 +26,24 @@ type Job struct {
 	Repeats int32
 	// Optional start time for the first trigger of the schedule
 	StartTime time.Time
-	// Optional number of seconds until this job expires (if > 0)
-	TTL time.Duration
+	// Optional time when the job must expire
+	Expiration time.Time
 }
 
-func (j *Job) toJobRecord() (*storage.JobRecord, storage.JobRecordOptions) {
+func (j *Job) expired(now time.Time) bool {
+	return !j.Expiration.IsZero() && !now.Before(j.Expiration)
+}
+
+func (j *Job) toJobRecord() *storage.JobRecord {
 	return &storage.JobRecord{
-			Name:           j.Name,
-			Rhythm:         j.Rhythm,
-			Metadata:       j.Metadata,
-			Payload:        j.Payload,
-			Repeats:        j.Repeats,
-			StartTimestamp: j.StartTime.Unix(),
-		}, storage.JobRecordOptions{
-			TTL: j.TTL,
-		}
+		Name:                j.Name,
+		Rhythm:              j.Rhythm,
+		Metadata:            j.Metadata,
+		Payload:             j.Payload,
+		Repeats:             j.Repeats,
+		StartTimestamp:      j.StartTime.Unix(),
+		ExpirationTimestamp: j.Expiration.Unix(),
+	}
 }
 
 func jobFromJobRecord(r *storage.JobRecord) *Job {
@@ -49,11 +52,12 @@ func jobFromJobRecord(r *storage.JobRecord) *Job {
 	}
 
 	return &Job{
-		Name:      r.Name,
-		Rhythm:    r.Rhythm,
-		Metadata:  r.Metadata,
-		Payload:   r.Payload,
-		Repeats:   r.Repeats,
-		StartTime: time.Unix(r.StartTimestamp, 0),
+		Name:       r.Name,
+		Rhythm:     r.Rhythm,
+		Metadata:   r.Metadata,
+		Payload:    r.Payload,
+		Repeats:    r.Repeats,
+		StartTime:  time.Unix(r.StartTimestamp, 0),
+		Expiration: time.Unix(r.ExpirationTimestamp, 0),
 	}
 }

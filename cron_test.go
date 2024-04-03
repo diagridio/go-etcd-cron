@@ -708,9 +708,9 @@ func TestTTL(t *testing.T) {
 	require.NoError(t, err)
 	ctx, cancel := context.WithCancel(context.Background())
 	addJob(t, ctx, cron, Job{
-		Name:   "test-twice-3",
-		Rhythm: "* * * * * ?",
-		TTL:    2,
+		Name:       "test-twice-3",
+		Rhythm:     "* * * * * ?",
+		Expiration: time.Now().Add(2 * time.Second),
 	})
 
 	cron.Start(ctx)

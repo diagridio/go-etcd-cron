@@ -9,7 +9,6 @@ import (
 	"context"
 	"fmt"
 	"strconv"
-	"time"
 
 	etcdclientv3 "go.etcd.io/etcd/client/v3"
 )
@@ -19,7 +18,7 @@ type Counter interface {
 	// Returns (updated value, true if value was updated in memory, err if any error happened)
 	// It is possible that the value is updated but an error occurred while trying to persist it.
 	Increment(context.Context, int) (int, bool, error)
-
+	Refresh(context.Context) (int, error)
 	Delete(context.Context) error
 }
 
@@ -33,57 +32,33 @@ type etcdcounter struct {
 
 	loaded bool
 	value  int
-	ttl    time.Duration
 }
 
-func NewEtcdCounter(c *etcdclientv3.Client, key string, initialValue int, ttl time.Duration) Counter {
+func NewEtcdCounter(c *etcdclientv3.Client, key string, initialValue int) Counter {
 	return &etcdcounter{
 		etcdclient:   c,
 		initialValue: initialValue,
 		key:          key,
-		ttl:          ttl,
+		value:        initialValue,
 	}
 }
 
 func (c *etcdcounter) Increment(ctx context.Context, delta int) (int, bool, error) {
-	firstWrite := false
-
 	if !c.loaded {
 		// First, load the key's value.
-		res, err := c.etcdclient.KV.Get(ctx, c.key)
+		_, err := c.Refresh(ctx)
 		if err != nil {
-			return 0, false, err
+			return c.value, false, err
 		}
-		if len(res.Kvs) == 0 {
-			c.value = c.initialValue
-			c.loaded = true
-			firstWrite = true // No value for key, this is first write.
-		} else {
-			if res.Kvs[0].Value == nil {
-				return 0, false, fmt.Errorf("nil value for key %s", c.key)
-			}
-			if len(res.Kvs[0].Value) == 0 {
-				return 0, false, fmt.Errorf("empty value for key %s", c.key)
-			}
+		c.loaded = true
+	}
 
-			c.value, err = strconv.Atoi(string(res.Kvs[0].Value))
-			if err != nil {
-				return 0, false, err
-			}
-		}
+	if delta == 0 {
+		// No need to do a db write for a no-change operation.
+		return c.value, true, nil
 	}
 
 	c.value += delta
-
-	if firstWrite && (c.ttl > time.Duration(0)) {
-		// Counter will expire after some time, so first write is special in this case.
-		lease, err := c.etcdclient.Grant(ctx, int64(c.ttl.Seconds()))
-		if err != nil {
-			return c.value, true, err
-		}
-		_, err = c.etcdclient.KV.Put(ctx, c.key, strconv.Itoa(c.value), etcdclientv3.WithLease(lease.ID))
-		return c.value, true, err
-	}
 
 	_, err := c.etcdclient.KV.Put(ctx, c.key, strconv.Itoa(c.value))
 	return c.value, true, err
@@ -92,4 +67,30 @@ func (c *etcdcounter) Increment(ctx context.Context, delta int) (int, bool, erro
 func (c *etcdcounter) Delete(ctx context.Context) error {
 	_, err := c.etcdclient.KV.Delete(ctx, c.key)
 	return err
+}
+
+func (c *etcdcounter) Refresh(ctx context.Context) (int, error) {
+	c.loaded = false
+	res, err := c.etcdclient.KV.Get(ctx, c.key)
+	if err != nil {
+		return c.value, err
+	}
+	if len(res.Kvs) == 0 {
+		c.value = c.initialValue
+		c.loaded = true
+		return c.value, nil
+	}
+
+	if res.Kvs[0].Value == nil {
+		return c.value, fmt.Errorf("nil value for key %s", c.key)
+	}
+	if len(res.Kvs[0].Value) == 0 {
+		return c.value, fmt.Errorf("empty value for key %s", c.key)
+	}
+	v, err := strconv.Atoi(string(res.Kvs[0].Value))
+	if err == nil {
+		c.value = v
+	}
+	return c.value, err
+
 }

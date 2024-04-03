@@ -9,11 +9,11 @@ modtidy:
 # Target: gen-proto                                                            #
 ################################################################################
 PROTOC ?=protoc
-PROTOC_VERSION = 3.21.12
-PROTOBUF_SUITE_VERSION = 21.12
-PROTOC_GEN_GO_VERSION = v1.28.1
+PROTOC_VERSION = 24.4
+PROTOBUF_SUITE_VERSION = 24.4
+PROTOC_GEN_GO_VERSION = v1.32.0
 
-PROTOC_GEN_GO_GRPC_VERSION = 1.2.0
+PROTOC_GEN_GO_GRPC_VERSION = 1.3.0
 
 PROTOS:=$(shell ls proto)
 PROTO_PREFIX:=github.com/diagridio/go-etcd-cron

@@ -11,6 +11,7 @@ import (
 	"log"
 	"sort"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/pkg/errors"
@@ -85,18 +86,35 @@ type Entry struct {
 
 	// Counter if has limit on number of triggers
 	counter counting.Counter
+
+	// Caches if the job must be deleted
+	mustDelete atomic.Bool
 }
 
 func (e *Entry) tick(now time.Time) {
+	next := e.calculateNext(now)
+	if e.Job.expired(next) {
+		// Job will expire before next trigger, so we expire in the next second.
+		effectiveExpiration := e.Job.Expiration.Truncate(time.Second).Add(time.Second)
+
+		// Only override the trigger if the expiration is after the current trigger time.
+		if effectiveExpiration.After(now) {
+			next = effectiveExpiration
+		}
+	}
+
 	e.Prev = e.Next
+	e.Next = next
+}
+
+func (e *Entry) calculateNext(now time.Time) time.Time {
 	start := e.Job.StartTime.Truncate(time.Second)
 
 	if start.After(now) {
-		e.Next = start
-		return
+		return start
 	}
 
-	e.Next = e.Schedule.Next(start, now)
+	return e.Schedule.Next(start, now)
 }
 
 // byTime is a wrapper for sorting the entry array by time
@@ -228,8 +246,8 @@ func (c *Cron) AddJob(ctx context.Context, job Job) error {
 	if c.jobStore == nil {
 		return fmt.Errorf("cannot persist job: no job store configured")
 	}
-	record, opts := job.toJobRecord()
-	return c.jobStore.Put(ctx, record, opts)
+	record := job.toJobRecord()
+	return c.jobStore.Put(ctx, record)
 }
 
 // DeleteJob removes a job.
@@ -242,10 +260,12 @@ func (c *Cron) DeleteJob(ctx context.Context, jobName string) error {
 
 func (c *Cron) onJobDeleted(ctx context.Context, jobName string) error {
 	c.killJob(jobName)
-	// Best effort to delete the counter.
+	// Best effort to delete the counter (if present)
+	// Jobs deleted by expiration will delete their counter first.
+	// Jobs deleted manually need this logic.
 	partitionId := c.partitioning.CalculatePartitionId(jobName)
 	counterKey := c.organizer.CounterPath(partitionId, jobName)
-	counter := counting.NewEtcdCounter(c.etcdclient, counterKey, 0, time.Duration(0))
+	counter := counting.NewEtcdCounter(c.etcdclient, counterKey, 0)
 	err := counter.Delete(ctx)
 	if err != nil {
 		c.errorsHandler(ctx, Job{Name: jobName}, err)
@@ -309,8 +329,7 @@ func (c *Cron) schedule(schedule rhythm.Schedule, job *Job) error {
 	if job.Repeats > 0 {
 		counterKey := c.organizer.CounterPath(partitionId, job.Name)
 		// Needs to count the number of invocations.
-		// Follows the job's TTL (if set).
-		counter = counting.NewEtcdCounter(c.etcdclient, counterKey, int(job.Repeats), job.TTL)
+		counter = counting.NewEtcdCounter(c.etcdclient, counterKey, int(job.Repeats))
 	}
 
 	entry := &Entry{
@@ -400,6 +419,28 @@ func (c *Cron) run(ctx context.Context) {
 	c.pendingOperations = []func(context.Context) *Entry{}
 	c.pendingOperationsMutex.Unlock()
 
+	deleteCounterAndJob := func(ctx context.Context, e *Entry) {
+		// Force this flag, so job can be deleted in the next run as a retry (if needed)
+		e.mustDelete.Store(true)
+
+		// Delete counter and job from db.
+		// This solution removes the need to use etcd's lease object.
+		// First, delete counter, if present.
+		if e.counter != nil {
+			counterErr := e.counter.Delete(ctx)
+			if counterErr != nil {
+				c.etcdErrorsHandler(ctx, e.Job, errors.Wrapf(counterErr, "fail to delete counter for job '%v'", e.Job.Name))
+				// Don't proceed to delete the job since we want to try again later.
+				return
+			}
+		}
+
+		err := c.jobStore.Delete(ctx, e.Job.Name)
+		if err != nil {
+			c.etcdErrorsHandler(ctx, e.Job, errors.Wrapf(err, "fail to delete expired job '%v'", e.Job.Name))
+		}
+	}
+
 	for {
 		sort.Sort(byTime(entries))
 
@@ -435,6 +476,12 @@ func (c *Cron) run(ctx context.Context) {
 				e.tick(effective)
 
 				go func(ctx context.Context, e *Entry, next time.Time) {
+					if e.mustDelete.Load() || e.Job.expired(effective) {
+						deleteCounterAndJob(ctx, e)
+						// Don't do anything since job is expired.
+						return
+					}
+
 					if c.funcCtx != nil {
 						ctx = c.funcCtx(ctx, e.Job)
 					}
@@ -461,6 +508,17 @@ func (c *Cron) run(ctx context.Context) {
 						return
 					}
 
+					if e.counter != nil {
+						// Must refresh counter since it might have been updated by another instance before.
+						// Can only use the counter after the tick's mutex.
+						value, err := e.counter.Refresh(ctx)
+						if (err != nil) && (value <= 0) {
+							// Job already exhausted the counter, will not trigger - tries to delete instead.
+							deleteCounterAndJob(ctx, e)
+							return
+						}
+					}
+
 					result, err := c.triggerFunc(ctx, e.Job.Metadata, e.Job.Payload)
 					if err != nil {
 						c.errorsHandler(ctx, e.Job, err)
@@ -469,38 +527,22 @@ func (c *Cron) run(ctx context.Context) {
 
 					if result == Delete {
 						// Job must be deleted.
-						// This is handy if client wants to have a custom logic to decide if job is over.
-						// One example, is having a more efficient way to count number of invocations.
-						err = c.DeleteJob(ctx, e.Job.Name)
-						if err != nil {
-							c.errorsHandler(ctx, e.Job, err)
-						}
-
-						// No need to check (and delete) a counter since every counter has a TTL.
+						deleteCounterAndJob(ctx, e)
 						return
 					}
 
 					if result == OK && e.counter != nil {
 						// Needs to check number of triggers
-						remaining, updated, err := e.counter.Increment(ctx, -1)
+						value, updated, err := e.counter.Increment(ctx, -1)
 						if err != nil {
 							c.errorsHandler(ctx, e.Job, err)
 							// No need to abort if updating the count failed.
 							// The count solution is not transactional anyway.
 						}
 
-						if updated {
-							if remaining <= 0 {
-								err = c.DeleteJob(ctx, e.Job.Name)
-								if err != nil {
-									c.errorsHandler(ctx, e.Job, err)
-								}
-								// Tries to delete the counter here
-								err = e.counter.Delete(ctx)
-								if err != nil {
-									c.errorsHandler(ctx, e.Job, err)
-								}
-							}
+						if updated && value <= 0 {
+							deleteCounterAndJob(ctx, e)
+							return
 						}
 					}
 					// Cannot unlock because it can open a chance for double trigger since two instances
