@@ -116,6 +116,7 @@ func TestCounterDecrement(t *testing.T) {
 	// A new instance will start from initialValue since the db record is deleted.
 	counter = NewEtcdCounter(etcdClient, key, 5)
 	value, updated, err = counter.Increment(ctx, 0)
+
 	require.NoError(t, err)
 	assert.True(t, updated)
 	assert.Equal(t, 5, value)
