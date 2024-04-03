@@ -18,7 +18,7 @@ message JobRecord {
   string rhythm = 2;
   int64 startTimestamp = 3;  // time that the schedule start
   int64 expirationTimestamp = 4;  // time that the job expires
-  int32 repeats = 5;  // time total time the job should trigger
+  int32 repeats = 5;  // total number of times the job should trigger
   map<string, string> metadata = 6;
   google.protobuf.Any payload = 7;
 }
