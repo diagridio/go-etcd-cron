@@ -729,6 +729,44 @@ func TestTTL(t *testing.T) {
 	}
 }
 
+// Test job already expired.
+func TestExpiredAlready(t *testing.T) {
+	wg := &sync.WaitGroup{}
+	wg.Add(1)
+
+	firedOnce := atomic.Bool{}
+
+	cron, err := New(
+		WithNamespace(randomNamespace()),
+		WithTriggerFunc(func(ctx context.Context, m map[string]string, p *anypb.Any) (TriggerResult, error) {
+			firedOnce.Store(true)
+			wg.Done()
+			return OK, nil
+		}))
+	require.NoError(t, err)
+	ctx, cancel := context.WithCancel(context.Background())
+	addJob(t, ctx, cron, Job{
+		Name:       "test-expired",
+		Rhythm:     "* * * * * ?",
+		Expiration: time.Now().Add(-time.Hour),
+	})
+
+	cron.Start(ctx)
+	defer func() {
+		cancel()
+		cron.Wait()
+	}()
+
+	select {
+	case <-time.After(2 * ONE_SECOND_PLUS_SOME):
+		// Success, it means it did not consume the workgroup = not triggered.
+		assert.False(t, firedOnce.Load())
+	case <-wait(wg):
+		// Fails because TTL should delete the job and not trigger.
+		t.FailNow()
+	}
+}
+
 func wait(wg *sync.WaitGroup) chan bool {
 	ch := make(chan bool)
 	go func() {

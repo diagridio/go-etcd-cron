@@ -9,6 +9,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"math/rand"
 	"sort"
 	"sync"
 	"sync/atomic"
@@ -96,9 +97,13 @@ func (e *Entry) tick(now time.Time) {
 	if e.Job.expired(next) {
 		// Job will expire before next trigger, so we expire in the next second.
 		effectiveExpiration := e.Job.Expiration.Truncate(time.Second).Add(time.Second)
+		if !effectiveExpiration.After(now) {
+			// Expiration overdue, randomly pick a time in the future within 60s.
+			// No need to use crypto rand.
+			effectiveExpiration = now.Add(time.Second * time.Duration(rand.Intn(60)))
+		}
 
-		// Only override the trigger if the expiration is after the current trigger time.
-		if effectiveExpiration.After(now) {
+		if effectiveExpiration.After(now) && effectiveExpiration.Before(next) {
 			next = effectiveExpiration
 		}
 	}
@@ -452,6 +457,8 @@ func (c *Cron) run(ctx context.Context) {
 		} else {
 			effective = entries[0].Next
 		}
+
+		fmt.Printf("Next trigger: %s, Total entries: %d\n", effective.String(), len(entries))
 
 		select {
 		case op := <-c.liveOperation:
