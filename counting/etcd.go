@@ -93,8 +93,3 @@ func (c *etcdcounter) Refresh(ctx context.Context) (int, error) {
 	}
 	return c.value, err
 }
-
-func (c *etcdcounter) Delete(ctx context.Context) error {
-	_, err := c.etcdclient.KV.Delete(ctx, c.key)
-	return err
-}
