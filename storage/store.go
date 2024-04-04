@@ -23,7 +23,7 @@ import (
 // The JobStore persists and reads jobs from Etcd.
 type JobStore interface {
 	Start(ctx context.Context) error
-	Put(ctx context.Context, job *JobRecord) error
+	Put(ctx context.Context, jobName string, job *JobRecord) error
 	Delete(ctx context.Context, jobName string) error
 	Wait()
 }
@@ -34,7 +34,7 @@ type etcdStore struct {
 	kvStore         etcdclient.KV
 	partitioning    partitioning.Partitioner
 	organizer       partitioning.Organizer
-	putCallback     func(context.Context, *JobRecord) error
+	putCallback     func(context.Context, string, *JobRecord) error
 	deleteCallback  func(context.Context, string) error
 }
 
@@ -42,7 +42,7 @@ func NewEtcdJobStore(
 	client *etcdclient.Client,
 	organizer partitioning.Organizer,
 	partitioning partitioning.Partitioner,
-	putCallback func(context.Context, *JobRecord) error,
+	putCallback func(context.Context, string, *JobRecord) error,
 	deleteCallback func(context.Context, string) error) JobStore {
 	return &etcdStore{
 		etcdClient:     client,
@@ -81,14 +81,14 @@ func (s *etcdStore) Start(ctx context.Context) error {
 	return nil
 }
 
-func (s *etcdStore) Put(ctx context.Context, job *JobRecord) error {
+func (s *etcdStore) Put(ctx context.Context, jobName string, job *JobRecord) error {
 	bytes, err := proto.Marshal(job)
 	if err != nil {
 		return err
 	}
 	_, err = s.kvStore.Put(
 		ctx,
-		s.organizer.JobPath(job.Name),
+		s.organizer.JobPath(jobName),
 		string(bytes),
 	)
 	return err
@@ -105,17 +105,18 @@ func (s *etcdStore) Wait() {
 	s.runWaitingGroup.Wait()
 }
 
-func (s *etcdStore) notifyPut(ctx context.Context, kv *mvccpb.KeyValue, callback func(context.Context, *JobRecord) error) error {
+func (s *etcdStore) notifyPut(ctx context.Context, kv *mvccpb.KeyValue, callback func(context.Context, string, *JobRecord) error) error {
+	_, jobName := filepath.Split(string(kv.Key))
 	record := JobRecord{}
 	err := proto.Unmarshal(kv.Value, &record)
 	if err != nil {
 		return fmt.Errorf("could not unmarshal job for key %s: %v", string(kv.Key), err)
 	}
-	if record.GetName() == "" || record.GetRhythm() == "" {
+	if jobName == "" || record.GetRhythm() == "" {
 		return fmt.Errorf("could not deserialize job for key %s", string(kv.Key))
 	}
 
-	return callback(ctx, &record)
+	return callback(ctx, jobName, &record)
 }
 
 func (s *etcdStore) notifyDelete(ctx context.Context, name string, callback func(context.Context, string) error) error {

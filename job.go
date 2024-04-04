@@ -12,6 +12,14 @@ import (
 	anypb "google.golang.org/protobuf/types/known/anypb"
 )
 
+type JobStatus int
+
+// Job Statuses
+const (
+	JobStatusActive JobStatus = iota
+	JobStatusDeleted
+)
+
 // Job contains 3 mandatory options to define a job
 type Job struct {
 	// Name of the job
@@ -28,6 +36,8 @@ type Job struct {
 	StartTime time.Time
 	// Optional time when the job must expire
 	Expiration time.Time
+	// Status to allow job clean up
+	Status JobStatus
 }
 
 func (j *Job) expired(now time.Time) bool {
@@ -35,8 +45,12 @@ func (j *Job) expired(now time.Time) bool {
 }
 
 func (j *Job) toJobRecord() *storage.JobRecord {
+	status := storage.JobStatus_ACTIVE
+	if j.Status == JobStatusDeleted {
+		status = storage.JobStatus_DELETED
+	}
 	return &storage.JobRecord{
-		Name:                j.Name,
+		Status:              status,
 		Rhythm:              j.Rhythm,
 		Metadata:            j.Metadata,
 		Payload:             j.Payload,
@@ -46,18 +60,24 @@ func (j *Job) toJobRecord() *storage.JobRecord {
 	}
 }
 
-func jobFromJobRecord(r *storage.JobRecord) *Job {
+func jobFromJobRecord(name string, r *storage.JobRecord) *Job {
 	if r == nil {
 		return nil
 	}
 
+	status := JobStatusActive
+	if r.Status == storage.JobStatus_DELETED {
+		status = JobStatusDeleted
+	}
+
 	return &Job{
-		Name:       r.Name,
+		Name:       name,
 		Rhythm:     r.Rhythm,
 		Metadata:   r.Metadata,
 		Payload:    r.Payload,
 		Repeats:    r.Repeats,
 		StartTime:  time.Unix(r.StartTimestamp, 0),
 		Expiration: time.Unix(r.ExpirationTimestamp, 0),
+		Status:     status,
 	}
 }
