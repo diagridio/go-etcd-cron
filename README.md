@@ -80,7 +80,13 @@ cron.AddJob(context.TODO(), Job{
 Pre-requisites to run the tests locally:
 - Run etcd locally via one of the options below:
   - Locally: [Install etcd](https://etcd.io/docs/v3.4/install/) then run `etcd --logger=zap`
-  - Docker: [Running a single node etcd](https://etcd.io/docs/v3.5/op-guide/container/#running-a-single-node-etcd-1)
+  - Docker: [Running a single node etcd](https://etcd.io/docs/v3.5/op-guide/container/#running-a-single-node-etcd-1), for example:
+    ```
+    docker run -d -p 2379:2379 \
+    -e ETCD_ADVERTISE_CLIENT_URLS=http://0.0.0.0:2379 \
+    -e ETCD_LISTEN_CLIENT_URLS=http://0.0.0.0:2379 \
+    --name etcd quay.io/coreos/etcd:v3.5.5
+    ```
 
 ```bash
 make test

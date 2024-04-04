@@ -142,10 +142,10 @@ func main() {
 			Payload: &anypb.Any{Value: []byte("ev 7s")},
 		})
 		cron.AddJob(ctx, etcdcron.Job{
-			Name:    "every-1s-then-expire-hadfh452erhh",
-			Rhythm:  "*/1 * * * * *",
-			TTL:     10,
-			Payload: &anypb.Any{Value: []byte("ev 1s then expires after 10s")},
+			Name:       "every-1s-then-expire-hadfh452erhh",
+			Rhythm:     "*/1 * * * * *",
+			Expiration: time.Now().Add(10 * time.Second),
+			Payload:    &anypb.Any{Value: []byte("ev 1s then expires after 10s")},
 		})
 	}
 	cron.Start(ctx)

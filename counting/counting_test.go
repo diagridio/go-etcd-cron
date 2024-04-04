@@ -29,7 +29,7 @@ func TestCounterIncrement(t *testing.T) {
 
 	key := organizer.CounterPath(0, "count")
 	// This counter will expire keys 1s after their next scheduled trigger.
-	counter := NewEtcdCounter(etcdClient, key, 0, time.Duration(0))
+	counter := NewEtcdCounter(etcdClient, key, 0)
 
 	value, updated, err := counter.Increment(ctx, 1)
 	require.NoError(t, err)
@@ -62,7 +62,7 @@ func TestCounterIncrement(t *testing.T) {
 	assert.NoError(t, err)
 
 	// A new instance will start from 0 since the db record does not exist.
-	counter = NewEtcdCounter(etcdClient, key, 0, time.Duration(0))
+	counter = NewEtcdCounter(etcdClient, key, 0)
 	value, updated, err = counter.Increment(ctx, 0)
 	require.NoError(t, err)
 	assert.True(t, updated)
@@ -79,7 +79,7 @@ func TestCounterDecrement(t *testing.T) {
 
 	key := organizer.CounterPath(0, "count")
 	// This counter will expire keys 1s after their next scheduled trigger.
-	counter := NewEtcdCounter(etcdClient, key, 5, time.Duration(0))
+	counter := NewEtcdCounter(etcdClient, key, 5)
 
 	value, updated, err := counter.Increment(ctx, -1)
 	require.NoError(t, err)
@@ -114,46 +114,9 @@ func TestCounterDecrement(t *testing.T) {
 	assert.NoError(t, err)
 
 	// A new instance will start from initialValue since the db record is deleted.
-	counter = NewEtcdCounter(etcdClient, key, 5, time.Duration(0))
+	counter = NewEtcdCounter(etcdClient, key, 5)
 	value, updated, err = counter.Increment(ctx, 0)
-	require.NoError(t, err)
-	assert.True(t, updated)
-	assert.Equal(t, 5, value)
-}
 
-func TestCounterExpiration(t *testing.T) {
-	ctx := context.TODO()
-	organizer := partitioning.NewOrganizer(randomNamespace(), partitioning.NoPartitioning())
-	etcdClient, err := etcdclientv3.New(etcdclientv3.Config{
-		Endpoints: []string{defaultEtcdEndpoint},
-	})
-	require.NoError(t, err)
-
-	key := organizer.CounterPath(0, "count")
-	// This counter will expire keys 1s after their next scheduled trigger.
-	counter := NewEtcdCounter(etcdClient, key, 0, 2*time.Second)
-
-	value, updated, err := counter.Increment(ctx, 1)
-	require.NoError(t, err)
-	assert.True(t, updated)
-	assert.Equal(t, 1, value)
-
-	// Enough time to expire in the database.
-	time.Sleep(3 * time.Second)
-
-	// New instance to make sure we re-read it from DB.
-	counter = NewEtcdCounter(etcdClient, key, 0, time.Duration(0))
-
-	value, updated, err = counter.Increment(ctx, 2)
-	require.NoError(t, err)
-	assert.True(t, updated)
-	assert.Equal(t, 2, value)
-
-	// Zero duration means it never expires.
-	// Enough time to make sure the previous TTL did not apply anymore.
-	time.Sleep(3 * time.Second)
-
-	value, updated, err = counter.Increment(ctx, 3)
 	require.NoError(t, err)
 	assert.True(t, updated)
 	assert.Equal(t, 5, value)
@@ -168,8 +131,7 @@ func TestCounterDeleteUnknownKey(t *testing.T) {
 	require.NoError(t, err)
 
 	key := organizer.CounterPath(0, "unknown")
-	// This counter will expire keys 1s after their next scheduled trigger.
-	counter := NewEtcdCounter(etcdClient, key, 0, 2*time.Second)
+	counter := NewEtcdCounter(etcdClient, key, 0)
 
 	err = counter.Delete(ctx)
 	assert.NoError(t, err)

@@ -11,9 +11,7 @@ import (
 	"log"
 	"path/filepath"
 	"sync"
-	"time"
 
-	"github.com/pkg/errors"
 	"go.etcd.io/etcd/api/v3/mvccpb"
 	etcdclient "go.etcd.io/etcd/client/v3"
 	"go.etcd.io/etcd/client/v3/mirror"
@@ -25,14 +23,9 @@ import (
 // The JobStore persists and reads jobs from Etcd.
 type JobStore interface {
 	Start(ctx context.Context) error
-	Put(ctx context.Context, job *JobRecord, options JobRecordOptions) error
+	Put(ctx context.Context, job *JobRecord) error
 	Delete(ctx context.Context, jobName string) error
 	Wait()
-}
-
-// Optional params to store a job
-type JobRecordOptions struct {
-	TTL time.Duration
 }
 
 type etcdStore struct {
@@ -88,18 +81,7 @@ func (s *etcdStore) Start(ctx context.Context) error {
 	return nil
 }
 
-func (s *etcdStore) Put(ctx context.Context, job *JobRecord, options JobRecordOptions) error {
-	opts := []etcdclient.OpOption{}
-	if options.TTL > 0 {
-		// Create a lease
-		lease, err := s.etcdClient.Grant(ctx, int64(options.TTL.Seconds()))
-		if err != nil {
-			return errors.Errorf("failed to create lease to save job %s: %v", job.Name, err)
-		}
-
-		opts = append(opts, etcdclient.WithLease(lease.ID))
-	}
-
+func (s *etcdStore) Put(ctx context.Context, job *JobRecord) error {
 	bytes, err := proto.Marshal(job)
 	if err != nil {
 		return err
@@ -108,7 +90,6 @@ func (s *etcdStore) Put(ctx context.Context, job *JobRecord, options JobRecordOp
 		ctx,
 		s.organizer.JobPath(job.Name),
 		string(bytes),
-		opts...,
 	)
 	return err
 }

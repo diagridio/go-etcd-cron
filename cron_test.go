@@ -708,9 +708,9 @@ func TestTTL(t *testing.T) {
 	require.NoError(t, err)
 	ctx, cancel := context.WithCancel(context.Background())
 	addJob(t, ctx, cron, Job{
-		Name:   "test-twice-3",
-		Rhythm: "* * * * * ?",
-		TTL:    2,
+		Name:       "test-twice-3",
+		Rhythm:     "* * * * * ?",
+		Expiration: time.Now().Add(2 * time.Second),
 	})
 
 	cron.Start(ctx)
@@ -725,6 +725,44 @@ func TestTTL(t *testing.T) {
 		assert.True(t, firedOnce.Load())
 	case <-wait(wg):
 		// Fails because TTL should delete the job and make it stop consuming the workgroup count.
+		t.FailNow()
+	}
+}
+
+// Test job already expired.
+func TestExpiredAlready(t *testing.T) {
+	wg := &sync.WaitGroup{}
+	wg.Add(1)
+
+	firedOnce := atomic.Bool{}
+
+	cron, err := New(
+		WithNamespace(randomNamespace()),
+		WithTriggerFunc(func(ctx context.Context, m map[string]string, p *anypb.Any) (TriggerResult, error) {
+			firedOnce.Store(true)
+			wg.Done()
+			return OK, nil
+		}))
+	require.NoError(t, err)
+	ctx, cancel := context.WithCancel(context.Background())
+	addJob(t, ctx, cron, Job{
+		Name:       "test-expired",
+		Rhythm:     "* * * * * ?",
+		Expiration: time.Now().Add(-time.Hour),
+	})
+
+	cron.Start(ctx)
+	defer func() {
+		cancel()
+		cron.Wait()
+	}()
+
+	select {
+	case <-time.After(2 * ONE_SECOND_PLUS_SOME):
+		// Success, it means it did not consume the workgroup = not triggered.
+		assert.False(t, firedOnce.Load())
+	case <-wait(wg):
+		// Fails because TTL should delete the job and not trigger.
 		t.FailNow()
 	}
 }
