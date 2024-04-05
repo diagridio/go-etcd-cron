@@ -15,7 +15,9 @@ import (
 	"time"
 
 	"github.com/pkg/errors"
+	"go.etcd.io/etcd/client/pkg/v3/logutil"
 	etcdclient "go.etcd.io/etcd/client/v3"
+	"go.uber.org/zap"
 	anypb "google.golang.org/protobuf/types/known/anypb"
 
 	"github.com/diagridio/go-etcd-cron/collector"
@@ -53,9 +55,15 @@ type Cron struct {
 	organizer              partitioning.Organizer
 	partitioning           partitioning.Partitioner
 	collector              collector.Collector
+
+	logger *zap.Logger
 }
 
-type TriggerFunction func(ctx context.Context, metadata map[string]string, payload *anypb.Any) (TriggerResult, error)
+type TriggerRequest struct {
+	JobName  string
+	Metadata map[string]string
+	Payload  *anypb.Any
+}
 
 type TriggerResult int
 
@@ -64,6 +72,8 @@ const (
 	Failure
 	Delete
 )
+
+type TriggerFunction func(ctx context.Context, req TriggerRequest) (TriggerResult, error)
 
 // Entry consists of a schedule and the func to execute on that schedule.
 type Entry struct {
@@ -201,6 +211,17 @@ func WithPartitioning(p partitioning.Partitioner) CronOpt {
 	})
 }
 
+func WithLogConfig(c *zap.Config) CronOpt {
+	return CronOpt(func(cron *Cron) {
+		if c != nil {
+			logger, err := c.Build()
+			if err == nil {
+				cron.logger = logger
+			}
+		}
+	})
+}
+
 // New returns a new Cron job runner.
 func New(opts ...CronOpt) (*Cron, error) {
 	cron := &Cron{
@@ -253,6 +274,15 @@ func New(opts ...CronOpt) (*Cron, error) {
 	}
 
 	cron.collector = collector.New(time.Hour, time.Minute)
+
+	if cron.logger == nil {
+		logger, err := logutil.CreateDefaultZapLogger(zap.InfoLevel)
+		if err != nil {
+			return nil, err
+		}
+		cron.logger = logger.Named("diagrid-cron")
+	}
+
 	return cron, nil
 }
 
@@ -311,7 +341,8 @@ func (c *Cron) GetJob(jobName string) *Job {
 		return nil
 	}
 
-	return &entry.Job
+	job := entry.Job
+	return &job
 }
 
 // Schedule adds a Job to the Cron to be run on the given schedule.
@@ -492,7 +523,7 @@ func (c *Cron) run(ctx context.Context) {
 			effective = entries[0].Next
 		}
 
-		fmt.Printf("Next trigger: %s, Total entries: %d\n", effective.String(), len(entries))
+		c.logger.Info("new iteration", zap.Time("nextTrigger", effective), zap.Int("entries", len(entries)))
 
 		select {
 		case op := <-c.liveOperation:
@@ -572,7 +603,11 @@ func (c *Cron) run(ctx context.Context) {
 						return
 					}
 
-					result, err := c.triggerFunc(ctx, e.Job.Metadata, e.Job.Payload)
+					result, err := c.triggerFunc(ctx, TriggerRequest{
+						JobName:  e.jobName,
+						Metadata: e.Job.Metadata,
+						Payload:  e.Job.Payload,
+					})
 					if err != nil {
 						c.errorsHandler(ctx, e.Job, err)
 						return
