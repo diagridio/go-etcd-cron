@@ -12,11 +12,12 @@ import (
 	"math/rand"
 	"sort"
 	"sync"
-	"sync/atomic"
 	"time"
 
 	"github.com/pkg/errors"
+	"go.etcd.io/etcd/client/pkg/v3/logutil"
 	etcdclient "go.etcd.io/etcd/client/v3"
+	"go.uber.org/zap"
 	anypb "google.golang.org/protobuf/types/known/anypb"
 
 	"github.com/diagridio/go-etcd-cron/collector"
@@ -54,9 +55,15 @@ type Cron struct {
 	organizer              partitioning.Organizer
 	partitioning           partitioning.Partitioner
 	collector              collector.Collector
+
+	logger *zap.Logger
 }
 
-type TriggerFunction func(ctx context.Context, metadata map[string]string, payload *anypb.Any) (TriggerResult, error)
+type TriggerRequest struct {
+	JobName  string
+	Metadata map[string]string
+	Payload  *anypb.Any
+}
 
 type TriggerResult int
 
@@ -65,6 +72,8 @@ const (
 	Failure
 	Delete
 )
+
+type TriggerFunction func(ctx context.Context, req TriggerRequest) (TriggerResult, error)
 
 // Entry consists of a schedule and the func to execute on that schedule.
 type Entry struct {
@@ -88,11 +97,19 @@ type Entry struct {
 	// Counter if has limit on number of triggers
 	counter counting.Counter
 
-	// Caches if the job must be deleted
-	mustDelete atomic.Bool
+	// Mutex to handle concurrent updates to entry
+	// Locks: Job and Schedule
+	mutex sync.RWMutex
+
+	// Optimization to avoid accessing Job's object.
+	// This is OK because the job's name never changes for a given entry.
+	jobName string
 }
 
 func (e *Entry) tick(now time.Time) {
+	e.mutex.RLock()
+	defer e.mutex.RUnlock()
+
 	next := e.calculateNext(now)
 	if e.Job.expired(next) {
 		// Job will expire before next trigger, so we expire in the next second.
@@ -113,6 +130,9 @@ func (e *Entry) tick(now time.Time) {
 }
 
 func (e *Entry) calculateNext(now time.Time) time.Time {
+	e.mutex.RLock()
+	defer e.mutex.RUnlock()
+
 	start := e.Job.StartTime.Truncate(time.Second)
 
 	if start.After(now) {
@@ -191,6 +211,17 @@ func WithPartitioning(p partitioning.Partitioner) CronOpt {
 	})
 }
 
+func WithLogConfig(c *zap.Config) CronOpt {
+	return CronOpt(func(cron *Cron) {
+		if c != nil {
+			logger, err := c.Build()
+			if err == nil {
+				cron.logger = logger
+			}
+		}
+	})
+}
+
 // New returns a new Cron job runner.
 func New(opts ...CronOpt) (*Cron, error) {
 	cron := &Cron{
@@ -234,8 +265,8 @@ func New(opts ...CronOpt) (*Cron, error) {
 			cron.etcdclient,
 			cron.organizer,
 			cron.partitioning,
-			func(ctx context.Context, r *storage.JobRecord) error {
-				return cron.scheduleJob(jobFromJobRecord(r))
+			func(ctx context.Context, jobName string, r *storage.JobRecord) error {
+				return cron.scheduleJob(jobFromJobRecord(jobName, r))
 			},
 			func(ctx context.Context, s string) error {
 				return cron.onJobDeleted(ctx, s)
@@ -243,6 +274,15 @@ func New(opts ...CronOpt) (*Cron, error) {
 	}
 
 	cron.collector = collector.New(time.Hour, time.Minute)
+
+	if cron.logger == nil {
+		logger, err := logutil.CreateDefaultZapLogger(zap.InfoLevel)
+		if err != nil {
+			return nil, err
+		}
+		cron.logger = logger.Named("diagrid-cron")
+	}
+
 	return cron, nil
 }
 
@@ -252,7 +292,7 @@ func (c *Cron) AddJob(ctx context.Context, job Job) error {
 		return fmt.Errorf("cannot persist job: no job store configured")
 	}
 	record := job.toJobRecord()
-	return c.jobStore.Put(ctx, record)
+	return c.jobStore.Put(ctx, job.Name, record)
 }
 
 // DeleteJob removes a job.
@@ -301,7 +341,8 @@ func (c *Cron) GetJob(jobName string) *Job {
 		return nil
 	}
 
-	return &entry.Job
+	job := entry.Job
+	return &job
 }
 
 // Schedule adds a Job to the Cron to be run on the given schedule.
@@ -338,6 +379,7 @@ func (c *Cron) schedule(schedule rhythm.Schedule, job *Job) error {
 	}
 
 	entry := &Entry{
+		jobName:         job.Name,
 		Schedule:        schedule,
 		Job:             *job,
 		distMutexPrefix: c.organizer.TicksPath(partitionId) + "/",
@@ -345,7 +387,19 @@ func (c *Cron) schedule(schedule rhythm.Schedule, job *Job) error {
 	}
 
 	c.appendOperation(func(ctx context.Context) *Entry {
-		c.entries[entry.Job.Name] = entry
+		existing, exists := c.entries[entry.jobName]
+		if exists {
+			existing.mutex.Lock()
+			defer existing.mutex.Unlock()
+
+			// Updates existing job.
+			existing.Job = entry.Job
+			existing.Schedule = entry.Schedule
+			// Counter is not reused.
+			return existing
+		} else {
+			c.entries[entry.jobName] = entry
+		}
 		return entry
 	})
 	return nil
@@ -375,12 +429,15 @@ func (c *Cron) Entries() []*Entry {
 	defer c.entriesMutex.RUnlock()
 	entries := []*Entry{}
 	for _, e := range c.entries {
+		e.mutex.RLock()
 		entries = append(entries, &Entry{
 			Schedule: e.Schedule,
 			Next:     e.Next,
 			Prev:     e.Prev,
 			Job:      e.Job,
+			jobName:  e.jobName,
 		})
+		e.mutex.RUnlock()
 	}
 	return entries
 }
@@ -424,26 +481,34 @@ func (c *Cron) run(ctx context.Context) {
 	c.pendingOperations = []func(context.Context) *Entry{}
 	c.pendingOperationsMutex.Unlock()
 
-	deleteCounterAndJob := func(ctx context.Context, e *Entry) {
-		// Force this flag, so job can be deleted in the next run as a retry (if needed)
-		e.mustDelete.Store(true)
-
-		// Delete counter and job from db.
-		// This solution removes the need to use etcd's lease object.
-		// First, delete counter, if present.
+	jobCleanUp := func(ctx context.Context, e *Entry) error {
 		if e.counter != nil {
-			counterErr := e.counter.Delete(ctx)
-			if counterErr != nil {
-				c.etcdErrorsHandler(ctx, e.Job, errors.Wrapf(counterErr, "fail to delete counter for job '%v'", e.Job.Name))
-				// Don't proceed to delete the job since we want to try again later.
-				return
+			err := e.counter.Delete(ctx)
+			if err != nil {
+				return err
 			}
 		}
 
-		err := c.jobStore.Delete(ctx, e.Job.Name)
+		// Now that all other records related to the job are deleted, we can delete the job
+		return c.jobStore.Delete(ctx, e.jobName)
+	}
+
+	updateAsDeleted := func(ctx context.Context, e *Entry) error {
+		e.mutex.Lock()
+		e.Job.Status = JobStatusDeleted
+		e.Job.Payload = nil
+		e.Job.Metadata = nil
+		record := e.Job.toJobRecord()
+		e.mutex.Unlock()
+
+		// Now that all other records related to the job are deleted, we can delete the job
+		err := c.jobStore.Put(ctx, e.jobName, record)
 		if err != nil {
-			c.etcdErrorsHandler(ctx, e.Job, errors.Wrapf(err, "fail to delete expired job '%v'", e.Job.Name))
+			return err
 		}
+
+		// Proactive try to clean up right away, if fails then we try again in next trigger
+		return jobCleanUp(ctx, e)
 	}
 
 	for {
@@ -458,7 +523,7 @@ func (c *Cron) run(ctx context.Context) {
 			effective = entries[0].Next
 		}
 
-		fmt.Printf("Next trigger: %s, Total entries: %d\n", effective.String(), len(entries))
+		c.logger.Info("new iteration", zap.Time("nextTrigger", effective), zap.Int("entries", len(entries)))
 
 		select {
 		case op := <-c.liveOperation:
@@ -483,12 +548,6 @@ func (c *Cron) run(ctx context.Context) {
 				e.tick(effective)
 
 				go func(ctx context.Context, e *Entry, next time.Time) {
-					if e.mustDelete.Load() || e.Job.expired(effective) {
-						deleteCounterAndJob(ctx, e)
-						// Don't do anything since job is expired.
-						return
-					}
-
 					if c.funcCtx != nil {
 						ctx = c.funcCtx(ctx, e.Job)
 					}
@@ -496,7 +555,7 @@ func (c *Cron) run(ctx context.Context) {
 					tickLock := e.distMutexPrefix + fmt.Sprintf("%v", effective.Unix())
 					m, err := mutexStore.Get(tickLock)
 					if err != nil {
-						c.etcdErrorsHandler(ctx, e.Job, errors.Wrapf(err, "fail to create etcd mutex for job '%v'", e.Job.Name))
+						c.etcdErrorsHandler(ctx, e.Job, errors.Wrapf(err, "fail to create etcd mutex for job '%v'", e.jobName))
 						return
 					}
 
@@ -521,34 +580,61 @@ func (c *Cron) run(ctx context.Context) {
 						value, err := e.counter.Refresh(ctx)
 						if (err != nil) && (value <= 0) {
 							// Job already exhausted the counter, will not trigger - tries to delete instead.
-							deleteCounterAndJob(ctx, e)
-							return
+							err := updateAsDeleted(ctx, e)
+							if err != nil {
+								c.errorsHandler(ctx, e.Job, err)
+							}
 						}
 					}
 
-					result, err := c.triggerFunc(ctx, e.Job.Metadata, e.Job.Payload)
+					if e.Job.Status == JobStatusActive && e.Job.expired(effective) {
+						err := updateAsDeleted(ctx, e)
+						if err != nil {
+							c.errorsHandler(ctx, e.Job, err)
+						}
+						return
+					}
+
+					if e.Job.Status == JobStatusDeleted {
+						err = jobCleanUp(ctx, e)
+						if err != nil {
+							c.errorsHandler(ctx, e.Job, err)
+						}
+						return
+					}
+
+					result, err := c.triggerFunc(ctx, TriggerRequest{
+						JobName:  e.jobName,
+						Metadata: e.Job.Metadata,
+						Payload:  e.Job.Payload,
+					})
 					if err != nil {
 						c.errorsHandler(ctx, e.Job, err)
 						return
 					}
 
 					if result == Delete {
-						// Job must be deleted.
-						deleteCounterAndJob(ctx, e)
+						err := updateAsDeleted(ctx, e)
+						if err != nil {
+							c.errorsHandler(ctx, e.Job, err)
+						}
 						return
 					}
 
 					if result == OK && e.counter != nil {
 						// Needs to check number of triggers
-						value, updated, err := e.counter.Increment(ctx, -1)
+						value, _, err := e.counter.Increment(ctx, -1)
 						if err != nil {
 							c.errorsHandler(ctx, e.Job, err)
 							// No need to abort if updating the count failed.
 							// The count solution is not transactional anyway.
 						}
 
-						if updated && value <= 0 {
-							deleteCounterAndJob(ctx, e)
+						if value <= 0 {
+							err := updateAsDeleted(ctx, e)
+							if err != nil {
+								c.errorsHandler(ctx, e.Job, err)
+							}
 							return
 						}
 					}

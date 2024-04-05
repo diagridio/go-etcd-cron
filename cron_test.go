@@ -17,7 +17,6 @@ import (
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	anypb "google.golang.org/protobuf/types/known/anypb"
 )
 
 // Many tests schedule a job for every second, and then wait at most a second
@@ -46,7 +45,7 @@ func TestStopCausesJobsToNotRun(t *testing.T) {
 
 	cron, err := New(
 		WithNamespace(randomNamespace()),
-		WithTriggerFunc(func(ctx context.Context, m map[string]string, p *anypb.Any) (TriggerResult, error) {
+		WithTriggerFunc(func(ctx context.Context, req TriggerRequest) (TriggerResult, error) {
 			wg.Done()
 			return OK, nil
 		}))
@@ -77,7 +76,7 @@ func TestAddBeforeRunning(t *testing.T) {
 
 	cron, err := New(
 		WithNamespace(randomNamespace()),
-		WithTriggerFunc(func(ctx context.Context, m map[string]string, p *anypb.Any) (TriggerResult, error) {
+		WithTriggerFunc(func(ctx context.Context, req TriggerRequest) (TriggerResult, error) {
 			if calledAlready {
 				return OK, nil
 			}
@@ -113,7 +112,8 @@ func TestDelayedStart(t *testing.T) {
 
 	cron, err := New(
 		WithNamespace(randomNamespace()),
-		WithTriggerFunc(func(ctx context.Context, m map[string]string, p *anypb.Any) (TriggerResult, error) {
+		WithTriggerFunc(func(ctx context.Context, req TriggerRequest) (TriggerResult, error) {
+			m := req.Metadata
 			if m["id"] == "one" {
 				calledCount1.Add(1)
 			}
@@ -159,7 +159,7 @@ func TestRepeatLimit(t *testing.T) {
 
 	cron, err := New(
 		WithNamespace(randomNamespace()),
-		WithTriggerFunc(func(ctx context.Context, m map[string]string, p *anypb.Any) (TriggerResult, error) {
+		WithTriggerFunc(func(ctx context.Context, req TriggerRequest) (TriggerResult, error) {
 			calledCount.Add(1)
 			return OK, nil
 		}))
@@ -181,13 +181,41 @@ func TestRepeatLimit(t *testing.T) {
 	assert.Nil(t, cron.GetJob("test-repeat-limit"))
 }
 
+// Job with repeat in other format.
+func TestRepeatLimitEvery(t *testing.T) {
+	calledCount := atomic.Int32{}
+
+	cron, err := New(
+		WithNamespace(randomNamespace()),
+		WithTriggerFunc(func(ctx context.Context, req TriggerRequest) (TriggerResult, error) {
+			calledCount.Add(1)
+			return OK, nil
+		}))
+	require.NoError(t, err)
+	ctx, cancel := context.WithCancel(context.Background())
+	addJob(t, ctx, cron, Job{
+		Name:    "test-repeat-limit-every-1s",
+		Rhythm:  "@every 1s",
+		Repeats: 3,
+	})
+	cron.Start(ctx)
+	defer func() {
+		cancel()
+		cron.Wait()
+	}()
+
+	time.Sleep(5 * time.Second)
+	assert.Equal(t, int32(3), calledCount.Load())
+	assert.Nil(t, cron.GetJob("test-repeat-limit-every-1s"))
+}
+
 // Job with repeat limit in ISO8601.
 func TestRepeatWithISO8601(t *testing.T) {
 	calledCount := atomic.Int32{}
 
 	cron, err := New(
 		WithNamespace(randomNamespace()),
-		WithTriggerFunc(func(ctx context.Context, m map[string]string, p *anypb.Any) (TriggerResult, error) {
+		WithTriggerFunc(func(ctx context.Context, req TriggerRequest) (TriggerResult, error) {
 			calledCount.Add(1)
 			return OK, nil
 		}))
@@ -217,7 +245,7 @@ func TestFailureDoesNotIncrementCounter(t *testing.T) {
 
 	cron, err := New(
 		WithNamespace(randomNamespace()),
-		WithTriggerFunc(func(ctx context.Context, m map[string]string, p *anypb.Any) (TriggerResult, error) {
+		WithTriggerFunc(func(ctx context.Context, req TriggerRequest) (TriggerResult, error) {
 			calledCount.Add(1)
 			return Failure, nil
 		}))
@@ -246,7 +274,7 @@ func TestCustomLimit(t *testing.T) {
 
 	cron, err := New(
 		WithNamespace(randomNamespace()),
-		WithTriggerFunc(func(ctx context.Context, m map[string]string, p *anypb.Any) (TriggerResult, error) {
+		WithTriggerFunc(func(ctx context.Context, req TriggerRequest) (TriggerResult, error) {
 			calledCount.Add(1)
 			if calledCount.Load() == maxCount {
 				return Delete, nil
@@ -277,7 +305,7 @@ func TestAddWhileRunning(t *testing.T) {
 
 	cron, err := New(
 		WithNamespace(randomNamespace()),
-		WithTriggerFunc(func(ctx context.Context, m map[string]string, p *anypb.Any) (TriggerResult, error) {
+		WithTriggerFunc(func(ctx context.Context, req TriggerRequest) (TriggerResult, error) {
 			wg.Done()
 			return OK, nil
 		}))
@@ -308,7 +336,7 @@ func TestSnapshotEntries(t *testing.T) {
 
 	cron, err := New(
 		WithNamespace(randomNamespace()),
-		WithTriggerFunc(func(ctx context.Context, m map[string]string, p *anypb.Any) (TriggerResult, error) {
+		WithTriggerFunc(func(ctx context.Context, req TriggerRequest) (TriggerResult, error) {
 			wg.Done()
 			return OK, nil
 		}))
@@ -346,7 +374,8 @@ func TestDelayedAdd(t *testing.T) {
 
 	cron, err := New(
 		WithNamespace(randomNamespace()),
-		WithTriggerFunc(func(ctx context.Context, m map[string]string, p *anypb.Any) (TriggerResult, error) {
+		WithTriggerFunc(func(ctx context.Context, req TriggerRequest) (TriggerResult, error) {
+			m := req.Metadata
 			if m["op"] == "noop" {
 				return OK, nil
 			}
@@ -398,7 +427,8 @@ func TestMultipleEntries(t *testing.T) {
 
 	cron, err := New(
 		WithNamespace(randomNamespace()),
-		WithTriggerFunc(func(ctx context.Context, m map[string]string, p *anypb.Any) (TriggerResult, error) {
+		WithTriggerFunc(func(ctx context.Context, req TriggerRequest) (TriggerResult, error) {
+			m := req.Metadata
 			if m["op"] == "return-nil" {
 				return OK, nil
 			}
@@ -447,7 +477,8 @@ func TestRunningJobTwice(t *testing.T) {
 
 	cron, err := New(
 		WithNamespace(randomNamespace()),
-		WithTriggerFunc(func(ctx context.Context, m map[string]string, p *anypb.Any) (TriggerResult, error) {
+		WithTriggerFunc(func(ctx context.Context, req TriggerRequest) (TriggerResult, error) {
+			m := req.Metadata
 			if m["op"] == "return-nil" {
 				return OK, nil
 			}
@@ -491,7 +522,8 @@ func TestRunningMultipleSchedules(t *testing.T) {
 
 	cron, err := New(
 		WithNamespace(randomNamespace()),
-		WithTriggerFunc(func(ctx context.Context, m map[string]string, p *anypb.Any) (TriggerResult, error) {
+		WithTriggerFunc(func(ctx context.Context, req TriggerRequest) (TriggerResult, error) {
+			m := req.Metadata
 			if m["op"] == "return-nil" {
 				return OK, nil
 			}
@@ -545,7 +577,7 @@ func TestLocalTimezone(t *testing.T) {
 
 	cron, err := New(
 		WithNamespace(randomNamespace()),
-		WithTriggerFunc(func(ctx context.Context, m map[string]string, p *anypb.Any) (TriggerResult, error) {
+		WithTriggerFunc(func(ctx context.Context, req TriggerRequest) (TriggerResult, error) {
 			if called.Add(1) > 1 {
 				return OK, nil
 			}
@@ -580,7 +612,7 @@ func TestJob(t *testing.T) {
 
 	cron, err := New(
 		WithNamespace(randomNamespace()),
-		WithTriggerFunc(func(ctx context.Context, m map[string]string, p *anypb.Any) (TriggerResult, error) {
+		WithTriggerFunc(func(ctx context.Context, req TriggerRequest) (TriggerResult, error) {
 			if calledAlready {
 				return OK, nil
 			}
@@ -650,7 +682,7 @@ func TestCron_Parallel(t *testing.T) {
 
 	cron1, err := New(
 		WithNamespace(randomNamespace()),
-		WithTriggerFunc(func(ctx context.Context, m map[string]string, p *anypb.Any) (TriggerResult, error) {
+		WithTriggerFunc(func(ctx context.Context, req TriggerRequest) (TriggerResult, error) {
 			wg.Done()
 			return OK, nil
 		}))
@@ -663,7 +695,7 @@ func TestCron_Parallel(t *testing.T) {
 
 	cron2, err := New(
 		WithNamespace(randomNamespace()),
-		WithTriggerFunc(func(ctx context.Context, m map[string]string, p *anypb.Any) (TriggerResult, error) {
+		WithTriggerFunc(func(ctx context.Context, req TriggerRequest) (TriggerResult, error) {
 			wg.Done()
 			return OK, nil
 		}))
@@ -700,7 +732,7 @@ func TestTTL(t *testing.T) {
 
 	cron, err := New(
 		WithNamespace(randomNamespace()),
-		WithTriggerFunc(func(ctx context.Context, m map[string]string, p *anypb.Any) (TriggerResult, error) {
+		WithTriggerFunc(func(ctx context.Context, req TriggerRequest) (TriggerResult, error) {
 			firedOnce.Store(true)
 			wg.Done()
 			return OK, nil
@@ -738,7 +770,7 @@ func TestExpiredAlready(t *testing.T) {
 
 	cron, err := New(
 		WithNamespace(randomNamespace()),
-		WithTriggerFunc(func(ctx context.Context, m map[string]string, p *anypb.Any) (TriggerResult, error) {
+		WithTriggerFunc(func(ctx context.Context, req TriggerRequest) (TriggerResult, error) {
 			firedOnce.Store(true)
 			wg.Done()
 			return OK, nil

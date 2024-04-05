@@ -11,10 +11,16 @@ import "google/protobuf/any.proto";
 
 option go_package = "github.com/diagridio/go-etcd-cron/storage;storage";
 
+// JobStatus to keep track of jobs to be deleted.
+enum JobStatus {
+  ACTIVE = 0;
+  DELETED = 1;
+}
+
 // JobRecord is the record persisted as value in Etcd (not the key).
 // Namespace is handled by prefixing the key in the database.
 message JobRecord {
-  string name = 1;
+  JobStatus status = 1;
   string rhythm = 2;
   int64 startTimestamp = 3;  // time that the schedule start
   int64 expirationTimestamp = 4;  // time that the job expires
