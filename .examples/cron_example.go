@@ -49,7 +49,8 @@ func main() {
 	cron, err := etcdcron.New(
 		etcdcron.WithNamespace(namespace),
 		etcdcron.WithPartitioning(p),
-		etcdcron.WithTriggerFunc(func(ctx context.Context, metadata map[string]string, payload *anypb.Any) (etcdcron.TriggerResult, error) {
+		etcdcron.WithTriggerFunc(func(ctx context.Context, req etcdcron.TriggerRequest) (etcdcron.TriggerResult, error) {
+			metadata := req.Metadata
 			if metadata["failure"] == "yes" {
 				// Failure does not trigger the errorsHandler() callback. It just skips the counter update.
 				return etcdcron.Failure, nil
@@ -59,7 +60,7 @@ func main() {
 					return etcdcron.Delete, nil
 				}
 			}
-			log.Printf("Trigger from pid %d: %s\n", os.Getpid(), string(payload.Value))
+			log.Printf("Trigger from pid %d: %s\n", os.Getpid(), string(req.Payload.Value))
 			return etcdcron.OK, nil
 		}),
 	)

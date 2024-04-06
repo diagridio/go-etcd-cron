@@ -36,8 +36,9 @@ func TestAddEntryAfterStart(t *testing.T) {
 	wg := &sync.WaitGroup{}
 	wg.Add(1)
 
-	collector.Add(func(ctx context.Context) {
+	collector.Add(func(ctx context.Context) error {
 		wg.Done()
+		return nil
 	})
 
 	select {
@@ -55,8 +56,9 @@ func TestAddEntryBeforeStart(t *testing.T) {
 	wg := &sync.WaitGroup{}
 	wg.Add(1)
 
-	collector.Add(func(ctx context.Context) {
+	collector.Add(func(ctx context.Context) error {
 		wg.Done()
+		return nil
 	})
 
 	collector.Start(ctx)
@@ -82,16 +84,18 @@ func TestExpireOnlyOneOutOfTwo(t *testing.T) {
 	called1 := atomic.Bool{}
 	called2 := atomic.Bool{}
 
-	collector.Add(func(ctx context.Context) {
+	collector.Add(func(ctx context.Context) error {
 		called1.Store(true)
 		wg1.Done()
+		return nil
 	})
 
 	time.Sleep(3 * time.Second)
 
-	collector.Add(func(ctx context.Context) {
+	collector.Add(func(ctx context.Context) error {
 		called2.Store(true)
 		wg2.Done()
+		return nil
 	})
 
 	collector.Start(ctx)

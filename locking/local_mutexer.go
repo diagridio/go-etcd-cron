@@ -39,8 +39,9 @@ func (o *Mutexer) Get(key string) *sync.RWMutex {
 		m, ok = o.mutexes[key]
 		if !ok {
 			m = &sync.RWMutex{}
-			o.collector.Add(func(ctx context.Context) {
+			o.collector.Add(func(ctx context.Context) error {
 				o.Delete(key)
+				return nil
 			})
 			o.mutexes[key] = m
 			return m

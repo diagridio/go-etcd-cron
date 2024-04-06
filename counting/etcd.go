@@ -9,6 +9,7 @@ import (
 	"context"
 	"fmt"
 	"strconv"
+	"sync"
 
 	etcdclientv3 "go.etcd.io/etcd/client/v3"
 )
@@ -32,6 +33,7 @@ type etcdcounter struct {
 
 	loaded bool
 	value  int
+	mutex  sync.RWMutex
 }
 
 func NewEtcdCounter(c *etcdclientv3.Client, key string, initialValue int) Counter {
@@ -40,13 +42,17 @@ func NewEtcdCounter(c *etcdclientv3.Client, key string, initialValue int) Counte
 		initialValue: initialValue,
 		key:          key,
 		value:        initialValue,
+		mutex:        sync.RWMutex{},
 	}
 }
 
 func (c *etcdcounter) Increment(ctx context.Context, delta int) (int, bool, error) {
+	c.mutex.Lock()
+	defer c.mutex.Unlock()
+
 	if !c.loaded {
 		// First, load the key's value.
-		_, err := c.Refresh(ctx)
+		_, err := c.refresh(ctx)
 		if err != nil {
 			return c.value, false, err
 		}
@@ -65,12 +71,21 @@ func (c *etcdcounter) Increment(ctx context.Context, delta int) (int, bool, erro
 }
 
 func (c *etcdcounter) Delete(ctx context.Context) error {
+	c.mutex.Lock()
+	defer c.mutex.Unlock()
+
+	c.loaded = false
 	_, err := c.etcdclient.KV.Delete(ctx, c.key)
 	return err
 }
 
 func (c *etcdcounter) Refresh(ctx context.Context) (int, error) {
-	c.loaded = false
+	c.mutex.Lock()
+	defer c.mutex.Unlock()
+	return c.refresh(ctx)
+}
+
+func (c *etcdcounter) refresh(ctx context.Context) (int, error) {
 	res, err := c.etcdclient.KV.Get(ctx, c.key)
 	if err != nil {
 		return c.value, err
@@ -90,6 +105,7 @@ func (c *etcdcounter) Refresh(ctx context.Context) (int, error) {
 	v, err := strconv.Atoi(string(res.Kvs[0].Value))
 	if err == nil {
 		c.value = v
+		c.loaded = true
 	}
 	return c.value, err
 }
