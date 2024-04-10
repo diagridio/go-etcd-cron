@@ -209,6 +209,36 @@ func TestRepeatLimitEvery(t *testing.T) {
 	assert.Nil(t, cron.GetJob("test-repeat-limit-every-1s"))
 }
 
+// Job with repeat but slow.
+func TestRepeatLimitAndOverdue(t *testing.T) {
+	calledCount := atomic.Int32{}
+	cron, err := New(
+		WithNamespace(randomNamespace()),
+		WithTriggerFunc(func(ctx context.Context, req TriggerRequest) (TriggerResult, error) {
+			time.Sleep(1 * time.Second)
+			calledCount.Add(1)
+			return OK, nil
+		}))
+	require.NoError(t, err)
+	ctx, cancel := context.WithCancel(context.Background())
+	cron.Start(ctx)
+	defer func() {
+		cancel()
+		cron.Wait()
+	}()
+
+	// Must wait for some time so cron thinks it is stuck in the past.
+	time.Sleep(5 * time.Second)
+	addJob(t, ctx, cron, Job{
+		Name:    "test-repeat-limit-every-1s-overdue",
+		Rhythm:  "@every 1s",
+		Repeats: 2,
+	})
+	time.Sleep(3 * time.Second)
+	assert.Equal(t, int32(2), calledCount.Load())
+	assert.Nil(t, cron.GetJob("test-repeat-limit-every-1s-overdue"))
+}
+
 // Job with repeat limit in ISO8601.
 func TestRepeatWithISO8601(t *testing.T) {
 	calledCount := atomic.Int32{}
@@ -658,19 +688,17 @@ func TestJob(t *testing.T) {
 	case <-wait(wg):
 	}
 
-	// Ensure the entries are in the right order.
+	// The order of entries is kept internally, so we can only assert their presence.
 	expecteds := []string{"job2", "job4", "job5", "job1", "job3", "job0"}
 
-	var actuals []string
+	actuals := map[string]bool{}
 	for _, entry := range cron.Entries() {
-		actuals = append(actuals, entry.Job.Name)
+		actuals[entry.Job.Name] = true
 	}
 
-	for i, expected := range expecteds {
-		if actuals[i] != expected {
-			t.Errorf("Jobs not in the right order.  (expected) %s != %s (actual)", expecteds, actuals)
-			t.FailNow()
-		}
+	require.Equal(t, len(expecteds), len(actuals))
+	for _, expected := range expecteds {
+		require.True(t, actuals[expected])
 	}
 }
 

@@ -46,8 +46,10 @@ func TestCounterIncrement(t *testing.T) {
 	assert.True(t, updated)
 	assert.Equal(t, -1, value)
 
-	// Deletes in the database.
-	err = counter.Delete(ctx)
+	counterToDelete := NewEtcdCounter(etcdClient, key, 0)
+	// Deletes in the database using a different instance.
+	// It means the first instance will have a cache still.
+	err = counterToDelete.Delete(ctx)
 	assert.NoError(t, err)
 
 	// Counter deleted but the in-memory value continues.
@@ -98,8 +100,9 @@ func TestCounterDecrement(t *testing.T) {
 	assert.True(t, updated)
 	assert.Equal(t, -1, value)
 
-	// Deletes db record.
-	err = counter.Delete(ctx)
+	// Deletes db record with a different instance, to keep cache of previous instance.
+	counterToDelete := NewEtcdCounter(etcdClient, key, 5)
+	err = counterToDelete.Delete(ctx)
 	assert.NoError(t, err)
 
 	// Counter is deleted in db but the in-memory value continues.

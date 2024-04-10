@@ -14,7 +14,7 @@ import (
 // Collector garbage collects items after a globally configured TTL.
 type Collector interface {
 	Start(ctx context.Context)
-	Add(func(ctx context.Context))
+	Add(func(ctx context.Context) error)
 	Wait()
 }
 
@@ -31,7 +31,7 @@ type collector struct {
 
 type collectorEntry struct {
 	expiration time.Time
-	op         func(ctx context.Context)
+	op         func(ctx context.Context) error
 }
 
 func New(ttl time.Duration, bufferTime time.Duration) Collector {
@@ -52,25 +52,37 @@ func (c *collector) Start(ctx context.Context) {
 	c.running = true
 
 	doIt := func(ctx context.Context) {
-		c.mutex.Lock()
-		defer c.mutex.Unlock()
-
+		c.mutex.RLock()
 		now := time.Now()
 		nextStartIndex := -1
+		success := true
 		for i, o := range c.operations {
 			if o.expiration.Before(now) {
-				o.op(ctx)
+				err := o.op(ctx)
+				if err != nil {
+					success = false
+				}
 			} else {
 				nextStartIndex = i
 				break
 			}
 		}
+		c.mutex.RUnlock()
 
-		if nextStartIndex >= 0 {
-			c.operations = c.operations[nextStartIndex:]
+		if !success {
 			return
 		}
+
+		if nextStartIndex >= 0 {
+			c.mutex.Lock()
+			c.operations = c.operations[nextStartIndex:]
+			c.mutex.Unlock()
+			return
+		}
+
+		c.mutex.Lock()
 		c.operations = []*collectorEntry{}
+		c.mutex.Unlock()
 	}
 
 	waitTimeForNext := func() time.Duration {
@@ -108,13 +120,17 @@ func (c *collector) Start(ctx context.Context) {
 	}(ctx)
 }
 
-func (c *collector) Add(op func(ctx context.Context)) {
+func (c *collector) Add(op func(ctx context.Context) error) {
 	c.mutex.Lock()
-	defer c.mutex.Unlock()
 	c.operations = append(c.operations, &collectorEntry{
 		expiration: time.Now().Add(c.ttl),
 		op:         op,
 	})
+	c.mutex.Unlock()
+
+	if c.running {
+		c.changed <- true
+	}
 }
 
 func (c *collector) Wait() {

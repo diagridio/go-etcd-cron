@@ -198,6 +198,9 @@ func TestNextWithDelayedStart(t *testing.T) {
 		// Unsatisfiable
 		{"Mon Jul 9 23:35 2012", "Mon Jul 9 23:35 2012", "0 0 0 30 Feb ?", ""},
 		{"Mon Jul 9 23:35 2012", "Mon Jul 9 23:35 2012", "0 0 0 31 Apr ?", ""},
+
+		// Will never happen
+		{"Mon Jul 9 14:45 2024", "Mon Jan 1 00:00 0001", "0 0 0 30 Feb ?", "Mon Jan 1 00:00 0001"},
 	}
 
 	for _, c := range runs {

@@ -47,8 +47,9 @@ func (m *MutexStore) Get(key string) (DistributedMutex, error) {
 	if err != nil {
 		return nil, err
 	}
-	m.collector.Add(func(ctx context.Context) {
+	m.collector.Add(func(ctx context.Context) error {
 		m.Delete(key)
+		return nil
 	})
 	m.cache[key] = mutex
 	return mutex, nil
