@@ -8,14 +8,13 @@ package storage
 import (
 	"context"
 	"fmt"
-	"log"
 	"path/filepath"
 	"sync"
 
 	"go.etcd.io/etcd/api/v3/mvccpb"
 	etcdclient "go.etcd.io/etcd/client/v3"
 	"go.etcd.io/etcd/client/v3/mirror"
-	"google.golang.org/protobuf/proto"
+	"go.uber.org/zap"
 
 	"github.com/diagridio/go-etcd-cron/partitioning"
 )
@@ -25,6 +24,7 @@ type JobStore interface {
 	Start(ctx context.Context) error
 	Put(ctx context.Context, jobName string, job *JobRecord) error
 	Delete(ctx context.Context, jobName string) error
+	Fetch(ctx context.Context, jobName string) (*JobRecord, error)
 	Wait()
 }
 
@@ -36,6 +36,8 @@ type etcdStore struct {
 	organizer       partitioning.Organizer
 	putCallback     func(context.Context, string, *JobRecord) error
 	deleteCallback  func(context.Context, string) error
+
+	logger *zap.Logger
 }
 
 func NewEtcdJobStore(
@@ -43,7 +45,8 @@ func NewEtcdJobStore(
 	organizer partitioning.Organizer,
 	partitioning partitioning.Partitioner,
 	putCallback func(context.Context, string, *JobRecord) error,
-	deleteCallback func(context.Context, string) error) JobStore {
+	deleteCallback func(context.Context, string) error,
+	logger *zap.Logger) JobStore {
 	return &etcdStore{
 		etcdClient:     client,
 		kvStore:        etcdclient.NewKV(client),
@@ -51,6 +54,7 @@ func NewEtcdJobStore(
 		organizer:      organizer,
 		putCallback:    putCallback,
 		deleteCallback: deleteCallback,
+		logger:         logger.Named("diagrid-cron-store"),
 	}
 }
 
@@ -82,7 +86,7 @@ func (s *etcdStore) Start(ctx context.Context) error {
 }
 
 func (s *etcdStore) Put(ctx context.Context, jobName string, job *JobRecord) error {
-	bytes, err := proto.Marshal(job)
+	bytes, err := serialize(job)
 	if err != nil {
 		return err
 	}
@@ -101,22 +105,51 @@ func (s *etcdStore) Delete(ctx context.Context, jobName string) error {
 	return err
 }
 
+func (s *etcdStore) Fetch(ctx context.Context, jobName string) (*JobRecord, error) {
+	res, err := s.kvStore.Get(
+		ctx,
+		s.organizer.JobPath(jobName),
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	if (res.Kvs == nil) || (len(res.Kvs) == 0) {
+		return nil, fmt.Errorf("job not found: %s", jobName)
+	}
+
+	return s.parseJobRecord(res.Kvs[0])
+}
+
 func (s *etcdStore) Wait() {
 	s.runWaitingGroup.Wait()
 }
 
-func (s *etcdStore) notifyPut(ctx context.Context, kv *mvccpb.KeyValue, callback func(context.Context, string, *JobRecord) error) error {
-	_, jobName := filepath.Split(string(kv.Key))
+func (s *etcdStore) parseJobRecord(kv *mvccpb.KeyValue) (*JobRecord, error) {
 	record := JobRecord{}
-	err := proto.Unmarshal(kv.Value, &record)
+	err := deserialize(kv.Value, &record)
 	if err != nil {
-		return fmt.Errorf("could not unmarshal job for key %s: %v", string(kv.Key), err)
+		return nil, fmt.Errorf("could not deserialize job for key %s: %v", string(kv.Key), err)
 	}
-	if jobName == "" || record.GetRhythm() == "" {
-		return fmt.Errorf("could not deserialize job for key %s", string(kv.Key))
+	if record.GetRhythm() == "" {
+		return nil, fmt.Errorf("invalid job for key %s", string(kv.Key))
 	}
 
-	return callback(ctx, jobName, &record)
+	return &record, nil
+}
+
+func (s *etcdStore) notifyPut(ctx context.Context, kv *mvccpb.KeyValue, callback func(context.Context, string, *JobRecord) error) error {
+	_, jobName := filepath.Split(string(kv.Key))
+	record, err := s.parseJobRecord(kv)
+	if err != nil {
+		return err
+	}
+
+	if jobName == "" {
+		return fmt.Errorf("could not parse job's name for key %s", string(kv.Key))
+	}
+
+	return callback(ctx, jobName, record)
 }
 
 func (s *etcdStore) notifyDelete(ctx context.Context, name string, callback func(context.Context, string) error) error {
@@ -126,7 +159,7 @@ func (s *etcdStore) notifyDelete(ctx context.Context, name string, callback func
 func (s *etcdStore) sync(ctx context.Context, prefix string, syncer mirror.Syncer) {
 	s.runWaitingGroup.Add(1)
 	go func() {
-		log.Printf("Started sync for path: %s\n", prefix)
+		s.logger.Info(fmt.Sprintf("Started sync for path: %s\n", prefix))
 		wc := syncer.SyncUpdates(ctx)
 		for {
 			select {
@@ -143,7 +176,7 @@ func (s *etcdStore) sync(ctx context.Context, prefix string, syncer mirror.Synce
 						_, name := filepath.Split(string(ev.Kv.Key))
 						s.notifyDelete(ctx, name, s.deleteCallback)
 					default:
-						log.Printf("Unknown etcd event type: %v", t.String())
+						s.logger.Warn(fmt.Sprintf("Unknown etcd event type: %v", t.String()))
 					}
 				}
 			}

@@ -38,6 +38,52 @@ func TestNoEntries(t *testing.T) {
 	}
 }
 
+// Job is fetched from DB.
+func TestFetch(t *testing.T) {
+	calledCount := atomic.Int32{}
+
+	cron, err := New(
+		WithNamespace(randomNamespace()),
+		WithTriggerFunc(func(ctx context.Context, req TriggerRequest) (TriggerResult, error) {
+			calledCount.Add(1)
+			return OK, nil
+		}))
+	require.NoError(t, err)
+	ctx, cancel := context.WithCancel(context.Background())
+	job := Job{
+		Name:       "test-fetch",
+		Rhythm:     "* * * * * *",
+		Repeats:    3,
+		Expiration: time.Now().Truncate(time.Second),
+	}
+	addJob(t, ctx, cron, job)
+
+	fetched, err := cron.FetchJob(ctx, "test-fetch")
+	require.NoError(t, err)
+	require.NotNil(t, fetched)
+	require.Equal(t, job.Name, fetched.Name)
+	require.Equal(t, job.Rhythm, fetched.Rhythm)
+	require.Equal(t, job.Repeats, fetched.Repeats)
+	require.Equal(t, job.Expiration, fetched.Expiration)
+	assert.Nil(t, cron.GetJob("test-fetch"))
+
+	cron.Start(ctx)
+
+	defer func() {
+		cancel()
+		cron.Wait()
+	}()
+
+	fetched, err = cron.FetchJob(ctx, "test-fetch")
+	require.NoError(t, err)
+	require.NotNil(t, fetched)
+	require.Equal(t, job.Name, fetched.Name)
+	require.Equal(t, job.Rhythm, fetched.Rhythm)
+	require.Equal(t, job.Repeats, fetched.Repeats)
+	require.Equal(t, job.Expiration, fetched.Expiration)
+	assert.NotNil(t, cron.GetJob("test-fetch"))
+}
+
 // Start, stop, then add an entry. Verify entry doesn't run.
 func TestStopCausesJobsToNotRun(t *testing.T) {
 	wg := &sync.WaitGroup{}
@@ -170,6 +216,7 @@ func TestRepeatLimit(t *testing.T) {
 		Rhythm:  "* * * * * *",
 		Repeats: 3,
 	})
+
 	cron.Start(ctx)
 	defer func() {
 		cancel()
