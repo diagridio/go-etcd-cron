@@ -56,6 +56,7 @@ type Cron struct {
 	collector              collector.Collector
 	jobCollector           collector.Collector
 	deletedJobs            sync.Map
+	compressJobRecord      bool
 
 	logger *zap.Logger
 }
@@ -228,6 +229,12 @@ func WithPartitioning(p partitioning.Partitioner) CronOpt {
 	})
 }
 
+func WithCompression(b bool) CronOpt {
+	return CronOpt(func(cron *Cron) {
+		cron.compressJobRecord = b
+	})
+}
+
 func WithLogConfig(c *zap.Config) CronOpt {
 	return CronOpt(func(cron *Cron) {
 		if c != nil {
@@ -276,18 +283,6 @@ func New(opts ...CronOpt) (*Cron, error) {
 		cron.namespace = defaultNamespace
 	}
 	cron.organizer = partitioning.NewOrganizer(cron.namespace, cron.partitioning)
-	if cron.jobStore == nil {
-		cron.jobStore = storage.NewEtcdJobStore(
-			cron.etcdclient,
-			cron.organizer,
-			cron.partitioning,
-			func(ctx context.Context, jobName string, r *storage.JobRecord) error {
-				return cron.scheduleJob(jobFromJobRecord(jobName, r))
-			},
-			func(ctx context.Context, s string) error {
-				return cron.onJobDeleted(ctx, s)
-			})
-	}
 
 	cron.collector = collector.New(time.Hour, time.Minute)
 	cron.jobCollector = collector.New(time.Duration(1), time.Duration(1))
@@ -298,6 +293,23 @@ func New(opts ...CronOpt) (*Cron, error) {
 			return nil, err
 		}
 		cron.logger = logger.Named("diagrid-cron")
+	}
+
+	if cron.jobStore == nil {
+		cron.jobStore = storage.NewEtcdJobStore(
+			cron.etcdclient,
+			cron.organizer,
+			cron.partitioning,
+			func(ctx context.Context, jobName string, r *storage.JobRecord) error {
+				return cron.scheduleJob(jobFromJobRecord(jobName, r))
+			},
+			func(ctx context.Context, s string) error {
+				return cron.onJobDeleted(ctx, s)
+			},
+			storage.StoreOptions{
+				Compress: cron.compressJobRecord,
+			},
+			cron.logger)
 	}
 
 	return cron, nil
@@ -318,6 +330,17 @@ func (c *Cron) DeleteJob(ctx context.Context, jobName string) error {
 		return fmt.Errorf("cannot delete job: no job store configured")
 	}
 	return c.jobStore.Delete(ctx, jobName)
+}
+
+// FetchJob retrieves a job by name from the job store, even if not running in this instance.
+func (c *Cron) FetchJob(ctx context.Context, jobName string) (*Job, error) {
+	record, err := c.jobStore.Fetch(ctx, jobName)
+	if err != nil {
+		return nil, err
+	}
+
+	job := jobFromJobRecord(jobName, record)
+	return job, nil
 }
 
 func (c *Cron) newCounterInstance(jobName string) counting.Counter {
@@ -355,7 +378,7 @@ func (c *Cron) killJob(name string) {
 	})
 }
 
-// GetJob retrieves a job by name.
+// GetJob retrieves a running job by name.
 func (c *Cron) GetJob(jobName string) *Job {
 	_, deleted := c.deletedJobs.Load(jobName)
 	if deleted {
