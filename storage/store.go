@@ -36,8 +36,13 @@ type etcdStore struct {
 	organizer       partitioning.Organizer
 	putCallback     func(context.Context, string, *JobRecord) error
 	deleteCallback  func(context.Context, string) error
+	options         StoreOptions
 
 	logger *zap.Logger
+}
+
+type StoreOptions struct {
+	Compress bool
 }
 
 func NewEtcdJobStore(
@@ -46,6 +51,7 @@ func NewEtcdJobStore(
 	partitioning partitioning.Partitioner,
 	putCallback func(context.Context, string, *JobRecord) error,
 	deleteCallback func(context.Context, string) error,
+	options StoreOptions,
 	logger *zap.Logger) JobStore {
 	return &etcdStore{
 		etcdClient:     client,
@@ -54,6 +60,7 @@ func NewEtcdJobStore(
 		organizer:      organizer,
 		putCallback:    putCallback,
 		deleteCallback: deleteCallback,
+		options:        options,
 		logger:         logger.Named("diagrid-cron-store"),
 	}
 }
@@ -86,7 +93,7 @@ func (s *etcdStore) Start(ctx context.Context) error {
 }
 
 func (s *etcdStore) Put(ctx context.Context, jobName string, job *JobRecord) error {
-	bytes, err := serialize(job)
+	bytes, err := serialize(s.options.Compress, job)
 	if err != nil {
 		return err
 	}
@@ -127,7 +134,7 @@ func (s *etcdStore) Wait() {
 
 func (s *etcdStore) parseJobRecord(kv *mvccpb.KeyValue) (*JobRecord, error) {
 	record := JobRecord{}
-	err := deserialize(kv.Value, &record)
+	err := deserialize(s.options.Compress, kv.Value, &record)
 	if err != nil {
 		return nil, fmt.Errorf("could not deserialize job for key %s: %v", string(kv.Key), err)
 	}

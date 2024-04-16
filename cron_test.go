@@ -39,11 +39,12 @@ func TestNoEntries(t *testing.T) {
 }
 
 // Job is fetched from DB.
-func TestFetch(t *testing.T) {
+func TestFetchWithCompression(t *testing.T) {
 	calledCount := atomic.Int32{}
 
 	cron, err := New(
 		WithNamespace(randomNamespace()),
+		WithCompression(true),
 		WithTriggerFunc(func(ctx context.Context, req TriggerRequest) (TriggerResult, error) {
 			calledCount.Add(1)
 			return OK, nil

@@ -13,13 +13,13 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
-func serialize(record *JobRecord) ([]byte, error) {
+func serialize(compress bool, record *JobRecord) ([]byte, error) {
 	data, err := proto.Marshal(record)
 	if err != nil {
 		return nil, err
 	}
 
-	if (data == nil) || (len(data) == 0) {
+	if !compress || (data == nil) || (len(data) == 0) {
 		return data, nil
 	}
 
@@ -34,13 +34,17 @@ func serialize(record *JobRecord) ([]byte, error) {
 	return compressed.Bytes(), nil
 }
 
-func deserialize(data []byte, record *JobRecord) error {
+func deserialize(compressed bool, data []byte, record *JobRecord) error {
 	if (data == nil) || (len(data) == 0) {
 		return nil
 	}
 
-	compressed := bytes.NewReader(data)
-	reader, err := gzip.NewReader(compressed)
+	if !compressed {
+		return proto.Unmarshal(data, record)
+	}
+
+	compressedData := bytes.NewReader(data)
+	reader, err := gzip.NewReader(compressedData)
 	if err != nil {
 		return err
 	}

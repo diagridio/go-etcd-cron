@@ -56,6 +56,7 @@ type Cron struct {
 	collector              collector.Collector
 	jobCollector           collector.Collector
 	deletedJobs            sync.Map
+	compressJobRecord      bool
 
 	logger *zap.Logger
 }
@@ -228,6 +229,12 @@ func WithPartitioning(p partitioning.Partitioner) CronOpt {
 	})
 }
 
+func WithCompression(b bool) CronOpt {
+	return CronOpt(func(cron *Cron) {
+		cron.compressJobRecord = b
+	})
+}
+
 func WithLogConfig(c *zap.Config) CronOpt {
 	return CronOpt(func(cron *Cron) {
 		if c != nil {
@@ -298,6 +305,9 @@ func New(opts ...CronOpt) (*Cron, error) {
 			},
 			func(ctx context.Context, s string) error {
 				return cron.onJobDeleted(ctx, s)
+			},
+			storage.StoreOptions{
+				Compress: cron.compressJobRecord,
 			},
 			cron.logger)
 	}
