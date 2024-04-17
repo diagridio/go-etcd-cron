@@ -20,6 +20,7 @@ type Counter interface {
 	Increment(context.Context, int) (int, bool, error)
 	Refresh(context.Context) (int, error)
 	Delete(context.Context) error
+	Value() int
 }
 
 // It keeps a cache of the value and updates async.
@@ -62,6 +63,10 @@ func (c *etcdcounter) Increment(ctx context.Context, delta int) (int, bool, erro
 
 	_, err := c.etcdclient.KV.Put(ctx, c.key, strconv.Itoa(c.value))
 	return c.value, true, err
+}
+
+func (c *etcdcounter) Value() int {
+	return c.value
 }
 
 func (c *etcdcounter) Delete(ctx context.Context) error {

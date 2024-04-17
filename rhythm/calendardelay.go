@@ -22,14 +22,9 @@ type CalendarStep struct {
 }
 
 func EveryCalendar(c CalendarStep, duration time.Duration) CalendarDelaySchedule {
-	if (duration < time.Second) && (c.years == 0) && (c.months == 0) && (c.days == 0) {
-		// Second is the minimum granularity we support.
-		duration = time.Second
-	}
-
 	return CalendarDelaySchedule{
 		calendarStep: c,
-		Delay:        duration.Truncate(time.Second),
+		Delay:        duration,
 	}
 }
 
@@ -38,12 +33,12 @@ func EveryCalendar(c CalendarStep, duration time.Duration) CalendarDelaySchedule
 func (schedule CalendarDelaySchedule) Next(start, t time.Time) time.Time {
 	if start.IsZero() {
 		// schedule is not bound to a starting point
-		return t.Truncate(time.Second).
+		return t.
 			Add(schedule.Delay).
 			AddDate(schedule.calendarStep.years, schedule.calendarStep.months, schedule.calendarStep.days)
 	}
 
-	s := start.Truncate(time.Second)
+	s := start
 
 	if t.Before(s) {
 		return s

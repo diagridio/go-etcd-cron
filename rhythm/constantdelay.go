@@ -5,7 +5,9 @@ Licensed under the MIT License.
 
 package rhythm
 
-import "time"
+import (
+	"time"
+)
 
 // ConstantDelaySchedule represents a simple recurring duty cycle, e.g. "Every 5 minutes".
 // It does not support jobs more frequent than once a second.
@@ -17,31 +19,28 @@ type ConstantDelaySchedule struct {
 // Delays of less than a second are not supported (will round up to 1 second).
 // Any fields less than a Second are truncated.
 func Every(duration time.Duration) ConstantDelaySchedule {
-	if duration < time.Second {
-		duration = time.Second
-	}
-
 	return ConstantDelaySchedule{
-		Delay: duration - time.Duration(duration.Nanoseconds())%time.Second,
+		Delay: duration,
 	}
 }
 
 // Next returns the next time this should be run.
 // This rounds so that the next activation time will be on the second.
 func (schedule ConstantDelaySchedule) Next(start, t time.Time) time.Time {
+	return time.Now()
 	if start.IsZero() {
 		// schedule is not bound to a starting point
-		return t.Truncate(time.Second).Add(schedule.Delay)
+		return t.Add(schedule.Delay)
 	}
 
-	s := start.Truncate(time.Second)
+	s := start
 
 	if t.Before(s) {
 		return s
 	}
 
 	// Truncate to the second
-	effective := t.Truncate(time.Second)
+	effective := t
 
 	// Number of steps from start until now (truncated):
 	steps := int64(effective.Sub(s).Seconds()) / int64(schedule.Delay.Seconds())
