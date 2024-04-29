@@ -1,0 +1,21 @@
+linters:
+ disable:
+ - testpackage
+ - wsl
+ - wrapcheck
+ - varnamelen
+ - goerr113
+ - ireturn
+ - nilnil
+ - gomnd
+ - nlreturn
+ - forcetypeassert
+ - exhaustruct
+ - depguard
+ - cyclop
+ - lll
+ - godox
+ - gocognit
+ - gci
+ - funlen
+ - maintidx

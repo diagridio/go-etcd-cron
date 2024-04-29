@@ -1,8 +1,0 @@
-/vendor
-
-# IDE
-.idea/
-.vscode/
-
-# Handy for local development
-.local/

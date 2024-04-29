@@ -1,0 +1,26 @@
+/*
+Copyright (c) 2024 Diagrid Inc.
+Licensed under the MIT License.
+*/
+
+syntax = "proto3";
+
+package api;
+
+import "google/protobuf/timestamp.proto";
+
+option go_package = "github.com/diagridio/go-etcd-cron/api";
+
+// Counter holds counter information for a given job.
+message Counter {
+  // job_uuid is the UUID of the job this counter belongs to. Pevents an updated
+  // job from inheriting the counter of a previous job with the same name.
+  uint32 job_uuid = 1;
+
+  // count is the number of times the job has been triggered.
+  uint32 count = 2;
+
+  // last_trigger is the timestamp the job was last triggered. Used to
+  // determine the next time the job should be triggered.
+  google.protobuf.Timestamp last_trigger = 3;
+}

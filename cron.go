@@ -7,687 +7,327 @@ package etcdcron
 
 import (
 	"context"
+	"errors"
 	"fmt"
-	"log"
-	"math/rand"
-	"sort"
 	"sync"
-	"time"
+	"sync/atomic"
 
-	"github.com/pkg/errors"
+	"github.com/dapr/kit/concurrency"
+	"github.com/dapr/kit/events/queue"
+	"github.com/go-logr/logr"
+	"github.com/go-logr/zapr"
 	"go.etcd.io/etcd/client/pkg/v3/logutil"
-	etcdclient "go.etcd.io/etcd/client/v3"
+	clientv3 "go.etcd.io/etcd/client/v3"
 	"go.uber.org/zap"
-	anypb "google.golang.org/protobuf/types/known/anypb"
+	"k8s.io/utils/clock"
 
-	"github.com/diagridio/go-etcd-cron/collector"
-	"github.com/diagridio/go-etcd-cron/counting"
-	"github.com/diagridio/go-etcd-cron/locking"
-	"github.com/diagridio/go-etcd-cron/partitioning"
-	"github.com/diagridio/go-etcd-cron/rhythm"
-	"github.com/diagridio/go-etcd-cron/storage"
+	"github.com/diagridio/go-etcd-cron/api"
+	"github.com/diagridio/go-etcd-cron/internal/counter"
+	"github.com/diagridio/go-etcd-cron/internal/garbage"
+	"github.com/diagridio/go-etcd-cron/internal/grave"
+	"github.com/diagridio/go-etcd-cron/internal/informer"
+	"github.com/diagridio/go-etcd-cron/internal/key"
+	"github.com/diagridio/go-etcd-cron/internal/leadership"
+	"github.com/diagridio/go-etcd-cron/internal/partitioner"
+	"github.com/diagridio/go-etcd-cron/internal/scheduler"
 )
 
-const (
-	defaultEtcdEndpoint = "127.0.0.1:2379"
-	defaultNamespace    = "etcd_cron"
-)
+// TriggerFunction is a function that is called when a cron job is triggered.
+// Returning false will cause the job to be re-enqueued and triggered
+// immediately.
+type TriggerFunction func(context.Context, *api.TriggerRequest) bool
 
-// Cron keeps track of any number of entries, invoking the associated func as
-// specified by the schedule. It may be started, stopped, and the entries may
-// be inspected while running.
-type Cron struct {
-	namespace              string
-	pendingOperations      []func(context.Context) *Entry
-	pendingOperationsMutex sync.RWMutex
-	liveOperation          chan func(ctx context.Context) *Entry
-	entries                map[string]*Entry
-	entriesMutex           sync.RWMutex
-	etcdErrorsHandler      func(context.Context, Job, error)
-	errorsHandler          func(context.Context, Job, error)
-	funcCtx                func(context.Context, Job) context.Context
-	triggerFunc            TriggerFunction
-	running                bool
-	runWaitingGroup        sync.WaitGroup
-	etcdclient             *etcdclient.Client
-	jobStore               storage.JobStore
-	organizer              partitioning.Organizer
-	partitioning           partitioning.Partitioner
-	collector              collector.Collector
-	jobCollector           collector.Collector
-	deletedJobs            sync.Map
+// Interface is a cron interface. It schedules and manages job which are stored
+// and informed from ETCD. It uses a trigger function to call when a job is
+// triggered.
+// Jobs may be oneshot or recurring. Recurring jobs are scheduled to run at
+// their next scheduled time. Oneshot jobs are scheduled to run once and are
+// removed from the schedule after they are triggered.
+type Interface interface {
+	// Run is a blocking function that runs the cron instance. It will return an
+	// error if the instance is already running.
+	// Returns when the given context is cancelled, after doing all cleanup.
+	Run(ctx context.Context) error
 
-	logger *zap.Logger
+	// Add adds a job to the cron instance.
+	Add(ctx context.Context, name string, job *api.Job) error
+
+	// Get gets a job from the cron instance.
+	Get(ctx context.Context, name string) (*api.Job, error)
+
+	// Delete deletes a job from the cron instance.
+	Delete(ctx context.Context, name string) error
 }
 
-type TriggerRequest struct {
-	JobName   string
-	Timestamp time.Time
-	Actual    time.Time
-	Metadata  map[string]string
-	Payload   *anypb.Any
+// Options are the options for creating a new cron instance.
+type Options struct {
+	// Log is the logger to use for logging.
+	Log logr.Logger
+
+	// Client is the etcd client to use for storing cron entries.
+	Client *clientv3.Client
+
+	// Namespace is the etcd namespace to use for storing cron entries.
+	Namespace string
+
+	// PartitionID is the partition ID to use for storing cron entries.
+	PartitionID uint32
+
+	// PartitionTotal is the total number of partitions to use for storing cron
+	// entries.
+	PartitionTotal uint32
+
+	// TriggerFn is the function to call when a cron job is triggered.
+	TriggerFn TriggerFunction
 }
 
-type TriggerResult int
+// cron is the implementation of the cron interface.
+type cron struct {
+	log       logr.Logger
+	client    clientv3.KV
+	triggerFn TriggerFunction
 
-const (
-	OK TriggerResult = iota
-	Failure
-	Delete
-)
+	part         partitioner.Interface
+	key          *key.Key
+	informer     *informer.Informer
+	yard         *grave.Yard
+	queue        *queue.Processor[string, *counter.Counter]
+	schedBuilder *scheduler.Builder
+	leadership   *leadership.Leadership
+	collector    garbage.Interface
 
-type TriggerFunction func(ctx context.Context, req TriggerRequest) (TriggerResult, error)
-
-// Entry consists of a schedule and the func to execute on that schedule.
-type Entry struct {
-	// The schedule on which this job should be run.
-	Schedule rhythm.Schedule
-
-	// The Job o run.
-	Job Job
-
-	// Optimization to avoid accessing Job's object.
-	// This is OK because the job's name never changes for a given entry.
-	JobName string
-
-	// Attributes below are not to be copied:
-
-	// The next time the job will run. This is the zero time if Cron has not been
-	// started or this entry's schedule is unsatisfiable
-	next time.Time
-
-	// The last time this job was run. This is the zero time if the job has never
-	// been run.
-	prev time.Time
-
-	// Prefix for the ticker mutex
-	distMutexPrefix string
-
-	// Counter if has limit on number of triggers
-	counter counting.Counter
-
-	// Mutex to handle concurrent updates to entry
-	// Locks: Job and Schedule
-	mutex sync.RWMutex
+	clock   clock.Clock
+	running atomic.Bool
+	closeCh chan struct{}
+	errCh   chan error
+	readyCh chan struct{}
+	wg      sync.WaitGroup
+	// queueLock prevents an informed schedule from overwriting a job as it is
+	// being triggered, i.e. prevent a PUT and mid-trigger race condition.
+	queueLock sync.RWMutex
 }
 
-func (e *Entry) tick(now time.Time) {
-	e.mutex.RLock()
-	defer e.mutex.RUnlock()
-
-	var next time.Time
-	start := e.Job.StartTime.Truncate(time.Second)
-	if start.After(now) {
-		next = start
-	} else {
-		next = e.Schedule.Next(start, now)
+// New creates a new cron instance.
+func New(opts Options) (Interface, error) {
+	if opts.TriggerFn == nil {
+		return nil, errors.New("trigger function is required")
 	}
 
-	if e.Job.expired(next) {
-		// Job will expire before next trigger, so we expire in the next second.
-		effectiveExpiration := e.Job.Expiration.Truncate(time.Second).Add(time.Second)
-		if !effectiveExpiration.After(now) {
-			// Expiration overdue, randomly pick a time in the future within 60s.
-			// No need to use crypto rand.
-			effectiveExpiration = now.Add(time.Second * time.Duration(rand.Intn(60)))
+	part, err := partitioner.New(partitioner.Options{
+		ID:    opts.PartitionID,
+		Total: opts.PartitionTotal,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to create partitioner: %w", err)
+	}
+
+	log := opts.Log
+	if log.GetSink() == nil {
+		sink, err := logutil.CreateDefaultZapLogger(zap.InfoLevel)
+		if err != nil {
+			return nil, err
 		}
-
-		if effectiveExpiration.After(now) && effectiveExpiration.Before(next) {
-			next = effectiveExpiration
-		}
+		log = zapr.NewLogger(sink)
+		log = log.WithName("diagrid-cron")
 	}
 
-	e.prev = e.next
-	e.next = next
+	yard := grave.New()
+
+	collector := garbage.New(garbage.Options{
+		Log:    log,
+		Client: opts.Client,
+	})
+
+	key := key.New(key.Options{
+		Namespace:   opts.Namespace,
+		PartitionID: opts.PartitionID,
+	})
+	informer := informer.New(informer.Options{
+		Key:         key,
+		Client:      opts.Client,
+		Collector:   collector,
+		Partitioner: part,
+		Yard:        yard,
+	})
+
+	leadership := leadership.New(leadership.Options{
+		Log:            log,
+		Client:         opts.Client,
+		PartitionTotal: opts.PartitionTotal,
+		Key:            key,
+	})
+
+	return &cron{
+		log:          log,
+		client:       opts.Client,
+		triggerFn:    opts.TriggerFn,
+		key:          key,
+		leadership:   leadership,
+		yard:         yard,
+		informer:     informer,
+		collector:    collector,
+		part:         part,
+		schedBuilder: scheduler.NewBuilder(),
+		clock:        clock.RealClock{},
+		readyCh:      make(chan struct{}),
+		closeCh:      make(chan struct{}),
+		errCh:        make(chan error),
+	}, nil
 }
 
-func (e *Entry) updateSelf(op func(entry *Entry)) {
-	e.mutex.Lock()
-	defer e.mutex.Unlock()
-
-	op(e)
-}
-
-func (e *Entry) shallowCopy() *Entry {
-	e.mutex.RLock()
-	defer e.mutex.RUnlock()
-
-	return &Entry{
-		JobName:  e.JobName,
-		Job:      e.Job,
-		Schedule: e.Schedule,
+// Run is a blocking function that runs the cron instance.
+func (c *cron) Run(ctx context.Context) error {
+	if !c.running.CompareAndSwap(false, true) {
+		return errors.New("already running")
 	}
+	defer c.wg.Wait()
+
+	c.queue = queue.NewProcessor[string, *counter.Counter](
+		func(counter *counter.Counter) {
+			c.queueLock.RLock()
+			c.wg.Add(1)
+			go func() {
+				defer c.queueLock.RUnlock()
+				defer c.wg.Done()
+				c.handleTrigger(ctx, counter)
+			}()
+		},
+	).WithClock(c.clock)
+
+	return concurrency.NewRunnerManager(
+		c.leadership.Run,
+		c.collector.Run,
+		func(ctx context.Context) error {
+			if err := c.leadership.WaitForLeadership(ctx); err != nil {
+				return err
+			}
+
+			return c.informer.Run(ctx)
+		},
+		func(ctx context.Context) error {
+			if err := c.leadership.WaitForLeadership(ctx); err != nil {
+				return err
+			}
+
+			ev, err := c.informer.Events()
+			if err != nil {
+				return err
+			}
+
+			for {
+				select {
+				case <-ctx.Done():
+					return ctx.Err()
+				case e := <-ev:
+					if err := c.handleInformerEvent(ctx, e); err != nil {
+						return err
+					}
+				}
+			}
+		},
+		func(ctx context.Context) error {
+			defer close(c.closeCh)
+			if err := c.leadership.WaitForLeadership(ctx); err != nil {
+				return err
+			}
+			if err := c.informer.Ready(ctx); err != nil {
+				return err
+			}
+
+			close(c.readyCh)
+			c.log.Info("cron is ready")
+			<-ctx.Done()
+
+			return nil
+		},
+		func(ctx context.Context) error {
+			var err error
+			select {
+			case <-ctx.Done():
+			case err = <-c.errCh:
+			}
+
+			return errors.Join(c.queue.Close(), err)
+		},
+	).Run(ctx)
 }
 
-// byTime is a wrapper for sorting the entry array by time
-// (with zero time at the end).
-type byTime []*Entry
-
-func (s byTime) Len() int      { return len(s) }
-func (s byTime) Swap(i, j int) { s[i], s[j] = s[j], s[i] }
-func (s byTime) Less(i, j int) bool {
-	// Two zero times should return false.
-	// Otherwise, zero is "greater" than any other time.
-	// (To sort it at the end of the list.)
-	if s[i].next.IsZero() {
-		return false
-	}
-	if s[j].next.IsZero() {
-		return true
-	}
-	return s[i].next.Before(s[j].next)
-}
-
-type CronOpt func(cron *Cron)
-
-func WithEtcdErrorsHandler(f func(context.Context, Job, error)) CronOpt {
-	return CronOpt(func(cron *Cron) {
-		cron.etcdErrorsHandler = f
-	})
-}
-
-func WithErrorsHandler(f func(context.Context, Job, error)) CronOpt {
-	return CronOpt(func(cron *Cron) {
-		cron.errorsHandler = f
-	})
-}
-
-func WithEtcdClient(c *etcdclient.Client) CronOpt {
-	return CronOpt(func(cron *Cron) {
-		cron.etcdclient = c
-	})
-}
-
-func WithJobStore(s storage.JobStore) CronOpt {
-	return CronOpt(func(cron *Cron) {
-		cron.jobStore = s
-	})
-}
-
-func WithFuncCtx(f func(context.Context, Job) context.Context) CronOpt {
-	return CronOpt(func(cron *Cron) {
-		cron.funcCtx = f
-	})
-}
-
-func WithTriggerFunc(f TriggerFunction) CronOpt {
-	return CronOpt(func(cron *Cron) {
-		cron.triggerFunc = f
-	})
-}
-
-func WithNamespace(n string) CronOpt {
-	return CronOpt(func(cron *Cron) {
-		cron.namespace = n
-	})
-}
-
-func WithPartitioning(p partitioning.Partitioner) CronOpt {
-	return CronOpt(func(cron *Cron) {
-		cron.partitioning = p
-	})
-}
-
-func WithLogConfig(c *zap.Config) CronOpt {
-	return CronOpt(func(cron *Cron) {
-		if c != nil {
-			logger, err := c.Build()
-			if err == nil {
-				cron.logger = logger
+// handleTrigger handles triggering a schedule job.
+func (c *cron) handleTrigger(ctx context.Context, counter *counter.Counter) {
+	if !c.triggerFn(ctx, counter.TriggerRequest()) {
+		// If the trigger function returns false, i.e. failed client side,
+		// re-enqueue the job immediately.
+		if err := c.queue.Enqueue(counter); err != nil {
+			select {
+			case <-ctx.Done():
+			case c.errCh <- err:
 			}
 		}
-	})
-}
-
-// New returns a new Cron job runner.
-func New(opts ...CronOpt) (*Cron, error) {
-	cron := &Cron{
-		pendingOperations: []func(context.Context) *Entry{},
-		liveOperation:     make(chan func(context.Context) *Entry),
-		entries:           map[string]*Entry{},
-		running:           false,
-	}
-	for _, opt := range opts {
-		opt(cron)
-	}
-	if cron.partitioning == nil {
-		cron.partitioning = partitioning.NoPartitioning()
-	}
-	if cron.etcdclient == nil {
-		etcdClient, err := etcdclient.New(etcdclient.Config{
-			Endpoints: []string{defaultEtcdEndpoint},
-		})
-		if err != nil {
-			return nil, err
-		}
-		cron.etcdclient = etcdClient
-	}
-	if cron.etcdErrorsHandler == nil {
-		cron.etcdErrorsHandler = func(ctx context.Context, j Job, err error) {
-			log.Printf("[etcd-cron] etcd error when handling '%v' job: %v", j.Name, err)
-		}
-	}
-	if cron.errorsHandler == nil {
-		cron.errorsHandler = func(ctx context.Context, j Job, err error) {
-			log.Printf("[etcd-cron] error when handling '%v' job: %v", j.Name, err)
-		}
-	}
-	if cron.namespace == "" {
-		cron.namespace = defaultNamespace
-	}
-	cron.organizer = partitioning.NewOrganizer(cron.namespace, cron.partitioning)
-	if cron.jobStore == nil {
-		cron.jobStore = storage.NewEtcdJobStore(
-			cron.etcdclient,
-			cron.organizer,
-			cron.partitioning,
-			func(ctx context.Context, jobName string, r *storage.JobRecord) error {
-				return cron.scheduleJob(jobFromJobRecord(jobName, r))
-			},
-			func(ctx context.Context, s string) error {
-				return cron.onJobDeleted(ctx, s)
-			})
-	}
-
-	cron.collector = collector.New(time.Hour, time.Minute)
-	cron.jobCollector = collector.New(time.Duration(1), time.Duration(1))
-
-	if cron.logger == nil {
-		logger, err := logutil.CreateDefaultZapLogger(zap.InfoLevel)
-		if err != nil {
-			return nil, err
-		}
-		cron.logger = logger.Named("diagrid-cron")
-	}
-
-	return cron, nil
-}
-
-// AddJob adds a Job.
-func (c *Cron) AddJob(ctx context.Context, job Job) error {
-	if c.jobStore == nil {
-		return fmt.Errorf("cannot persist job: no job store configured")
-	}
-	record := job.toJobRecord()
-	return c.jobStore.Put(ctx, job.Name, record)
-}
-
-// DeleteJob removes a job from store, eventually removed from cron.
-func (c *Cron) DeleteJob(ctx context.Context, jobName string) error {
-	if c.jobStore == nil {
-		return fmt.Errorf("cannot delete job: no job store configured")
-	}
-	return c.jobStore.Delete(ctx, jobName)
-}
-
-func (c *Cron) newCounterInstance(jobName string) counting.Counter {
-	partitionId := c.partitioning.CalculatePartitionId(jobName)
-	counterKey := c.organizer.CounterPath(partitionId, jobName)
-	return counting.NewEtcdCounter(c.etcdclient, counterKey, 0)
-}
-
-func (c *Cron) onJobDeleted(ctx context.Context, jobName string) error {
-	c.killJob(jobName)
-	c.deletedJobs.Store(jobName, true)
-
-	// Best effort to delete the counter (if present)
-	// Jobs deleted by expiration will delete their counter first.
-	// Jobs deleted manually need this logic.
-	counter := c.newCounterInstance(jobName)
-	err := counter.Delete(ctx)
-	if err != nil {
-		c.errorsHandler(ctx, Job{Name: jobName}, err)
-	}
-
-	// Ignore error as it is a best effort.
-	return nil
-}
-
-func (c *Cron) killJob(name string) {
-	c.appendOperation(func(ctx context.Context) *Entry {
-		_, ok := c.entries[name]
-		if !ok {
-			return nil
-		}
-
-		delete(c.entries, name)
-		return nil
-	})
-}
-
-// GetJob retrieves a job by name.
-func (c *Cron) GetJob(jobName string) *Job {
-	_, deleted := c.deletedJobs.Load(jobName)
-	if deleted {
-		return nil
-	}
-
-	c.entriesMutex.RLock()
-	defer c.entriesMutex.RUnlock()
-
-	entry, ok := c.entries[jobName]
-	if !ok || (entry == nil) {
-		return nil
-	}
-
-	job := entry.Job
-	return &job
-}
-
-// Schedule adds a Job to the Cron to be run on the given schedule.
-func (c *Cron) scheduleJob(job *Job) error {
-	s, repeats, err := rhythm.Parse(job.Rhythm)
-	if err != nil {
-		return err
-	}
-
-	if (repeats > 0) && (job.Repeats > 0) && (job.Repeats != int32(repeats)) {
-		return fmt.Errorf("conflicting number of repeats: %v vs %v", repeats, job.Repeats)
-	}
-
-	if repeats > 0 {
-		job.Repeats = int32(repeats)
-	}
-
-	return c.schedule(s, job)
-}
-
-// Schedule adds a Job to the Cron to be run on the given schedule.
-func (c *Cron) schedule(schedule rhythm.Schedule, job *Job) error {
-	partitionId := c.partitioning.CalculatePartitionId(job.Name)
-	if !c.partitioning.CheckPartitionLeader(partitionId) {
-		// It means the partitioning changed and persisted jobs are in the wrong partition now.
-		return fmt.Errorf("host does not own partition %d", partitionId)
-	}
-
-	var counter counting.Counter
-	if job.Repeats > 0 {
-		counterKey := c.organizer.CounterPath(partitionId, job.Name)
-		// Needs to count the number of invocations.
-		counter = counting.NewEtcdCounter(c.etcdclient, counterKey, int(job.Repeats))
-	}
-
-	entry := &Entry{
-		JobName:         job.Name,
-		Schedule:        schedule,
-		Job:             *job,
-		distMutexPrefix: c.organizer.TicksPath(partitionId) + "/",
-		counter:         counter,
-	}
-
-	c.appendOperation(func(ctx context.Context) *Entry {
-		existing, exists := c.entries[entry.JobName]
-		if exists {
-			existing.updateSelf(func(e *Entry) {
-				// Updates existing job.
-				// Counter is not reused.
-				e.Job = entry.Job
-				e.Schedule = entry.Schedule
-			})
-			return existing
-		} else {
-			c.entries[entry.JobName] = entry
-		}
-		return entry
-	})
-	return nil
-}
-
-func (c *Cron) appendOperation(op func(ctx context.Context) *Entry) {
-	if !c.running {
-		c.pendingOperationsMutex.Lock()
-		defer c.pendingOperationsMutex.Unlock()
-
-		c.pendingOperations = append(c.pendingOperations, op)
 		return
 	}
 
-	c.liveOperation <- op
-}
-
-// Entries returns a snapshot of the cron entries.
-func (c *Cron) Entries() []*Entry {
-	c.entriesMutex.RLock()
-	defer c.entriesMutex.RUnlock()
-	entries := []*Entry{}
-	for _, e := range c.entries {
-		entries = append(entries, e.shallowCopy())
+	ok, err := counter.Trigger(ctx)
+	if err != nil {
+		c.log.Error(err, "failure marking job for next trigger", "name", counter.Key())
 	}
-	return entries
+	if ok && ctx.Err() == nil {
+		if err := c.queue.Enqueue(counter); err != nil {
+			select {
+			case <-ctx.Done():
+			case c.errCh <- err:
+			}
+		}
+	}
 }
 
-// Start the cron scheduler in its own go-routine.
-func (c *Cron) Start(ctx context.Context) error {
-	err := c.jobStore.Start(ctx)
+// handleInformerEvent handles an etcd informed event.
+// TODO: @joshvanl: add a safe per key read lock to prevent locking all
+// triggers and an unrelated write. Must be able to handle a key being
+// de-queued and unlocked (deleted) whilst an Add schedule is waiting on the
+// lock, and visa versa. I don't think there is much if any we gain though as
+// we _always_ hack to lock somewhere..
+func (c *cron) handleInformerEvent(ctx context.Context, e *informer.Event) error {
+	c.queueLock.Lock()
+	defer c.queueLock.Unlock()
+
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	default:
+	}
+
+	if e.IsPut {
+		return c.schedule(ctx, c.key.JobName(e.Key), e.Job)
+	}
+
+	return c.queue.Dequeue(string(e.Key))
+}
+
+// schedule schedules a job to it's next scheduled time.
+func (c *cron) schedule(ctx context.Context, name string, job *api.JobStored) error {
+	scheduler, err := c.schedBuilder.Scheduler(job)
 	if err != nil {
 		return err
 	}
-	c.collector.Start(ctx)
-	c.jobCollector.Start(ctx)
-	c.running = true
-	c.runWaitingGroup.Add(1)
-	go c.run(ctx)
-	return nil
-}
 
-// Run the scheduler.. this is private just due to the need to synchronize
-// access to the 'running' state variable.
-func (c *Cron) run(ctx context.Context) {
-	localMutexer := locking.NewMutexer(c.collector)
-	mutexStore := locking.NewMutexStore(locking.NewDistributedMutexBuilderFunc(c.etcdclient), c.collector)
-	// Figure out the next activation times for each entry.
-	now := time.Now().Local()
-
-	entries := []*Entry{}
-
-	// Pending operations only matter before running, ignored afterwards.
-	c.pendingOperationsMutex.Lock()
-	c.entriesMutex.Lock()
-	for _, op := range c.pendingOperations {
-		newEntry := op(ctx)
-		if newEntry != nil {
-			newEntry.tick(now)
-		}
-	}
-	for _, e := range c.entries {
-		entries = append(entries, e)
-	}
-	c.entriesMutex.Unlock()
-	c.pendingOperations = []func(context.Context) *Entry{}
-	c.pendingOperationsMutex.Unlock()
-
-	deleteJob := func(ctx context.Context, job Job) error {
-		job.Status = JobStatusDeleted
-		job.Metadata = nil
-		job.Payload = nil
-		record := job.toJobRecord()
-
-		// Update the database with a the updated job status
-		err := c.jobStore.Put(ctx, job.Name, record)
-		if err != nil {
-			return err
-		}
-
-		counter := c.newCounterInstance(job.Name)
-		err = counter.Delete(ctx)
-		if err != nil {
-			return err
-		}
-
-		// Now that all other records related to the job are deleted, we can delete the job
-		return c.jobStore.Delete(ctx, job.Name)
+	counter, ok, err := counter.New(ctx, counter.Options{
+		Name:      name,
+		Key:       c.key,
+		Schedule:  scheduler,
+		Yard:      c.yard,
+		Client:    c.client,
+		Job:       job,
+		Collector: c.collector,
+	})
+	if err != nil || !ok {
+		return err
 	}
 
-	for {
-		sort.Sort(byTime(entries))
-
-		var effective time.Time
-		if len(entries) == 0 || entries[0].next.IsZero() {
-			// If there are no entries yet, just sleep - it still handles new entries
-			// and stop requests.
-			effective = now.AddDate(10, 0, 0)
-		} else {
-			effective = entries[0].next
-		}
-
-		c.logger.Debug("new iteration", zap.Time("nextTrigger", effective), zap.Int("entries", len(entries)))
-
-		select {
-		case op := <-c.liveOperation:
-			c.entriesMutex.Lock()
-			newEntry := op(ctx)
-			if newEntry != nil {
-				newEntry.tick(now)
-			}
-			entries = []*Entry{}
-			for _, e := range c.entries {
-				entries = append(entries, e)
-			}
-			c.entriesMutex.Unlock()
-
-		case now = <-time.After(effective.Sub(now)):
-			// Run every entry whose next time was this effective time.
-			currentWindow := time.Now().Truncate(time.Second)
-
-			for _, e := range entries {
-				if e.next != effective {
-					break
-				}
-				e.prev = e.next
-
-				e.tick(effective)
-
-				// Copy since we don't need to reference
-				job := e.Job
-
-				req := TriggerRequest{
-					JobName:   job.Name,
-					Timestamp: effective,
-					Actual:    time.Now(),
-					Metadata:  job.Metadata,
-					Payload:   job.Payload,
-				}
-
-				deleteJobCallback := func(ctx context.Context) error {
-					return deleteJob(ctx, job)
-				}
-
-				if job.Status == JobStatusDeleted || e.Job.expired(effective) {
-					_, deleted := c.deletedJobs.Load(job.Name)
-					if !deleted {
-						// No cron hard-deleted it yet from the db, still just a soft delete.
-						c.deletedJobs.Store(job.Name, true)
-						c.jobCollector.Add(deleteJobCallback)
-						// Won't trigger.
-						continue
-					}
-				}
-
-				// If it is an old trigger (not in the same second window), we skip.
-				// Delays of the trigger function should not delay this step.
-				if currentWindow != effective {
-					// Skip iteration for an old time window (truncated to second).
-					// We still need to continue with all entries to make sure they
-					// all get updated with the next tick (catch up).
-					continue
-				}
-
-				tickLock := e.distMutexPrefix + fmt.Sprintf("%v", effective.Unix())
-				go func(ctx context.Context, lockKey string, counter counting.Counter, job Job, req TriggerRequest) {
-					_, deleted := c.deletedJobs.Load(req.JobName)
-					if deleted {
-						return
-					}
-
-					effective := req.Timestamp
-					if c.funcCtx != nil {
-						ctx = c.funcCtx(ctx, job)
-					}
-
-					m, err := mutexStore.Get(lockKey)
-					if err != nil {
-						c.etcdErrorsHandler(ctx, job, errors.Wrapf(err, "fail to create etcd mutex for job '%v'", job.Name))
-						return
-					}
-
-					lockCtx, cancel := context.WithTimeout(ctx, time.Second)
-					defer cancel()
-
-					// Local mutex is needed to avoid race condition on reusing the etcd mutex object.
-					localMutex := localMutexer.Get(lockKey)
-					localMutex.Lock()
-					err = m.Lock(lockCtx)
-					localMutex.Unlock()
-					if err == context.DeadlineExceeded {
-						return
-					} else if err != nil {
-						c.etcdErrorsHandler(ctx, job, errors.Wrapf(err, "fail to lock mutex '%v'", m.Key()))
-						return
-					}
-
-					if job.Status == JobStatusActive && job.expired(effective) {
-						c.deletedJobs.Store(job.Name, true)
-						c.jobCollector.Add(deleteJobCallback)
-						return
-					}
-
-					// Must reload counter since it might have been updated by another instance before.
-					// Can only use the counter after the tick's mutex.
-					if counter != nil {
-						value, err := counter.Refresh(ctx)
-						if (err == nil) && (value <= 0) {
-							c.deletedJobs.Store(job.Name, true)
-							c.jobCollector.Add(deleteJobCallback)
-							return
-						}
-					}
-
-					result, err := c.triggerFunc(ctx, req)
-					if err != nil {
-						c.errorsHandler(ctx, job, err)
-						return
-					}
-
-					if result == Delete {
-						c.deletedJobs.Store(job.Name, true)
-						c.jobCollector.Add(deleteJobCallback)
-						return
-					}
-
-					if result == OK && counter != nil {
-						// Needs to check number of triggers
-						value, _, err := counter.Increment(ctx, -1)
-						if err != nil {
-							c.errorsHandler(ctx, job, err)
-							// No need to abort if updating the count failed.
-							// The count solution is not transactional anyway.
-						}
-
-						if value <= 0 {
-							c.deletedJobs.Store(job.Name, true)
-							c.jobCollector.Add(deleteJobCallback)
-							return
-						}
-					}
-					// Cannot unlock because it can open a chance for double trigger since two instances
-					// can have a clock skew and compete for the lock at slight different windows.
-					// So, we keep the lock during its ttl
-				}(ctx, tickLock, e.counter, job, req)
-			}
-			continue
-
-		case <-ctx.Done():
-			c.runWaitingGroup.Done()
-			return
-		}
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	default:
 	}
-}
 
-// Wait the cron to stop after context is cancelled.
-func (c *Cron) Wait() {
-	c.runWaitingGroup.Wait()
-	c.jobStore.Wait()
-	c.collector.Wait()
-	c.jobCollector.Wait()
-	c.running = false
+	return c.queue.Enqueue(counter)
 }
