@@ -53,7 +53,7 @@ func Test_Delete(t *testing.T) {
 		assert.Equal(t, int32(1), kv.calls.Load())
 	})
 
-	t.Run("Too many request errors should be retired until successful", func(t *testing.T) {
+	t.Run("Too many request errors should be retried until successful", func(t *testing.T) {
 		t.Parallel()
 
 		kv := new(mock)
@@ -75,7 +75,7 @@ func Test_Delete(t *testing.T) {
 		assert.GreaterOrEqual(t, kv.calls.Load(), int32(3))
 	})
 
-	t.Run("Too many request errors should be retired until another error", func(t *testing.T) {
+	t.Run("Too many request errors should be retried until another error", func(t *testing.T) {
 		t.Parallel()
 
 		kv := new(mock)
