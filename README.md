@@ -1,103 +1,102 @@
 # Go Etcd Cron
 
-Work-in-progress
+This package implements a distributed and fault tolerant cron scheduler, using etcd as a backend.
+It is designed to be used in a distributed environment (such as Kubernetes), where multiple instances of the same process can run concurrently acting on a shared set of cron jobs.
 
-[![GoDoc](http://godoc.org/github.com/diagridio/go-etcd-cron?status.png)](http://godoc.org/github.com/diagridio/go-etcd-cron)
+Jobs are scheduled on a distributed queue, where only one of the instances will trigger the job.
+This ensures that the job is executed only (at least*) once.
+Multiple instances share the load of triggering jobs.
 
-## Goal
-
-This package aims at implementing a distributed and fault tolerant cron in order to:
-
-* Run an identical process on several hosts
-* Each of these process instantiate a subset of the cron jobs
-* Allow concurrent instances to execute the same job
-* Ensure only one of these processes can trigger a job
-* Number of cron jobs can scale by increasing the number of hosts
-* Jobs are persisted and loaded from etcd
-* Jobs can have a TTL and be auto-deleted
-* Jobs can have a delayed start
-* Jobs can have a max run count
-* Cron can be used for multiple tenants, via namespacing
+Jobs can be "one shot" or recurring.
+Recurring jobs can have a TTL, a delayed start, expiry time, and a maximum number of runs.
 
 ## Getting started
 
-By default the library creates an etcd client on `127.0.0.1:2379`
-
 ```go
-import etcdclientv3 "go.etcd.io/etcd/client/v3"
 import etcdcron "github.com/diagridio/go-etcd-cron"
+import "github.com/diagridio/go-etcd-cron/api"
 
-c, _ := etcdclientv3.New(etcdclientv3.Config{
-  Endpoints: []string{"etcd-host1:2379", "etcd-host2:2379"},
-})
-cron, _ := etcdcron.New(
-  WithEtcdClient(c),
-  WithNamespace("my-example"),  // multi-tenancy
-	WithTriggerFunc(func(ctx context.Context, triggerType string, payload *anypb.Any) error {
-    log.Printf("Trigger from pid %d: %s %s\n", os.Getpid(), triggerType, string(payload.Value))
-    return nil
-	}),
-  )
-cron.AddJob(Job{
-  Name: "job0",
-  Rhythm: "*/2 * * * * *",
-  Metadata: map[string]string{
-    "type", "my-job-type"
+cron, err := etcdcron.New(Options{
+  Client:         client,
+  Namespace:      "abc",
+  PartitionID:    0,
+  PartitionTotal: 1,
+  TriggerFn: func(context.Context, *api.TriggerRequest) bool {
+    // Do something with your trigger here.
+    // Return true if the trigger was successful, false otherwise.
+    // Note, returning false will cause the job to be retried *immediately*.
+  	return true
   },
-	Payload: &anypb.Any{Value: []byte("hello every 2s")},
 })
-```
-
-## Error Handling
-
-```go
-errorsHandler := func(ctx context.Context, job etcdcron.Job, err error) {
-  // Do something with the error which happened during 'job'
-}
-etcdErrorsHandler := func(ctx context.Context, job etcdcron.Job, err error) {
-  // Do something with the error which happened at the time of the execution of 'job'
-  // But locking mecanism fails because of etcd error
+if err != nil {
+  panic(err)
 }
 
-cron, _ := etcdcron.New(
-  WithErrorsHandler(errorsHandler),
-  WithEtcdErrorsHandler(etcdErrorsHandler),
-	WithTriggerFunc(func(ctx context.Context, triggerType string, payload *anypb.Any) error {
-    log.Printf("Trigger from pid %d: %s %s\n", os.Getpid(), triggerType, string(payload.Value))
-    return nil
-	}),
-)
+// TODO: Pass proper context and do something with returned error.
+go cron.Run(context.Background())
 
-cron.AddJob(context.TODO(), Job{
-  Name: "job0",
-  Rhythm: "*/2 * * * * *",
-	Payload: &anypb.Any{Value: []byte("hello every 2s")},
-})
+payload, _ := anypb.New(wrapperspb.String("hello"))
+meta, _ := anypb.New(wrapperspb.String("world"))
+tt := time.Now().Add(time.Second).Format(time.RFC3339)
+
+cron.Add(ctx, "my-job", &api.Job{
+  DueTime:  &tt,
+  Payload:  payload,
+  Metadata: meta,
+}
 ```
 
-## Tests
+## API
 
-Pre-requisites to run the tests locally:
-- Run etcd locally via one of the options below:
-  - Locally: [Install etcd](https://etcd.io/docs/v3.4/install/) then run `etcd --logger=zap`
-  - Docker: [Running a single node etcd](https://etcd.io/docs/v3.5/op-guide/container/#running-a-single-node-etcd-1), for example:
-    ```
-    docker run -d -p 2379:2379 \
-    -e ETCD_ADVERTISE_CLIENT_URLS=http://0.0.0.0:2379 \
-    -e ETCD_LISTEN_CLIENT_URLS=http://0.0.0.0:2379 \
-    --name etcd quay.io/coreos/etcd:v3.5.5
-    ```
+Cron supports `Add`, `Get`, and `Delete` operations which are indexed on the job name.
+
+A Job itself is made up of the following fields:
+
+- `Schedule`: A cron (repeated) expression that defines when the job should be triggered.
+  Accepts a systemd cron like expression (`* 30 9 * * 1-5`) or an every expression (`@every 5m`). For more info see `./proto/job.proto`. Optional if `DueTime` is set.
+- `DueTime`: A "point in time" string representing when the job schedule should start from, or the "one shot" time if other scheduling type fields are not provided.
+  Accepts a "point in time" string in the format of `RFC3339`, Go duration string (therefore calculated from now), or non-repeating `ISO8601` duration.
+  Optional if `Schedule` is set.
+- `TTL`: Another "point in time" string representing when the job should expire.
+  Must be greater than `DueTime` if both are set.
+  Optional.
+- `Repeats`: The number of times the job should be triggered. Must be greater than 0 if set.
+  Optional.
+- `Metadata`: A protobuf Any message that can be used to store any additional information about the job which will be passed to the trigger function.
+  Optional.
+- `Payload`: A protobuf Any message that can be used to store the main payload of the job which will be passed to the trigger function.
+  Optional.
+
+A job must have *at least* either a `Schedule` or a `DueTime` set.
+
+## Leadership
+
+The cron scheduler uses a partition key ownership model to ensure that only one partition instance of the scheduler is running at any given time.
+At boot, the replica attempts to claim its partition key.
+If it is successful, it will ensure that there are no other schedulers running with a different _partition total_ value.
+Once both pass, the scheduler will begin to process jobs.
+
+It is paramount that all replicas have the same _partition total_ value.
+If this is not the case, the scheduler will not start until leadership of partitions with differnet _partition total_ values are resolved.
+
+Leadership keys are associated with an ETCD lease of 20s TTL to prevent stale leadership keys persisting forever in the event of an (unlikely) crash.
+
+## Counter
+
+An associated `counters` key is used to track the current state of a job that is scheduled.
+It includes the last trigger time (if triggered), the number of times the job has been triggered, and the UUID of the associated job with the same name.
+Counters are lazily deleted in bulk by a garbage collector that runs every 180s in an effort to reduce pressure of jobs triggering.
+
+The scheduler will never miss triggering jobs.
+If the scheduler falls behind in time (for example, due to downtime), it will catch up and trigger all jobs that were missed in immediate succession.
+A single Job schedule will _only_ trigger one after the other, waiting for the response before scheduling the next.
+
+## Testing
 
 ```bash
-make test
-```
-OR
-```bash
-go test -timeout 300s --race ./...
+go test --race -v ./...
 ```
 
 ## History
 
 This is a fork of [https://github.com/Scalingo/go-etcd-cron](https://github.com/Scalingo/go-etcd-cron), which had been based on [https://github.com/robfig/cron](https://github.com/robfig/cron).
-
-This fork has different goals from Scalingo's go-etcd-cron library.
