@@ -134,10 +134,13 @@ func (c *collector) collect() error {
 
 	c.log.Info("Collecting garbage", "keys", len(c.keys))
 
+	keyList := make([]string, 0, len(c.keys))
 	for key := range c.keys {
-		if err := client.Delete(c.client, key); err != nil {
-			return fmt.Errorf("failed to delete key %s: %w", key, err)
-		}
+		keyList = append(keyList, key)
+	}
+
+	if err := client.Delete(c.client, keyList...); err != nil {
+		return fmt.Errorf("failed to delete keys: %w", err)
 	}
 
 	c.log.Info("Garbage collection complete", "keys", len(c.keys))
