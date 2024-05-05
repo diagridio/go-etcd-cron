@@ -21,16 +21,31 @@ import (
 type mock struct {
 	clientv3.KV
 	calls atomic.Int32
-	resp  *clientv3.DeleteResponse
 	err   error
 	lock  sync.Mutex
 }
 
-func (m *mock) Delete(context.Context, string, ...clientv3.OpOption) (*clientv3.DeleteResponse, error) {
+func (m *mock) If(...clientv3.Cmp) clientv3.Txn {
+	return m
+}
+
+func (m *mock) Else(...clientv3.Op) clientv3.Txn {
+	return m
+}
+
+func (m *mock) Then(...clientv3.Op) clientv3.Txn {
+	return m
+}
+
+func (m *mock) Txn(context.Context) clientv3.Txn {
+	return m
+}
+
+func (m *mock) Commit() (*clientv3.TxnResponse, error) {
 	m.calls.Add(1)
 	m.lock.Lock()
 	defer m.lock.Unlock()
-	return m.resp, m.err
+	return nil, m.err
 }
 
 func Test_Delete(t *testing.T) {
