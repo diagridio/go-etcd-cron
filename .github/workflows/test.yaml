@@ -7,8 +7,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v4
+    - uses: actions/setup-go@v5
     - uses: golangci/golangci-lint-action@v3.7.0
       with:
         args: --enable-all
-    - uses: actions/setup-go@v5
-      run: go test -v --race ./...
+    - run: go test -v --race ./...
