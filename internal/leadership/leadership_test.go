@@ -51,7 +51,7 @@ func Test_Run(t *testing.T) {
 		require.NoError(t, l.WaitForLeadership(context.Background()))
 	})
 
-	t.Run("Running lease multiple times should error", func(t *testing.T) {
+	t.Run("Running leadership multiple times should error", func(t *testing.T) {
 		t.Parallel()
 
 		client := tests.EmbeddedETCD(t)
@@ -81,7 +81,7 @@ func Test_Run(t *testing.T) {
 		require.Error(t, l.Run(ctx))
 	})
 
-	t.Run("Closing the leaser should delete the accosted partition leader key", func(t *testing.T) {
+	t.Run("Closing the leadership should delete the accosted partition leader key", func(t *testing.T) {
 		t.Parallel()
 
 		client := tests.EmbeddedETCD(t)
@@ -100,7 +100,7 @@ func Test_Run(t *testing.T) {
 
 		require.NoError(t, l.WaitForLeadership(context.Background()))
 
-		resp, err := client.KV.Get(ctx, "abc/leases/0")
+		resp, err := client.KV.Get(ctx, "abc/leadership/0")
 		require.NoError(t, err)
 		assert.Equal(t, int64(1), resp.Count)
 		assert.Equal(t, []byte("10"), resp.Kvs[0].Value)
@@ -119,7 +119,7 @@ func Test_Run(t *testing.T) {
 			t.Fatal("timed out waiting for error")
 		}
 
-		resp, err = client.KV.Get(context.Background(), "abc/leases/0")
+		resp, err = client.KV.Get(context.Background(), "abc/leadership/0")
 		require.NoError(t, err)
 		assert.Equal(t, int64(0), resp.Count)
 		assert.Empty(t, resp.Kvs)
@@ -129,7 +129,7 @@ func Test_Run(t *testing.T) {
 		assert.Empty(t, lresp.Leases)
 	})
 
-	t.Run("Closing the leaser should not delete the other partition keys", func(t *testing.T) {
+	t.Run("Closing the leadership should not delete the other partition keys", func(t *testing.T) {
 		t.Parallel()
 
 		client := tests.EmbeddedETCD(t)
@@ -142,9 +142,9 @@ func Test_Run(t *testing.T) {
 			}),
 		})
 
-		_, err := l.kv.Put(context.Background(), "abc/leases/1", "10")
+		_, err := l.kv.Put(context.Background(), "abc/leadership/1", "10")
 		require.NoError(t, err)
-		_, err = l.kv.Put(context.Background(), "abc/leases/2", "10")
+		_, err = l.kv.Put(context.Background(), "abc/leadership/2", "10")
 		require.NoError(t, err)
 
 		ctx, cancel := context.WithCancel(context.Background())
@@ -153,7 +153,7 @@ func Test_Run(t *testing.T) {
 
 		require.NoError(t, l.WaitForLeadership(context.Background()))
 
-		resp, err := client.KV.Get(ctx, "abc/leases/0")
+		resp, err := client.KV.Get(ctx, "abc/leadership/0")
 		require.NoError(t, err)
 		assert.Equal(t, int64(1), resp.Count)
 		assert.Equal(t, []byte("10"), resp.Kvs[0].Value)
@@ -172,7 +172,7 @@ func Test_Run(t *testing.T) {
 			t.Fatal("timed out waiting for error")
 		}
 
-		resp, err = client.KV.Get(context.Background(), "abc/leases/0")
+		resp, err = client.KV.Get(context.Background(), "abc/leadership/0")
 		require.NoError(t, err)
 		assert.Equal(t, int64(0), resp.Count)
 		assert.Empty(t, resp.Kvs)
@@ -181,12 +181,12 @@ func Test_Run(t *testing.T) {
 		require.NoError(t, err)
 		assert.Empty(t, lresp.Leases)
 
-		resp, err = client.KV.Get(context.Background(), "abc/leases", clientv3.WithPrefix())
+		resp, err = client.KV.Get(context.Background(), "abc/leadership", clientv3.WithPrefix())
 		require.NoError(t, err)
 		assert.Equal(t, int64(2), resp.Count)
 		require.Len(t, resp.Kvs, 2)
-		assert.Equal(t, []byte("abc/leases/1"), resp.Kvs[0].Key)
-		assert.Equal(t, []byte("abc/leases/2"), resp.Kvs[1].Key)
+		assert.Equal(t, []byte("abc/leadership/1"), resp.Kvs[0].Key)
+		assert.Equal(t, []byte("abc/leadership/2"), resp.Kvs[1].Key)
 		assert.Equal(t, []byte("10"), resp.Kvs[0].Value)
 		assert.Equal(t, []byte("10"), resp.Kvs[1].Value)
 	})
@@ -204,9 +204,9 @@ func Test_Run(t *testing.T) {
 			}),
 		})
 
-		_, err := l.kv.Put(context.Background(), "abc/leases/0", "10")
+		_, err := l.kv.Put(context.Background(), "abc/leadership/0", "10")
 		require.NoError(t, err)
-		_, err = l.kv.Put(context.Background(), "abc/leases/2", "10")
+		_, err = l.kv.Put(context.Background(), "abc/leadership/2", "10")
 		require.NoError(t, err)
 
 		ctx, cancel := context.WithCancel(context.Background())
@@ -232,7 +232,7 @@ func Test_Run(t *testing.T) {
 			t.Fatal("expected WaitForLeadership to block")
 		}
 
-		_, err = l.kv.Delete(context.Background(), "abc/leases/0")
+		_, err = l.kv.Delete(context.Background(), "abc/leadership/0")
 		require.NoError(t, err)
 
 		select {
@@ -256,9 +256,9 @@ func Test_Run(t *testing.T) {
 			}),
 		})
 
-		_, err := l.kv.Put(context.Background(), "abc/leases/2", "7")
+		_, err := l.kv.Put(context.Background(), "abc/leadership/2", "7")
 		require.NoError(t, err)
-		_, err = l.kv.Put(context.Background(), "abc/leases/8", "9")
+		_, err = l.kv.Put(context.Background(), "abc/leadership/8", "9")
 		require.NoError(t, err)
 
 		ctx, cancel := context.WithCancel(context.Background())
@@ -284,12 +284,12 @@ func Test_Run(t *testing.T) {
 			t.Fatal("expected WaitForLeadership to block")
 		}
 
-		resp, err := client.Get(context.Background(), "abc/leases/0")
+		resp, err := client.Get(context.Background(), "abc/leadership/0")
 		require.NoError(t, err)
 		require.Equal(t, int64(1), resp.Count)
 		assert.Equal(t, []byte("10"), resp.Kvs[0].Value)
 
-		_, err = l.kv.Put(context.Background(), "abc/leases/2", "10")
+		_, err = l.kv.Put(context.Background(), "abc/leadership/2", "10")
 		require.NoError(t, err)
 
 		select {
@@ -298,7 +298,7 @@ func Test_Run(t *testing.T) {
 			t.Fatal("expected WaitForLeadership to block")
 		}
 
-		_, err = l.kv.Put(context.Background(), "abc/leases/8", "10")
+		_, err = l.kv.Put(context.Background(), "abc/leadership/8", "10")
 		require.NoError(t, err)
 
 		select {
@@ -349,7 +349,7 @@ func Test_Run(t *testing.T) {
 		require.NoError(t, l2.WaitForLeadership(ctx))
 		require.NoError(t, l3.WaitForLeadership(ctx))
 
-		resp, err := client.Get(context.Background(), "abc/leases", clientv3.WithPrefix())
+		resp, err := client.Get(context.Background(), "abc/leadership", clientv3.WithPrefix())
 		require.NoError(t, err)
 		require.Equal(t, int64(3), resp.Count)
 		for _, kv := range resp.Kvs {
@@ -366,7 +366,7 @@ func Test_Run(t *testing.T) {
 			}
 		}
 
-		resp, err = client.Get(context.Background(), "abc/leases", clientv3.WithPrefix())
+		resp, err = client.Get(context.Background(), "abc/leadership", clientv3.WithPrefix())
 		require.NoError(t, err)
 		require.Equal(t, int64(0), resp.Count)
 	})
@@ -375,7 +375,7 @@ func Test_Run(t *testing.T) {
 func Test_checkLeadershipKeys(t *testing.T) {
 	t.Parallel()
 
-	t.Run("if no lease keys, return error", func(t *testing.T) {
+	t.Run("if no leadership keys, return error", func(t *testing.T) {
 		t.Parallel()
 
 		client := tests.EmbeddedETCD(t)
@@ -407,7 +407,7 @@ func Test_checkLeadershipKeys(t *testing.T) {
 		})
 
 		for i := 0; i < 10; i++ {
-			_, err := l.kv.Put(context.Background(), "abc/leases/"+strconv.Itoa(i), "10")
+			_, err := l.kv.Put(context.Background(), "abc/leadership/"+strconv.Itoa(i), "10")
 			require.NoError(t, err)
 		}
 
@@ -429,11 +429,11 @@ func Test_checkLeadershipKeys(t *testing.T) {
 			}),
 		})
 
-		_, err := l.kv.Put(context.Background(), "abc/leases/0", "10")
+		_, err := l.kv.Put(context.Background(), "abc/leadership/0", "10")
 		require.NoError(t, err)
-		_, err = l.kv.Put(context.Background(), "abc/leases/3", "10")
+		_, err = l.kv.Put(context.Background(), "abc/leadership/3", "10")
 		require.NoError(t, err)
-		_, err = l.kv.Put(context.Background(), "abc/leases/5", "10")
+		_, err = l.kv.Put(context.Background(), "abc/leadership/5", "10")
 		require.NoError(t, err)
 
 		ok, err := l.checkLeadershipKeys(context.Background())
@@ -454,9 +454,9 @@ func Test_checkLeadershipKeys(t *testing.T) {
 			}),
 		})
 
-		_, err := l.kv.Put(context.Background(), "abc/leases/3", "10")
+		_, err := l.kv.Put(context.Background(), "abc/leadership/3", "10")
 		require.NoError(t, err)
-		_, err = l.kv.Put(context.Background(), "abc/leases/5", "10")
+		_, err = l.kv.Put(context.Background(), "abc/leadership/5", "10")
 		require.NoError(t, err)
 
 		ok, err := l.checkLeadershipKeys(context.Background())
@@ -477,13 +477,13 @@ func Test_checkLeadershipKeys(t *testing.T) {
 			}),
 		})
 
-		_, err := l.kv.Put(context.Background(), "abc/leases/0", "10")
+		_, err := l.kv.Put(context.Background(), "abc/leadership/0", "10")
 		require.NoError(t, err)
-		_, err = l.kv.Put(context.Background(), "abc/leases/3", "5")
+		_, err = l.kv.Put(context.Background(), "abc/leadership/3", "5")
 		require.NoError(t, err)
-		_, err = l.kv.Put(context.Background(), "abc/leases/5", "10")
+		_, err = l.kv.Put(context.Background(), "abc/leadership/5", "10")
 		require.NoError(t, err)
-		_, err = l.kv.Put(context.Background(), "abc/leases/8", "8")
+		_, err = l.kv.Put(context.Background(), "abc/leadership/8", "8")
 		require.NoError(t, err)
 
 		ok, err := l.checkLeadershipKeys(context.Background())
@@ -515,7 +515,7 @@ func Test_attemptPartitionLeadership(t *testing.T) {
 		require.NoError(t, err)
 		assert.True(t, ok)
 
-		resp, err := client.Get(context.Background(), "abc/leases/0")
+		resp, err := client.Get(context.Background(), "abc/leadership/0")
 		require.NoError(t, err)
 		require.Equal(t, int64(1), resp.Count)
 		assert.Equal(t, int64(lease.ID), resp.Kvs[0].Lease)
@@ -538,7 +538,7 @@ func Test_attemptPartitionLeadership(t *testing.T) {
 		prevlease, err := l.lease.Grant(context.Background(), 20)
 		require.NoError(t, err)
 
-		_, err = l.kv.Put(context.Background(), "abc/leases/0", "10", clientv3.WithLease(prevlease.ID))
+		_, err = l.kv.Put(context.Background(), "abc/leadership/0", "10", clientv3.WithLease(prevlease.ID))
 		require.NoError(t, err)
 
 		lease, err := l.lease.Grant(context.Background(), 20)
@@ -548,7 +548,7 @@ func Test_attemptPartitionLeadership(t *testing.T) {
 		require.NoError(t, err)
 		assert.False(t, ok)
 
-		resp, err := client.Get(context.Background(), "abc/leases/0")
+		resp, err := client.Get(context.Background(), "abc/leadership/0")
 		require.NoError(t, err)
 		require.Equal(t, int64(1), resp.Count)
 		assert.NotEqual(t, int64(lease.ID), resp.Kvs[0].Lease)
@@ -564,18 +564,18 @@ func Test_WaitForLeadership(t *testing.T) {
 		t.Parallel()
 
 		ctx, cancel := context.WithCancel(context.Background())
-		leaser := New(Options{Client: new(clientv3.Client)})
+		leadership := New(Options{Client: new(clientv3.Client)})
 		cancel()
-		assert.Equal(t, context.Canceled, leaser.WaitForLeadership(ctx))
+		assert.Equal(t, context.Canceled, leadership.WaitForLeadership(ctx))
 	})
 
-	t.Run("if leaser is ready, expect nil", func(t *testing.T) {
+	t.Run("if leadership is ready, expect nil", func(t *testing.T) {
 		t.Parallel()
 
 		ctx, cancel := context.WithCancel(context.Background())
 		t.Cleanup(cancel)
-		leaser := New(Options{Client: new(clientv3.Client)})
-		close(leaser.readyCh)
-		require.NoError(t, leaser.WaitForLeadership(ctx))
+		leadership := New(Options{Client: new(clientv3.Client)})
+		close(leadership.readyCh)
+		require.NoError(t, leadership.WaitForLeadership(ctx))
 	})
 }

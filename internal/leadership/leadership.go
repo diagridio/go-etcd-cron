@@ -93,9 +93,9 @@ func (l *Leadership) Run(ctx context.Context) error {
 			return err
 		},
 		func(ctx context.Context) error {
-			// Check if lease key exists, if so wait.
-			// If not, create lease key.
-			// List lease namespace, ensure all values are the same as partitionTotal.
+			// Check if leadership key exists, if so wait.
+			// If not, create leadership key.
+			// List leadership namespace, ensure all values are the same as partitionTotal.
 
 			for {
 				ok, err := l.attemptPartitionLeadership(ctx, lease.ID)
@@ -108,7 +108,7 @@ func (l *Leadership) Run(ctx context.Context) error {
 					break
 				}
 
-				l.log.Info("Partition leadership acquired by another replica, waiting for lease to be dropped...")
+				l.log.Info("Partition leadership acquired by another replica, waiting for leadership to be dropped...")
 
 				select {
 				case <-ctx.Done():
@@ -124,11 +124,11 @@ func (l *Leadership) Run(ctx context.Context) error {
 				}
 
 				if ok {
-					l.log.Info("All partition lease keys match partition total, ready processing")
+					l.log.Info("All partition leadership keys match partition total, ready processing")
 					break
 				}
 
-				l.log.Info("Not all partition lease keys match partition total, waiting for lease to be dropped...")
+				l.log.Info("Not all partition leadership keys match partition total, waiting for leadership to be dropped...")
 
 				select {
 				case <-ctx.Done():
@@ -145,25 +145,25 @@ func (l *Leadership) Run(ctx context.Context) error {
 	).Run(ctx)
 }
 
-// checkLeaderhsipKeys keys will check if all lease keys are the same as the
-// partition total.
+// checkLeaderhsipKeys keys will check if all leadership keys are the same as
+// the partition total.
 func (l *Leadership) checkLeadershipKeys(ctx context.Context) (bool, error) {
-	resp, err := l.kv.Get(ctx, l.key.LeaseKey())
+	resp, err := l.kv.Get(ctx, l.key.LeadershipKey())
 	if err != nil {
 		return false, err
 	}
 
 	if resp.Count == 0 || string(resp.Kvs[0].Value) != l.partitionTotal {
-		return false, errors.New("lost partition lease key leadership")
+		return false, errors.New("lost partition leadership key")
 	}
 
-	resp, err = l.kv.Get(ctx, l.key.LeaseNamespace(), clientv3.WithPrefix())
+	resp, err = l.kv.Get(ctx, l.key.LeadershipNamespace(), clientv3.WithPrefix())
 	if err != nil {
 		return false, err
 	}
 
 	if resp.Count == 0 {
-		return false, errors.New("lease namespace has no keys")
+		return false, errors.New("leadership namespace has no keys")
 	}
 
 	// TODO: @joshvanl:
@@ -172,7 +172,7 @@ func (l *Leadership) checkLeadershipKeys(ctx context.Context) (bool, error) {
 	// partition.
 	for _, kv := range resp.Kvs {
 		if string(kv.Value) != l.partitionTotal {
-			l.log.WithValues("key", string(kv.Key), "value", string(kv.Value)).Info("lease key does not match partition total, waiting for lease to be dropped")
+			l.log.WithValues("key", string(kv.Key), "value", string(kv.Value)).Info("leadership key does not match partition total, waiting for leadership to be dropped")
 			return false, nil
 		}
 	}
@@ -180,7 +180,7 @@ func (l *Leadership) checkLeadershipKeys(ctx context.Context) (bool, error) {
 	return true, nil
 }
 
-// attemptPartitionLeadership attempts to write to the partition lease key if
+// attemptPartitionLeadership attempts to write to the partition leadership key if
 // it does not exist.
 // If it does exist and we successfully wrote, it will return true.
 func (l *Leadership) attemptPartitionLeadership(ctx context.Context, leaseID clientv3.LeaseID) (bool, error) {
@@ -188,8 +188,8 @@ func (l *Leadership) attemptPartitionLeadership(ctx context.Context, leaseID cli
 	defer cancel()
 
 	tx := l.kv.Txn(ctx).
-		If(clientv3.Compare(clientv3.CreateRevision(l.key.LeaseKey()), "=", 0)).
-		Then(clientv3.OpPut(l.key.LeaseKey(), l.partitionTotal, clientv3.WithLease(leaseID)))
+		If(clientv3.Compare(clientv3.CreateRevision(l.key.LeadershipKey()), "=", 0)).
+		Then(clientv3.OpPut(l.key.LeadershipKey(), l.partitionTotal, clientv3.WithLease(leaseID)))
 	resp, err := tx.Commit()
 	if err != nil {
 		return false, err
