@@ -145,7 +145,7 @@ func (l *Leadership) Run(ctx context.Context) error {
 	).Run(ctx)
 }
 
-// checkLeaderhsipKeys keys will check if all leadership keys are the same as
+// checkLeadershipKeys keys will check if all leadership keys are the same as
 // the partition total.
 func (l *Leadership) checkLeadershipKeys(ctx context.Context) (bool, error) {
 	resp, err := l.kv.Get(ctx, l.key.LeadershipKey())
