@@ -46,12 +46,12 @@ func (k *Key) CounterKey(name string) string {
 	return filepath.Join(k.namespace, "counters", name)
 }
 
-// LeadershipNamespace returns the namespace key for the lease objects.
+// LeadershipNamespace returns the namespace key for the leadership keys.
 func (k *Key) LeadershipNamespace() string {
 	return filepath.Join(k.namespace, "leadership")
 }
 
-// LeadershipKey returns the lease key for this partition ID.
+// LeadershipKey returns the leadership key for this partition ID.
 func (k *Key) LeadershipKey() string {
 	return filepath.Join(k.namespace, "leadership", k.partitionID)
 }
