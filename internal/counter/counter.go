@@ -9,7 +9,6 @@ import (
 	"context"
 	"time"
 
-	clientv3 "go.etcd.io/etcd/client/v3"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
@@ -30,7 +29,7 @@ type Options struct {
 	Key *key.Key
 
 	// Client is the etcd client to use.
-	Client clientv3.KV
+	Client client.Interface
 
 	// Schedule is the schedule of this job.
 	Schedule scheduler.Interface
@@ -54,7 +53,7 @@ type Options struct {
 type Counter struct {
 	jobKey         string
 	counterKey     string
-	client         clientv3.KV
+	client         client.Interface
 	schedule       scheduler.Interface
 	yard           *grave.Yard
 	collector      garbage.Interface
@@ -64,7 +63,6 @@ type Counter struct {
 	triggerRequest *api.TriggerRequest
 }
 
-//nolint:contextcheck
 func New(ctx context.Context, opts Options) (*Counter, bool, error) {
 	counterKey := opts.Key.CounterKey(opts.Name)
 	jobKey := opts.Key.JobKey(opts.Name)
@@ -145,8 +143,6 @@ func New(ctx context.Context, opts Options) (*Counter, bool, error) {
 
 // Trigger updates the counter state given what the next trigger time was.
 // Returns true if the job will be triggered again.
-//
-//nolint:contextcheck
 func (c *Counter) Trigger(ctx context.Context) (bool, error) {
 	// Increment the counter and update the last trigger time as the next trigger
 	// time.
@@ -188,7 +184,7 @@ func (c *Counter) TriggerRequest() *api.TriggerRequest {
 //nonlint:contextcheck
 func (c *Counter) tickNext() (bool, error) {
 	if !c.updateNext() {
-		if err := client.Delete(c.client, c.jobKey); err != nil {
+		if err := c.client.DeleteMulti(c.jobKey); err != nil {
 			return false, err
 		}
 		// Mark the job as just been deleted, and push the counter key for garbage
