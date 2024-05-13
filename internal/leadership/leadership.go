@@ -38,9 +38,10 @@ type Options struct {
 // partition, as well as ensuring that there are no other active partitions
 // which are acting on a different partition total.
 type Leadership struct {
-	log   logr.Logger
-	kv    clientv3.KV
-	lease clientv3.Lease
+	log     logr.Logger
+	kv      clientv3.KV
+	lease   clientv3.Lease
+	watcher clientv3.Watcher
 
 	partitionTotal string
 	key            *key.Key
@@ -54,6 +55,7 @@ func New(opts Options) *Leadership {
 		log:            opts.Log.WithName("leadership"),
 		kv:             opts.Client.KV,
 		lease:          opts.Client.Lease,
+		watcher:        opts.Client.Watcher,
 		partitionTotal: strconv.Itoa(int(opts.PartitionTotal)),
 		key:            opts.Key,
 		readyCh:        make(chan struct{}),
@@ -97,6 +99,15 @@ func (l *Leadership) Run(ctx context.Context) error {
 			// If not, create leadership key.
 			// List leadership namespace, ensure all values are the same as partitionTotal.
 
+			resp, err := l.kv.Get(ctx, l.key.LeaseKey())
+			if err != nil {
+				return err
+			}
+
+			watcherCtx, watcherCancel := context.WithCancel(ctx)
+			defer watcherCancel()
+			ch := l.watcher.Watch(watcherCtx, l.key.LeaseKey(), clientv3.WithRev(resp.Header.Revision))
+
 			for {
 				ok, err := l.attemptPartitionLeadership(ctx, lease.ID)
 				if err != nil {
@@ -105,6 +116,7 @@ func (l *Leadership) Run(ctx context.Context) error {
 
 				if ok {
 					l.log.Info("Partition leadership acquired")
+					watcherCancel()
 					break
 				}
 
@@ -113,7 +125,10 @@ func (l *Leadership) Run(ctx context.Context) error {
 				select {
 				case <-ctx.Done():
 					return ctx.Err()
-				case <-time.After(time.Second / 2):
+				case w := <-ch:
+					if err := w.Err(); err != nil {
+						return err
+					}
 				}
 			}
 

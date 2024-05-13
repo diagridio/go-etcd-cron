@@ -19,6 +19,7 @@ import (
 	"github.com/diagridio/go-etcd-cron/internal/tests"
 )
 
+//nolint:gocyclo
 func Test_Run(t *testing.T) {
 	t.Parallel()
 
@@ -369,6 +370,78 @@ func Test_Run(t *testing.T) {
 		resp, err = client.Get(context.Background(), "abc/leadership", clientv3.WithPrefix())
 		require.NoError(t, err)
 		require.Equal(t, int64(0), resp.Count)
+	})
+
+	t.Run("Two leaders of the same partition should make one passive unil the other is closed", func(t *testing.T) {
+		t.Parallel()
+
+		client := tests.EmbeddedETCD(t)
+		l1 := New(Options{
+			Client:         client,
+			PartitionTotal: 1,
+			Key: key.New(key.Options{
+				Namespace:   "abc",
+				PartitionID: 0,
+			}),
+		})
+		l2 := New(Options{
+			Client:         client,
+			PartitionTotal: 1,
+			Key: key.New(key.Options{
+				Namespace:   "abc",
+				PartitionID: 0,
+			}),
+		})
+
+		ctx1, cancel1 := context.WithCancel(context.Background())
+		ctx2, cancel2 := context.WithCancel(context.Background())
+
+		errCh := make(chan error)
+
+		go func() { errCh <- l1.Run(ctx1) }()
+		require.NoError(t, l1.WaitForLeadership(ctx1))
+
+		resp, err := client.Leases(context.Background())
+		require.NoError(t, err)
+		assert.Len(t, resp.Leases, 1)
+
+		resp1, err := client.Get(context.Background(), "abc/leases/0")
+		require.NoError(t, err)
+		require.Equal(t, int64(1), resp1.Count)
+		assert.Equal(t, []byte("1"), resp1.Kvs[0].Value)
+
+		go func() { errCh <- l2.Run(ctx2) }()
+
+		assert.EventuallyWithT(t, func(c *assert.CollectT) {
+			resp, err := client.Leases(context.Background())
+			require.NoError(t, err)
+			assert.Len(c, resp.Leases, 2)
+		}, time.Second*5, time.Millisecond*10)
+
+		cancel1()
+		select {
+		case <-errCh:
+		case <-time.After(2 * time.Second):
+			t.Fatal("timed out waiting for error")
+		}
+
+		resp, err = client.Leases(context.Background())
+		require.NoError(t, err)
+		assert.Len(t, resp.Leases, 1)
+
+		require.NoError(t, l2.WaitForLeadership(ctx2))
+
+		resp2, err := client.Get(context.Background(), "abc/leases/0")
+		require.NoError(t, err)
+		require.Equal(t, int64(1), resp2.Count)
+		assert.Equal(t, []byte("1"), resp2.Kvs[0].Value)
+
+		cancel2()
+		select {
+		case <-errCh:
+		case <-time.After(2 * time.Second):
+			t.Fatal("timed out waiting for error")
+		}
 	})
 }
 
