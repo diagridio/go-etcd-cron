@@ -22,7 +22,7 @@ import (
 func Test_CRUD(t *testing.T) {
 	t.Parallel()
 
-	client := tests.EmbeddedETCD(t)
+	client := tests.EmbeddedETCDBareClient(t)
 	cron, err := New(Options{
 		Log:            logr.Discard(),
 		Client:         client,
@@ -97,7 +97,7 @@ func Test_Add(t *testing.T) {
 	t.Run("returns context error if cron not ready in time", func(t *testing.T) {
 		t.Parallel()
 
-		client := tests.EmbeddedETCD(t)
+		client := tests.EmbeddedETCDBareClient(t)
 		cron, err := New(Options{
 			Log:            logr.Discard(),
 			Client:         client,
@@ -118,7 +118,7 @@ func Test_Add(t *testing.T) {
 	t.Run("returns closed error if cron is closed", func(t *testing.T) {
 		t.Parallel()
 
-		client := tests.EmbeddedETCD(t)
+		client := tests.EmbeddedETCDBareClient(t)
 		cron, err := New(Options{
 			Log:            logr.Discard(),
 			Client:         client,
@@ -141,7 +141,7 @@ func Test_Add(t *testing.T) {
 	t.Run("invalid name should error", func(t *testing.T) {
 		t.Parallel()
 
-		client := tests.EmbeddedETCD(t)
+		client := tests.EmbeddedETCDBareClient(t)
 		cron, err := New(Options{
 			Log:            logr.Discard(),
 			Client:         client,
@@ -175,7 +175,7 @@ func Test_Add(t *testing.T) {
 	t.Run("empty job should error", func(t *testing.T) {
 		t.Parallel()
 
-		client := tests.EmbeddedETCD(t)
+		client := tests.EmbeddedETCDBareClient(t)
 		cron, err := New(Options{
 			Log:            logr.Discard(),
 			Client:         client,
@@ -211,7 +211,7 @@ func Test_Get(t *testing.T) {
 	t.Run("returns context error if cron not ready in time", func(t *testing.T) {
 		t.Parallel()
 
-		client := tests.EmbeddedETCD(t)
+		client := tests.EmbeddedETCDBareClient(t)
 		cron, err := New(Options{
 			Log:            logr.Discard(),
 			Client:         client,
@@ -232,7 +232,7 @@ func Test_Get(t *testing.T) {
 	t.Run("returns closed error if cron is closed", func(t *testing.T) {
 		t.Parallel()
 
-		client := tests.EmbeddedETCD(t)
+		client := tests.EmbeddedETCDBareClient(t)
 		cron, err := New(Options{
 			Log:            logr.Discard(),
 			Client:         client,
@@ -255,7 +255,7 @@ func Test_Get(t *testing.T) {
 	t.Run("invalid name should error", func(t *testing.T) {
 		t.Parallel()
 
-		client := tests.EmbeddedETCD(t)
+		client := tests.EmbeddedETCDBareClient(t)
 		cron, err := New(Options{
 			Log:            logr.Discard(),
 			Client:         client,
@@ -293,7 +293,7 @@ func Test_Delete(t *testing.T) {
 	t.Run("returns context error if cron not ready in time", func(t *testing.T) {
 		t.Parallel()
 
-		client := tests.EmbeddedETCD(t)
+		client := tests.EmbeddedETCDBareClient(t)
 		cron, err := New(Options{
 			Log:            logr.Discard(),
 			Client:         client,
@@ -312,7 +312,7 @@ func Test_Delete(t *testing.T) {
 	t.Run("returns closed error if cron is closed", func(t *testing.T) {
 		t.Parallel()
 
-		client := tests.EmbeddedETCD(t)
+		client := tests.EmbeddedETCDBareClient(t)
 		cron, err := New(Options{
 			Log:            logr.Discard(),
 			Client:         client,
@@ -333,7 +333,7 @@ func Test_Delete(t *testing.T) {
 	t.Run("invalid name should error", func(t *testing.T) {
 		t.Parallel()
 
-		client := tests.EmbeddedETCD(t)
+		client := tests.EmbeddedETCDBareClient(t)
 		cron, err := New(Options{
 			Log:            logr.Discard(),
 			Client:         client,

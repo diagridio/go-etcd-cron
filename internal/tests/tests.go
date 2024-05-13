@@ -10,12 +10,20 @@ import (
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	clientv3 "go.etcd.io/etcd/client/v3"
 	"go.etcd.io/etcd/server/v3/embed"
+
+	"github.com/diagridio/go-etcd-cron/internal/client"
 )
 
-func EmbeddedETCD(t *testing.T) *clientv3.Client {
+func EmbeddedETCD(t *testing.T) client.Interface {
+	t.Helper()
+	return client.New(EmbeddedETCDBareClient(t))
+}
+
+func EmbeddedETCDBareClient(t *testing.T) *clientv3.Client {
 	t.Helper()
 
 	cfg := embed.NewConfig()
@@ -30,7 +38,7 @@ func EmbeddedETCD(t *testing.T) *clientv3.Client {
 	require.NoError(t, err)
 	t.Cleanup(etcd.Close)
 
-	client, err := clientv3.New(clientv3.Config{
+	cl, err := clientv3.New(clientv3.Config{
 		Endpoints: []string{etcd.Clients[0].Addr().String()},
 	})
 	require.NoError(t, err)
@@ -38,8 +46,8 @@ func EmbeddedETCD(t *testing.T) *clientv3.Client {
 	select {
 	case <-etcd.Server.ReadyNotify():
 	case <-time.After(2 * time.Second):
-		t.Fatal("server took too long to start")
+		assert.Fail(t, "server took too long to start")
 	}
 
-	return client
+	return cl
 }

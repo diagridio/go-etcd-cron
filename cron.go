@@ -22,6 +22,7 @@ import (
 	"k8s.io/utils/clock"
 
 	"github.com/diagridio/go-etcd-cron/api"
+	"github.com/diagridio/go-etcd-cron/internal/client"
 	"github.com/diagridio/go-etcd-cron/internal/counter"
 	"github.com/diagridio/go-etcd-cron/internal/garbage"
 	"github.com/diagridio/go-etcd-cron/internal/grave"
@@ -84,9 +85,9 @@ type Options struct {
 // cron is the implementation of the cron interface.
 type cron struct {
 	log       logr.Logger
-	client    clientv3.KV
 	triggerFn TriggerFunction
 
+	client       client.Interface
 	part         partitioner.Interface
 	key          *key.Key
 	informer     *informer.Informer
@@ -131,20 +132,22 @@ func New(opts Options) (Interface, error) {
 		log = log.WithName("diagrid-cron")
 	}
 
-	yard := grave.New()
+	client := client.New(opts.Client)
 
 	collector := garbage.New(garbage.Options{
 		Log:    log,
-		Client: opts.Client,
+		Client: client,
 	})
 
 	key := key.New(key.Options{
 		Namespace:   opts.Namespace,
 		PartitionID: opts.PartitionID,
 	})
+
+	yard := grave.New()
 	informer := informer.New(informer.Options{
 		Key:         key,
-		Client:      opts.Client,
+		Client:      client,
 		Collector:   collector,
 		Partitioner: part,
 		Yard:        yard,
@@ -152,14 +155,14 @@ func New(opts Options) (Interface, error) {
 
 	leadership := leadership.New(leadership.Options{
 		Log:            log,
-		Client:         opts.Client,
+		Client:         client,
 		PartitionTotal: opts.PartitionTotal,
 		Key:            key,
 	})
 
 	return &cron{
 		log:          log,
-		client:       opts.Client,
+		client:       client,
 		triggerFn:    opts.TriggerFn,
 		key:          key,
 		leadership:   leadership,

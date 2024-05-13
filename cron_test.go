@@ -29,7 +29,7 @@ import (
 func Test_retry(t *testing.T) {
 	t.Parallel()
 
-	client := tests.EmbeddedETCD(t)
+	client := tests.EmbeddedETCDBareClient(t)
 	var triggerd atomic.Int64
 	cron, err := New(Options{
 		Log:            logr.Discard(),
@@ -71,7 +71,7 @@ func Test_retry(t *testing.T) {
 func Test_payload(t *testing.T) {
 	t.Parallel()
 
-	client := tests.EmbeddedETCD(t)
+	client := tests.EmbeddedETCDBareClient(t)
 	gotCh := make(chan *api.TriggerRequest, 1)
 	cron, err := New(Options{
 		Log:            logr.Discard(),
@@ -129,7 +129,7 @@ func Test_payload(t *testing.T) {
 func Test_remove(t *testing.T) {
 	t.Parallel()
 
-	client := tests.EmbeddedETCD(t)
+	client := tests.EmbeddedETCDBareClient(t)
 	var triggered atomic.Int64
 	cron, err := New(Options{
 		Log:            logr.Discard(),
@@ -173,7 +173,7 @@ func Test_remove(t *testing.T) {
 func Test_upsert(t *testing.T) {
 	t.Parallel()
 
-	client := tests.EmbeddedETCD(t)
+	client := tests.EmbeddedETCDBareClient(t)
 	var triggered atomic.Int64
 	cron, err := New(Options{
 		Log:            logr.Discard(),
@@ -225,7 +225,7 @@ func Test_upsert(t *testing.T) {
 func Test_patition(t *testing.T) {
 	t.Parallel()
 
-	client := tests.EmbeddedETCD(t)
+	client := tests.EmbeddedETCDBareClient(t)
 	var triggered atomic.Int64
 
 	crons := make([]Interface, 100)
@@ -283,7 +283,7 @@ func Test_patition(t *testing.T) {
 func Test_oneshot(t *testing.T) {
 	t.Parallel()
 
-	client := tests.EmbeddedETCD(t)
+	client := tests.EmbeddedETCDBareClient(t)
 	var triggered atomic.Int64
 	cron, err := New(Options{
 		Log:            logr.Discard(),
@@ -331,7 +331,7 @@ func Test_oneshot(t *testing.T) {
 func Test_repeat(t *testing.T) {
 	t.Parallel()
 
-	client := tests.EmbeddedETCD(t)
+	client := tests.EmbeddedETCDBareClient(t)
 	var triggered atomic.Int64
 	cron, err := New(Options{
 		Log:            logr.Discard(),
@@ -383,7 +383,7 @@ func Test_Run(t *testing.T) {
 	t.Run("Running multiple times should error", func(t *testing.T) {
 		t.Parallel()
 
-		client := tests.EmbeddedETCD(t)
+		client := tests.EmbeddedETCDBareClient(t)
 		var triggered atomic.Int64
 		cronI, err := New(Options{
 			Log:            logr.Discard(),
@@ -440,7 +440,7 @@ func Test_schedule(t *testing.T) {
 	t.Run("if no counter, job should not be deleted", func(t *testing.T) {
 		t.Parallel()
 
-		client := tests.EmbeddedETCD(t)
+		client := tests.EmbeddedETCDBareClient(t)
 
 		now := time.Now().UTC().Add(time.Hour)
 		job := &api.JobStored{
@@ -509,7 +509,7 @@ func Test_schedule(t *testing.T) {
 	t.Run("if schedule is not done, job and counter should not be deleted", func(t *testing.T) {
 		t.Parallel()
 
-		client := tests.EmbeddedETCD(t)
+		client := tests.EmbeddedETCDBareClient(t)
 
 		now := time.Now().UTC().Add(time.Hour)
 		job := &api.JobStored{
@@ -588,7 +588,7 @@ func Test_schedule(t *testing.T) {
 	t.Run("if schedule is done, expect job and counter to be deleted", func(t *testing.T) {
 		t.Parallel()
 
-		client := tests.EmbeddedETCD(t)
+		client := tests.EmbeddedETCDBareClient(t)
 
 		now := time.Now().UTC()
 		job := &api.JobStored{

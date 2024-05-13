@@ -16,6 +16,7 @@ import (
 	"google.golang.org/protobuf/proto"
 
 	"github.com/diagridio/go-etcd-cron/api"
+	"github.com/diagridio/go-etcd-cron/internal/client"
 	"github.com/diagridio/go-etcd-cron/internal/garbage"
 	"github.com/diagridio/go-etcd-cron/internal/grave"
 	"github.com/diagridio/go-etcd-cron/internal/key"
@@ -28,7 +29,7 @@ type Options struct {
 	Key *key.Key
 
 	// Client is the etcd client to use for storing cron entries.
-	Client *clientv3.Client
+	Client client.Interface
 
 	// Partitioner determines if a job belongs to this partition.
 	Partitioner partitioner.Interface
@@ -47,7 +48,7 @@ type Options struct {
 // for this partition.
 type Informer struct {
 	key       *key.Key
-	client    *clientv3.Client
+	client    client.Interface
 	part      partitioner.Interface
 	yard      *grave.Yard
 	collector garbage.Interface

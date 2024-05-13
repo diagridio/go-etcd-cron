@@ -11,8 +11,9 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/diagridio/go-etcd-cron/api"
 	"google.golang.org/protobuf/proto"
+
+	"github.com/diagridio/go-etcd-cron/api"
 )
 
 // Add adds a new cron job to the cron instance.
@@ -44,7 +45,6 @@ func (c *cron) Add(ctx context.Context, name string, job *api.Job) error {
 	}
 
 	_, err = c.client.Put(ctx, c.key.JobKey(name), string(b))
-
 	return err
 }
 
@@ -94,10 +94,11 @@ func (c *cron) Delete(ctx context.Context, name string) error {
 		return err
 	}
 
-	qerr := c.queue.Dequeue(name)
-	_, err := c.client.Delete(ctx, c.key.JobKey(name))
+	if _, err := c.client.Delete(ctx, c.key.JobKey(name)); err != nil {
+		return err
+	}
 
-	return errors.Join(err, qerr)
+	return c.queue.Dequeue(name)
 }
 
 // validateName validates the name of a job.

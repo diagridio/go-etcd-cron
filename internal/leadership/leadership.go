@@ -16,6 +16,7 @@ import (
 	"github.com/go-logr/logr"
 	clientv3 "go.etcd.io/etcd/client/v3"
 
+	"github.com/diagridio/go-etcd-cron/internal/client"
 	"github.com/diagridio/go-etcd-cron/internal/key"
 )
 
@@ -25,7 +26,7 @@ type Options struct {
 	Log logr.Logger
 
 	// Client is the etcd client.
-	Client *clientv3.Client
+	Client client.Interface
 
 	// PartitionTotal is the total number of partitions.
 	PartitionTotal uint32
@@ -38,10 +39,8 @@ type Options struct {
 // partition, as well as ensuring that there are no other active partitions
 // which are acting on a different partition total.
 type Leadership struct {
-	log     logr.Logger
-	kv      clientv3.KV
-	lease   clientv3.Lease
-	watcher clientv3.Watcher
+	log    logr.Logger
+	client client.Interface
 
 	partitionTotal string
 	key            *key.Key
@@ -53,9 +52,7 @@ type Leadership struct {
 func New(opts Options) *Leadership {
 	return &Leadership{
 		log:            opts.Log.WithName("leadership"),
-		kv:             opts.Client.KV,
-		lease:          opts.Client.Lease,
-		watcher:        opts.Client.Watcher,
+		client:         opts.Client,
 		partitionTotal: strconv.Itoa(int(opts.PartitionTotal)),
 		key:            opts.Key,
 		readyCh:        make(chan struct{}),
@@ -71,14 +68,14 @@ func (l *Leadership) Run(ctx context.Context) error {
 
 	l.log.Info("Attempting to acquire partition leadership")
 
-	lease, err := l.lease.Grant(ctx, 20)
+	lease, err := l.client.Grant(ctx, 20)
 	if err != nil {
 		return err
 	}
 
 	return concurrency.NewRunnerManager(
 		func(ctx context.Context) error {
-			ch, err := l.lease.KeepAlive(ctx, lease.ID)
+			ch, err := l.client.KeepAlive(ctx, lease.ID)
 			if err != nil {
 				return err
 			}
@@ -91,7 +88,7 @@ func (l *Leadership) Run(ctx context.Context) error {
 			rctx, cancel := context.WithTimeout(context.Background(), time.Second*5)
 			defer cancel()
 			//nolint:contextcheck
-			_, err = l.lease.Revoke(rctx, lease.ID)
+			_, err = l.client.Revoke(rctx, lease.ID)
 			return err
 		},
 		func(ctx context.Context) error {
@@ -99,14 +96,14 @@ func (l *Leadership) Run(ctx context.Context) error {
 			// If not, create leadership key.
 			// List leadership namespace, ensure all values are the same as partitionTotal.
 
-			resp, err := l.kv.Get(ctx, l.key.LeaseKey())
+			resp, err := l.client.Get(ctx, l.key.LeadershipKey())
 			if err != nil {
 				return err
 			}
 
 			watcherCtx, watcherCancel := context.WithCancel(ctx)
 			defer watcherCancel()
-			ch := l.watcher.Watch(watcherCtx, l.key.LeaseKey(), clientv3.WithRev(resp.Header.Revision))
+			ch := l.client.Watch(watcherCtx, l.key.LeadershipKey(), clientv3.WithRev(resp.Header.Revision))
 
 			for {
 				ok, err := l.attemptPartitionLeadership(ctx, lease.ID)
@@ -163,7 +160,7 @@ func (l *Leadership) Run(ctx context.Context) error {
 // checkLeadershipKeys keys will check if all leadership keys are the same as
 // the partition total.
 func (l *Leadership) checkLeadershipKeys(ctx context.Context) (bool, error) {
-	resp, err := l.kv.Get(ctx, l.key.LeadershipKey())
+	resp, err := l.client.Get(ctx, l.key.LeadershipKey())
 	if err != nil {
 		return false, err
 	}
@@ -172,7 +169,7 @@ func (l *Leadership) checkLeadershipKeys(ctx context.Context) (bool, error) {
 		return false, errors.New("lost partition leadership key")
 	}
 
-	resp, err = l.kv.Get(ctx, l.key.LeadershipNamespace(), clientv3.WithPrefix())
+	resp, err = l.client.Get(ctx, l.key.LeadershipNamespace(), clientv3.WithPrefix())
 	if err != nil {
 		return false, err
 	}
@@ -202,7 +199,7 @@ func (l *Leadership) attemptPartitionLeadership(ctx context.Context, leaseID cli
 	ctx, cancel := context.WithTimeout(ctx, time.Second*5)
 	defer cancel()
 
-	tx := l.kv.Txn(ctx).
+	tx := l.client.Txn(ctx).
 		If(clientv3.Compare(clientv3.CreateRevision(l.key.LeadershipKey()), "=", 0)).
 		Then(clientv3.OpPut(l.key.LeadershipKey(), l.partitionTotal, clientv3.WithLease(leaseID)))
 	resp, err := tx.Commit()
