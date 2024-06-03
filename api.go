@@ -98,7 +98,7 @@ func (c *cron) Delete(ctx context.Context, name string) error {
 		return err
 	}
 
-	return c.queue.Dequeue(name)
+	return c.queue.Dequeue(c.key.JobKey(name))
 }
 
 // validateName validates the name of a job.
