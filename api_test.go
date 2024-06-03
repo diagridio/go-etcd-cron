@@ -7,6 +7,7 @@ package etcdcron
 
 import (
 	"context"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -360,6 +361,51 @@ func Test_Delete(t *testing.T) {
 		}()
 
 		require.Error(t, cron.Delete(context.Background(), "./."))
+	})
+
+	t.Run("deleting a job should dequeue it", func(t *testing.T) {
+		t.Parallel()
+
+		var calls atomic.Int64
+		client := tests.EmbeddedETCDBareClient(t)
+		cron, err := New(Options{
+			Log:            logr.Discard(),
+			Client:         client,
+			Namespace:      "abc",
+			PartitionID:    0,
+			PartitionTotal: 1,
+			TriggerFn:      func(context.Context, *api.TriggerRequest) bool { calls.Add(1); return true },
+		})
+		require.NoError(t, err)
+
+		errCh := make(chan error)
+		ctx, cancel := context.WithCancel(context.Background())
+		t.Cleanup(func() {
+			cancel()
+			select {
+			case err := <-errCh:
+				require.NoError(t, err)
+			case <-time.After(5 * time.Second):
+				t.Fatal("timeout waiting for cron to stop")
+			}
+		})
+		go func() {
+			errCh <- cron.Run(ctx)
+		}()
+
+		require.NoError(t, cron.Add(context.Background(), "abc", &api.Job{
+			Schedule: ptr.Of("@every 1s"),
+		}))
+
+		assert.Eventually(t, func() bool {
+			return calls.Load() > 0
+		}, time.Second*3, time.Millisecond*10)
+
+		require.NoError(t, cron.Delete(context.Background(), "abc"))
+		current := calls.Load()
+
+		time.Sleep(time.Second * 2)
+		assert.Equal(t, current, calls.Load())
 	})
 }
 
