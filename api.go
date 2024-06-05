@@ -108,7 +108,8 @@ func validateName(name string) error {
 		return errors.New("job name cannot be empty")
 	}
 
-	for _, segment := range strings.Split(strings.ReplaceAll(strings.ToLower(name), "_", "-"), "||") {
+	trimmed := strings.TrimRight(strings.ReplaceAll(strings.ToLower(name), "_", "-"), "-")
+	for _, segment := range strings.Split(trimmed, "||") {
 		if errs := validation.IsDNS1123Subdomain(segment); len(errs) > 0 {
 			return fmt.Errorf("job name is invalid %q: %s", name, strings.Join(errs, ", "))
 		}
