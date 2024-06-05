@@ -65,8 +65,8 @@ schema = 3
     version = "v0.2.2"
     hash = "sha256-ryvMsRMd1CeuYyyLTfGRWb36AbZyxtomPBEB7hzrrqE="
   [mod."github.com/json-iterator/go"]
-    version = "v1.1.11"
-    hash = "sha256-/rcZZy458AsEqrSgtneGghVUpHNXJfT66QQHI6hyERU="
+    version = "v1.1.12"
+    hash = "sha256-To8A0h+lbfZ/6zM+2PpRpY3+L6725OPC66lffq6fUoM="
   [mod."github.com/matttproud/golang_protobuf_extensions"]
     version = "v1.0.1"
     hash = "sha256-ystDNStxR90j4CK+AMcEQ5oyYFRgWoGdvWlS0XQMDLQ="
@@ -74,8 +74,8 @@ schema = 3
     version = "v0.0.0-20180306012644-bacd9c7ef1dd"
     hash = "sha256-OTySieAgPWR4oJnlohaFTeK1tRaVp/b0d1rYY8xKMzo="
   [mod."github.com/modern-go/reflect2"]
-    version = "v1.0.1"
-    hash = "sha256-5D1HGVBc/REwPVdlPYcXsbZM80OIh7V5uiyKAbMA5qo="
+    version = "v1.0.2"
+    hash = "sha256-+W9EIW7okXIXjWEgOaMh58eLvBZ7OshW2EhaIpNLSBU="
   [mod."github.com/pmezard/go-difflib"]
     version = "v1.0.0"
     hash = "sha256-/FtmHnaGjdvEIKAJtrUfEhV7EVo5A/eYrtdnUkuxLDA="
@@ -202,9 +202,12 @@ schema = 3
   [mod."gopkg.in/yaml.v3"]
     version = "v3.0.1"
     hash = "sha256-FqL9TKYJ0XkNwJFnq9j0VvJ5ZUU1RvH/52h/f5bkYAU="
+  [mod."k8s.io/apimachinery"]
+    version = "v0.26.9"
+    hash = "sha256-nEKn5vbOfwT8+1E8MAopC+jDwoh6k3sBmeSMi4JoLbw="
   [mod."k8s.io/utils"]
     version = "v0.0.0-20240310230437-4693a0247e57"
     hash = "sha256-mzQaOH7Nqbf/paRg9u4J57+lvg4nvZ1kw1M59/BSYVU="
   [mod."sigs.k8s.io/yaml"]
-    version = "v1.2.0"
-    hash = "sha256-HHqIfaFuKGalif3bP2CcHm8MT8Ily1kJQL9Q8Kz2WHA="
+    version = "v1.3.0"
+    hash = "sha256-RVp8vca2wxg8pcBDYospG7Z1dujoH7zXNu2rgZ1kky0="
