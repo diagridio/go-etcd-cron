@@ -480,6 +480,10 @@ func Test_validateName(t *testing.T) {
 			name:   "foo.BAR||foo",
 			expErr: false,
 		},
+		{
+			name:   "foo.BAR_f-oo||foo",
+			expErr: false,
+		},
 	}
 
 	for _, test := range tests {
