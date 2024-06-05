@@ -12,6 +12,7 @@ import (
 	"strings"
 
 	"google.golang.org/protobuf/proto"
+	"k8s.io/apimachinery/pkg/util/validation"
 
 	"github.com/diagridio/go-etcd-cron/api"
 )
@@ -107,8 +108,10 @@ func validateName(name string) error {
 		return errors.New("job name cannot be empty")
 	}
 
-	if strings.Contains(name, "/") || strings.Contains(name, ".") {
-		return fmt.Errorf("job name cannot contain '/' or '.': %s", name)
+	for _, segment := range strings.Split(strings.ToLower(name), "||") {
+		if errs := validation.IsDNS1123Subdomain(segment); len(errs) > 0 {
+			return fmt.Errorf("job name is invalid %q: %s", name, strings.Join(errs, ", "))
+		}
 	}
 
 	return nil

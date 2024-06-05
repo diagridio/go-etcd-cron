@@ -400,7 +400,7 @@ func Test_validateName(t *testing.T) {
 		},
 		{
 			name:   "fo.o",
-			expErr: true,
+			expErr: false,
 		},
 		{
 			name:   "fo...o",
@@ -408,6 +408,30 @@ func Test_validateName(t *testing.T) {
 		},
 		{
 			name:   "valid",
+			expErr: false,
+		},
+		{
+			name:   "||",
+			expErr: true,
+		},
+		{
+			name:   "foo||",
+			expErr: true,
+		},
+		{
+			name:   "||foo",
+			expErr: true,
+		},
+		{
+			name:   "foo||foo",
+			expErr: false,
+		},
+		{
+			name:   "foo.bar||foo",
+			expErr: false,
+		},
+		{
+			name:   "foo.BAR||foo",
 			expErr: false,
 		},
 	}
