@@ -27,7 +27,7 @@ func (c *cron) Add(ctx context.Context, name string, job *api.Job) error {
 		return ctx.Err()
 	}
 
-	if err := validateName(name); err != nil {
+	if err := c.validateName(name); err != nil {
 		return err
 	}
 
@@ -59,7 +59,7 @@ func (c *cron) Get(ctx context.Context, name string) (*api.Job, error) {
 		return nil, ctx.Err()
 	}
 
-	if err := validateName(name); err != nil {
+	if err := c.validateName(name); err != nil {
 		return nil, err
 	}
 
@@ -91,7 +91,7 @@ func (c *cron) Delete(ctx context.Context, name string) error {
 		return ctx.Err()
 	}
 
-	if err := validateName(name); err != nil {
+	if err := c.validateName(name); err != nil {
 		return err
 	}
 
@@ -103,13 +103,12 @@ func (c *cron) Delete(ctx context.Context, name string) error {
 }
 
 // validateName validates the name of a job.
-func validateName(name string) error {
+func (c *cron) validateName(name string) error {
 	if len(name) == 0 {
 		return errors.New("job name cannot be empty")
 	}
 
-	trimmed := strings.TrimRight(strings.ReplaceAll(strings.ToLower(name), "_", "-"), "-")
-	for _, segment := range strings.Split(trimmed, "||") {
+	for _, segment := range strings.Split(strings.ToLower(c.validateNameReplacer.Replace(name)), "||") {
 		if errs := validation.IsDNS1123Subdomain(segment); len(errs) > 0 {
 			return fmt.Errorf("job name is invalid %q: %s", name, strings.Join(errs, ", "))
 		}

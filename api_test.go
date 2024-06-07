@@ -488,13 +488,25 @@ func Test_validateName(t *testing.T) {
 			name:   "actorreminder||dapr-tests||dapr.internal.dapr-tests.perf-workflowsapp.workflow||24b3fbad-0db5-4e81-a272-71f6018a66a6||start-4NYDFil-",
 			expErr: false,
 		},
+		{
+			name:   "aABVCD||dapr-::123:123||dapr.internal.dapr-tests.perf-workflowsapp.workflow||24b3fbad-0db5-4e81-a272-71f6018a66a6||start-4NYDFil-",
+			expErr: false,
+		},
 	}
 
 	for _, test := range tests {
 		test := test
 		t.Run(test.name, func(t *testing.T) {
 			t.Parallel()
-			err := validateName(test.name)
+			c, err := New(Options{
+				Log:            logr.Discard(),
+				Namespace:      "",
+				PartitionID:    0,
+				PartitionTotal: 1,
+				TriggerFn:      func(context.Context, *api.TriggerRequest) bool { return true },
+			})
+			require.NoError(t, err)
+			err = c.(*cron).validateName(test.name)
 			assert.Equal(t, test.expErr, err != nil, "%v", err)
 		})
 	}

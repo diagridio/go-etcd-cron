@@ -35,8 +35,10 @@ func Test_New(t *testing.T) {
 		now := time.Now().UTC()
 
 		job := &api.JobStored{
-			Start: timestamppb.New(now),
-			Uuid:  123,
+			Begin: &api.JobStored_Start{
+				Start: timestamppb.New(now),
+			},
+			Uuid: 123,
 			Job: &api.Job{
 				DueTime: ptr.Of(now.Format(time.RFC3339)),
 			},
@@ -104,8 +106,10 @@ func Test_New(t *testing.T) {
 		now := time.Now().UTC()
 
 		job := &api.JobStored{
-			Start: timestamppb.New(now),
-			Uuid:  123,
+			Begin: &api.JobStored_Start{
+				Start: timestamppb.New(now),
+			},
+			Uuid: 123,
 			Job: &api.Job{
 				DueTime: ptr.Of(now.Format(time.RFC3339)),
 			},
@@ -185,8 +189,10 @@ func Test_New(t *testing.T) {
 		now := time.Now().UTC()
 
 		job := &api.JobStored{
-			Start: timestamppb.New(now),
-			Uuid:  123,
+			Begin: &api.JobStored_Start{
+				Start: timestamppb.New(now),
+			},
+			Uuid: 123,
 			Job: &api.Job{
 				DueTime: ptr.Of(now.Format(time.RFC3339)),
 			},
@@ -273,8 +279,10 @@ func Test_New(t *testing.T) {
 		now := time.Now().UTC()
 
 		job := &api.JobStored{
-			Start: timestamppb.New(now),
-			Uuid:  123,
+			Begin: &api.JobStored_Start{
+				Start: timestamppb.New(now),
+			},
+			Uuid: 123,
 			Job: &api.Job{
 				DueTime: ptr.Of(now.Format(time.RFC3339)),
 			},
@@ -351,8 +359,10 @@ func Test_New(t *testing.T) {
 		now := time.Now().UTC()
 
 		job := &api.JobStored{
-			Start: timestamppb.New(now),
-			Uuid:  123,
+			Begin: &api.JobStored_Start{
+				Start: timestamppb.New(now),
+			},
+			Uuid: 123,
 			Job: &api.Job{
 				DueTime: ptr.Of(now.Format(time.RFC3339)),
 			},
@@ -426,7 +436,9 @@ func Test_Trigger(t *testing.T) {
 		now := time.Now().UTC()
 
 		job := &api.JobStored{
-			Start: timestamppb.New(now),
+			Begin: &api.JobStored_Start{
+				Start: timestamppb.New(now),
+			},
 			Job: &api.Job{
 				DueTime:  ptr.Of(now.Format(time.RFC3339)),
 				Schedule: ptr.Of("@every 1s"),
@@ -508,7 +520,9 @@ func Test_Trigger(t *testing.T) {
 		now := time.Now().UTC()
 
 		job := &api.JobStored{
-			Start: timestamppb.New(now),
+			Begin: &api.JobStored_Start{
+				Start: timestamppb.New(now),
+			},
 			Job: &api.Job{
 				DueTime: ptr.Of(now.Format(time.RFC3339)),
 			},
@@ -588,7 +602,9 @@ func Test_tickNext(t *testing.T) {
 		now := time.Now().UTC()
 
 		job := &api.JobStored{
-			Start: timestamppb.New(now),
+			Begin: &api.JobStored_Start{
+				Start: timestamppb.New(now),
+			},
 			Job: &api.Job{
 				DueTime: ptr.Of(now.Format(time.RFC3339)),
 			},
@@ -661,7 +677,9 @@ func Test_tickNext(t *testing.T) {
 		now := time.Now().UTC()
 
 		job := &api.JobStored{
-			Start: timestamppb.New(now),
+			Begin: &api.JobStored_Start{
+				Start: timestamppb.New(now),
+			},
 			Job: &api.Job{
 				DueTime: ptr.Of(now.Format(time.RFC3339)),
 			},
@@ -737,7 +755,9 @@ func Test_updateNext(t *testing.T) {
 	builder := scheduler.NewBuilder()
 
 	oneshot, err := builder.Scheduler(&api.JobStored{
-		Start: timestamppb.New(now),
+		Begin: &api.JobStored_DueTime{
+			DueTime: timestamppb.New(now),
+		},
 		Job: &api.Job{
 			DueTime: ptr.Of(now.Format(time.RFC3339)),
 		},
@@ -745,7 +765,9 @@ func Test_updateNext(t *testing.T) {
 	require.NoError(t, err)
 
 	repeats, err := builder.Scheduler(&api.JobStored{
-		Start: timestamppb.New(now),
+		Begin: &api.JobStored_Start{
+			Start: timestamppb.New(now),
+		},
 		Job: &api.Job{
 			Schedule: ptr.Of("@every 1s"),
 			Repeats:  ptr.Of(uint32(4)),
@@ -754,7 +776,9 @@ func Test_updateNext(t *testing.T) {
 	require.NoError(t, err)
 
 	expires, err := builder.Scheduler(&api.JobStored{
-		Start:      timestamppb.New(now),
+		Begin: &api.JobStored_Start{
+			Start: timestamppb.New(now),
+		},
 		Expiration: timestamppb.New(now.Add(5 * time.Second)),
 		Job: &api.Job{
 			Schedule: ptr.Of("@every 1s"),

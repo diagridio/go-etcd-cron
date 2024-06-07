@@ -18,17 +18,25 @@ message JobStored {
   // uuid is a unique identifier for the job.
   uint32 uuid = 1;
 
-  // start is the timestamp the job is sheduled to run.
-  google.protobuf.Timestamp start = 2;
+  // begin is the beginning time of the job.
+  oneof begin {
+    // start is the epoch time of the job whereby the clock starts on the
+    // schedule. The job _will not_ trigger at this time.
+    google.protobuf.Timestamp start = 2;
+
+    // due_time is the epoch time of the job whereby the clock starts on the
+    // schedule. The job _will_ trigger at this time.
+    google.protobuf.Timestamp due_time = 3;
+  }
 
   // expiration is the optional time at which the job should no longer be
   // scheduled and will be ignored and garbage collected thereafter.
   // A job may be removed earlier if repeats are exhausted or schedule doesn't
   // permit.
-  optional google.protobuf.Timestamp expiration = 3;
+  optional google.protobuf.Timestamp expiration = 4;
 
   // job is the job spec.
-  Job job = 4;
+  Job job = 5;
 }
 
 // Job defines a scheduled rhythmic job stored in the database.
