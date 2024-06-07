@@ -9,6 +9,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"sync"
 	"sync/atomic"
 
@@ -87,15 +88,16 @@ type cron struct {
 	log       logr.Logger
 	triggerFn TriggerFunction
 
-	client       client.Interface
-	part         partitioner.Interface
-	key          *key.Key
-	informer     *informer.Informer
-	yard         *grave.Yard
-	queue        *queue.Processor[string, *counter.Counter]
-	schedBuilder *scheduler.Builder
-	leadership   *leadership.Leadership
-	collector    garbage.Interface
+	client               client.Interface
+	part                 partitioner.Interface
+	key                  *key.Key
+	informer             *informer.Informer
+	yard                 *grave.Yard
+	queue                *queue.Processor[string, *counter.Counter]
+	schedBuilder         *scheduler.Builder
+	leadership           *leadership.Leadership
+	collector            garbage.Interface
+	validateNameReplacer *strings.Replacer
 
 	clock   clock.Clock
 	running atomic.Bool
@@ -161,20 +163,21 @@ func New(opts Options) (Interface, error) {
 	})
 
 	return &cron{
-		log:          log,
-		client:       client,
-		triggerFn:    opts.TriggerFn,
-		key:          key,
-		leadership:   leadership,
-		yard:         yard,
-		informer:     informer,
-		collector:    collector,
-		part:         part,
-		schedBuilder: scheduler.NewBuilder(),
-		clock:        clock.RealClock{},
-		readyCh:      make(chan struct{}),
-		closeCh:      make(chan struct{}),
-		errCh:        make(chan error),
+		log:                  log,
+		client:               client,
+		triggerFn:            opts.TriggerFn,
+		key:                  key,
+		leadership:           leadership,
+		yard:                 yard,
+		informer:             informer,
+		collector:            collector,
+		part:                 part,
+		schedBuilder:         scheduler.NewBuilder(),
+		validateNameReplacer: strings.NewReplacer("_", "", ":", "", "-", ""),
+		clock:                clock.RealClock{},
+		readyCh:              make(chan struct{}),
+		closeCh:              make(chan struct{}),
+		errCh:                make(chan error),
 	}, nil
 }
 

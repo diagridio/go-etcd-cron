@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/dapr/kit/cron"
+	"github.com/dapr/kit/ptr"
 	kittime "github.com/dapr/kit/time"
 	"google.golang.org/protobuf/types/known/timestamppb"
 	"k8s.io/utils/clock"
@@ -36,7 +37,7 @@ func NewBuilder() *Builder {
 func (b *Builder) Scheduler(job *api.JobStored) (Interface, error) {
 	if job.GetJob().Schedule == nil {
 		return &oneshot{
-			dueTime: job.GetStart().AsTime(),
+			dueTime: job.GetDueTime().AsTime(),
 		}, nil
 	}
 
@@ -46,12 +47,20 @@ func (b *Builder) Scheduler(job *api.JobStored) (Interface, error) {
 	}
 
 	//nolint:protogetter
-	return &repeats{
-		start: job.Start.AsTime(),
+	r := &repeats{
 		exp:   job.Expiration,
 		cron:  cronSched,
 		total: job.GetJob().Repeats,
-	}, nil
+	}
+
+	switch t := job.GetBegin().(type) {
+	case *api.JobStored_Start:
+		r.start = ptr.Of(t.Start.AsTime())
+	case *api.JobStored_DueTime:
+		r.dueTime = ptr.Of(t.DueTime.AsTime())
+	}
+
+	return r, nil
 }
 
 // Parse parses a job into a stored job which contains a random UUID.
@@ -86,28 +95,34 @@ func (b *Builder) Parse(job *api.Job) (*api.JobStored, error) {
 	}
 
 	now := b.clock.Now().UTC().Truncate(time.Second)
+	begin := now
 
 	if job.DueTime != nil {
-		start, err := parsePointInTime(job.GetDueTime(), now)
+		var err error
+		begin, err = parsePointInTime(job.GetDueTime(), now)
 		if err != nil {
 			return nil, err
 		}
-		stored.Start = timestamppb.New(start)
+		stored.Begin = &api.JobStored_DueTime{
+			DueTime: timestamppb.New(begin),
+		}
 	} else {
-		stored.Start = timestamppb.New(now)
+		stored.Begin = &api.JobStored_Start{
+			Start: timestamppb.New(now),
+		}
 	}
 
 	if job.Ttl != nil {
 		start := now
 		if job.DueTime != nil {
-			start = stored.GetStart().AsTime()
+			start = stored.GetDueTime().AsTime()
 		}
 		expiration, err := parsePointInTime(job.GetTtl(), start)
 		if err != nil {
 			return nil, errors.New("ttl format not recognized")
 		}
 
-		if job.DueTime != nil && stored.GetStart().AsTime().After(expiration) {
+		if job.DueTime != nil && begin.After(expiration) {
 			return nil, errors.New("ttl must be greater than due time")
 		}
 

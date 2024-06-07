@@ -26,6 +26,8 @@ func Test_repeats(t *testing.T) {
 		schedule string
 		total    *uint32
 		count    uint32
+		start    *time.Time
+		dueTime  *time.Time
 		last     *timestamppb.Timestamp
 		expNext  *time.Time
 	}{
@@ -33,6 +35,7 @@ func Test_repeats(t *testing.T) {
 			exp:      nil,
 			schedule: "@every 1h",
 			total:    nil,
+			start:    &start,
 			count:    0,
 			last:     nil,
 			expNext:  ptr.Of(start.Add(time.Hour)),
@@ -41,6 +44,7 @@ func Test_repeats(t *testing.T) {
 			exp:      nil,
 			schedule: "@every 1h",
 			total:    nil,
+			start:    &start,
 			count:    5,
 			last:     nil,
 			expNext:  ptr.Of(start.Add(time.Hour)),
@@ -49,6 +53,7 @@ func Test_repeats(t *testing.T) {
 			exp:      nil,
 			schedule: "@every 1h",
 			total:    ptr.Of(uint32(10)),
+			start:    &start,
 			count:    5,
 			last:     nil,
 			expNext:  ptr.Of(start.Add(time.Hour)),
@@ -57,6 +62,7 @@ func Test_repeats(t *testing.T) {
 			exp:      nil,
 			schedule: "@every 1h",
 			total:    ptr.Of(uint32(10)),
+			start:    &start,
 			count:    10,
 			last:     nil,
 			expNext:  nil,
@@ -65,6 +71,7 @@ func Test_repeats(t *testing.T) {
 			exp:      nil,
 			schedule: "@every 1h",
 			total:    ptr.Of(uint32(10)),
+			start:    &start,
 			count:    11,
 			last:     nil,
 			expNext:  nil,
@@ -73,6 +80,7 @@ func Test_repeats(t *testing.T) {
 			exp:      nil,
 			schedule: "@every 1h",
 			total:    nil,
+			start:    &start,
 			count:    0,
 			last:     timestamppb.New(start.Add(time.Hour + 50)),
 			expNext:  ptr.Of(start.Add(time.Hour * 2)),
@@ -82,6 +90,7 @@ func Test_repeats(t *testing.T) {
 			schedule: "@every 1h",
 			total:    nil,
 			count:    0,
+			start:    &start,
 			last:     timestamppb.New(start),
 			expNext:  ptr.Of(start.Add(time.Hour)),
 		},
@@ -89,6 +98,7 @@ func Test_repeats(t *testing.T) {
 			exp:      timestamppb.New(start.Add(time.Hour*2 + 1)),
 			schedule: "@every 1h",
 			total:    nil,
+			start:    &start,
 			count:    0,
 			last:     timestamppb.New(start.Add(time.Hour)),
 			expNext:  ptr.Of(start.Add(time.Hour * 2)),
@@ -97,9 +107,28 @@ func Test_repeats(t *testing.T) {
 			exp:      timestamppb.New(start.Add(time.Hour*2 + 1)),
 			schedule: "@every 1h",
 			total:    nil,
+			start:    &start,
 			count:    0,
 			last:     timestamppb.New(start.Add(time.Hour * 2)),
 			expNext:  nil,
+		},
+		"if dueTime and scheduler in future, expect trigger at dueTime": {
+			exp:      timestamppb.New(start.Add(time.Second)),
+			schedule: "@every 1h",
+			total:    nil,
+			dueTime:  ptr.Of(start.Add(time.Second)),
+			count:    0,
+			last:     nil,
+			expNext:  ptr.Of(start.Add(time.Second)),
+		},
+		"if dueTime and scheduler in future, expect trigger at start + schedule": {
+			exp:      timestamppb.New(start.Add(time.Second)),
+			schedule: "@every 1h",
+			total:    nil,
+			start:    ptr.Of(start.Add(time.Second)),
+			count:    0,
+			last:     nil,
+			expNext:  ptr.Of(start.Add(time.Hour + time.Second)),
 		},
 	}
 
@@ -111,10 +140,11 @@ func Test_repeats(t *testing.T) {
 			require.NoError(t, err)
 
 			repeats := &repeats{
-				start: start,
-				exp:   test.exp,
-				cron:  cron,
-				total: test.total,
+				start:   test.start,
+				dueTime: test.dueTime,
+				exp:     test.exp,
+				cron:    cron,
+				total:   test.total,
 			}
 
 			assert.Equal(t, test.expNext, repeats.Next(test.count, test.last))
