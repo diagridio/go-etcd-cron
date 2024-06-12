@@ -35,7 +35,7 @@ func NewBuilder() *Builder {
 
 // Scheduler returns the scheduler based on the given stored job.
 func (b *Builder) Scheduler(job *api.JobStored) (Interface, error) {
-	if job.GetJob().Schedule == nil {
+	if job.GetJob().GetSchedule() == "" {
 		return &oneshot{
 			dueTime: job.GetDueTime().AsTime(),
 		}, nil
