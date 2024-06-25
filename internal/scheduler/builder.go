@@ -63,7 +63,7 @@ func (b *Builder) Scheduler(job *api.JobStored) (Interface, error) {
 	return r, nil
 }
 
-// Parse parses a job into a stored job which contains a random UUID.
+// Parse parses a job into a stored job which contains a random partition ID.
 func (b *Builder) Parse(job *api.Job) (*api.JobStored, error) {
 	if job.DueTime == nil && job.Schedule == nil {
 		return nil, errors.New("job must have either a due time or a schedule")
@@ -90,8 +90,8 @@ func (b *Builder) Parse(job *api.Job) (*api.JobStored, error) {
 
 	//nolint:gosec
 	stored := &api.JobStored{
-		Uuid: rand.Uint32(),
-		Job:  job,
+		PartitionId: rand.Uint32(),
+		Job:         job,
 	}
 
 	now := b.clock.Now().UTC().Truncate(time.Second)

@@ -171,7 +171,7 @@ func (i *Informer) handleEvent(ev *clientv3.Event) (*Event, error) {
 		return nil, fmt.Errorf("failed to unmarshal job: %w", err)
 	}
 
-	if !i.part.IsJobManaged(job.GetUuid()) {
+	if !i.part.IsJobManaged(job.GetPartitionId()) {
 		return nil, nil
 	}
 
