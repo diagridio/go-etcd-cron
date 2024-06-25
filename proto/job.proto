@@ -12,11 +12,13 @@ import "google/protobuf/timestamp.proto";
 
 option go_package = "github.com/diagridio/go-etcd-cron/api";
 
-// JobStored is the wrapped stored version of a Job which has a uuid
+// JobStored is the wrapped stored version of a Job which has a partition_id
 // associated.
 message JobStored {
-  // uuid is a unique identifier for the job.
-  uint32 uuid = 1;
+  // partion_id is an identifier for the job, used for distinguishing jobs with
+  // the same name and assigning the job to a partition.
+  // Doesn't need to be globally unique.
+  uint32 partition_id = 1;
 
   // begin is the beginning time of the job.
   oneof begin {

@@ -300,8 +300,8 @@ func Test_Parse(t *testing.T) {
 			builder := &Builder{clock: clock}
 			gotStored, gotErr := builder.Parse(test.job)
 			if gotStored != nil {
-				assert.NotEqual(t, uint32(0), gotStored.GetUuid())
-				gotStored.Uuid = 0
+				assert.NotEqual(t, uint32(0), gotStored.GetPartitionId())
+				gotStored.PartitionId = 0
 			}
 			assert.Equal(t, test.expStored, gotStored)
 			assert.Equal(t, test.expErr, gotErr != nil, "%v", gotErr)

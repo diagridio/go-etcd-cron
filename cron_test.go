@@ -447,7 +447,7 @@ func Test_schedule(t *testing.T) {
 			Begin: &api.JobStored_DueTime{
 				DueTime: timestamppb.New(now),
 			},
-			Uuid: 123,
+			PartitionId: 123,
 			Job: &api.Job{
 				DueTime: ptr.Of(now.Format(time.RFC3339)),
 			},
@@ -518,15 +518,15 @@ func Test_schedule(t *testing.T) {
 			Begin: &api.JobStored_DueTime{
 				DueTime: timestamppb.New(now),
 			},
-			Uuid: 123,
+			PartitionId: 123,
 			Job: &api.Job{
 				DueTime: ptr.Of(now.Format(time.RFC3339)),
 			},
 		}
 		counter := &api.Counter{
-			LastTrigger: nil,
-			Count:       0,
-			JobUuid:     123,
+			LastTrigger:    nil,
+			Count:          0,
+			JobPartitionId: 123,
 		}
 
 		jobBytes, err := proto.Marshal(job)
@@ -599,15 +599,15 @@ func Test_schedule(t *testing.T) {
 			Begin: &api.JobStored_DueTime{
 				DueTime: timestamppb.New(now),
 			},
-			Uuid: 123,
+			PartitionId: 123,
 			Job: &api.Job{
 				DueTime: ptr.Of(now.Format(time.RFC3339)),
 			},
 		}
 		counter := &api.Counter{
-			LastTrigger: timestamppb.New(now),
-			Count:       1,
-			JobUuid:     123,
+			LastTrigger:    timestamppb.New(now),
+			Count:          1,
+			JobPartitionId: 123,
 		}
 
 		jobBytes, err := proto.Marshal(job)

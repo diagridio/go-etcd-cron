@@ -83,7 +83,7 @@ func New(ctx context.Context, opts Options) (*Counter, bool, error) {
 			client:     opts.Client,
 			schedule:   opts.Schedule,
 			job:        opts.Job,
-			count:      &api.Counter{JobUuid: opts.Job.GetUuid()},
+			count:      &api.Counter{JobPartitionId: opts.Job.GetPartitionId()},
 			yard:       opts.Yard,
 			collector:  opts.Collector,
 			triggerRequest: &api.TriggerRequest{
@@ -105,10 +105,10 @@ func New(ctx context.Context, opts Options) (*Counter, bool, error) {
 		return nil, false, err
 	}
 
-	// If the job UUID is the same, recover the counter state, else we start
-	// again.
-	if count.GetJobUuid() != opts.Job.GetUuid() {
-		count = &api.Counter{JobUuid: opts.Job.GetUuid()}
+	// If the job partition ID is the same, recover the counter state, else we
+	// start again.
+	if count.GetJobPartitionId() != opts.Job.GetPartitionId() {
+		count = &api.Counter{JobPartitionId: opts.Job.GetPartitionId()}
 		b, err := proto.Marshal(count)
 		if err != nil {
 			return nil, false, err

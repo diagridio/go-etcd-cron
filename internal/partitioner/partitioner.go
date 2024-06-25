@@ -12,7 +12,7 @@ import (
 
 // Interface returns whether a key is managed by the partition.
 type Interface interface {
-	IsJobManaged(jobUUID uint32) bool
+	IsJobManaged(jobPartitionID uint32) bool
 }
 
 // Options are the options for the partitioner.

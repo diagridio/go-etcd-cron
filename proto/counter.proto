@@ -13,9 +13,11 @@ option go_package = "github.com/diagridio/go-etcd-cron/api";
 
 // Counter holds counter information for a given job.
 message Counter {
-  // job_uuid is the UUID of the job this counter belongs to. Pevents an updated
-  // job from inheriting the counter of a previous job with the same name.
-  uint32 job_uuid = 1;
+  // job_partition_id is the parition_id of the job this counter belongs to.
+  // Prevents an updated job from inheriting the counter of a previous job with
+  // the same name.
+  // Doesn't need to be globally unique.
+  uint32 job_partition_id = 1;
 
   // count is the number of times the job has been triggered.
   uint32 count = 2;
