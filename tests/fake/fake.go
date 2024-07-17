@@ -18,6 +18,7 @@ type Fake struct {
 	getFn  func(ctx context.Context, name string) (*api.Job, error)
 	delFn  func(ctx context.Context, name string) error
 	delPFn func(ctx context.Context, prefixes ...string) error
+	listFn func(ctx context.Context, prefix string) (*api.ListResponse, error)
 }
 
 func New() *Fake {
@@ -37,6 +38,9 @@ func New() *Fake {
 		},
 		delPFn: func(context.Context, ...string) error {
 			return nil
+		},
+		listFn: func(context.Context, string) (*api.ListResponse, error) {
+			return nil, nil
 		},
 	}
 }
@@ -66,6 +70,11 @@ func (f *Fake) WithDeletePrefixes(fn func(context.Context, ...string) error) *Fa
 	return f
 }
 
+func (f *Fake) WithList(fn func(context.Context, string) (*api.ListResponse, error)) *Fake {
+	f.listFn = fn
+	return f
+}
+
 func (f *Fake) Run(ctx context.Context) error {
 	return f.runFn(ctx)
 }
@@ -84,4 +93,8 @@ func (f *Fake) Delete(ctx context.Context, name string) error {
 
 func (f *Fake) DeletePrefixes(ctx context.Context, prefixes ...string) error {
 	return f.delPFn(ctx, prefixes...)
+}
+
+func (f *Fake) List(ctx context.Context, prefix string) (*api.ListResponse, error) {
+	return f.listFn(ctx, prefix)
 }

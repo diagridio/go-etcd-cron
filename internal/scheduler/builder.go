@@ -13,10 +13,9 @@ import (
 	"github.com/dapr/kit/cron"
 	"github.com/dapr/kit/ptr"
 	kittime "github.com/dapr/kit/time"
+	"github.com/diagridio/go-etcd-cron/api"
 	"google.golang.org/protobuf/types/known/timestamppb"
 	"k8s.io/utils/clock"
-
-	"github.com/diagridio/go-etcd-cron/api"
 )
 
 // Builder is a builder for creating a new scheduler.
