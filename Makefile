@@ -13,7 +13,7 @@ endif
 
 .PHONY: lint
 lint:
-	$(GOLANGCI_LINT) run --timeout=20m
+	$(GOLANGCI_LINT) run --timeout=20m ./...
 
 
 ################################################################################
@@ -42,7 +42,6 @@ PROTOC_GEN_GO_VERSION = v1.32.0
 
 PROTOC_GEN_GO_GRPC_VERSION = 1.3.0
 
-PROTOS:=$(shell ls proto)
 PROTO_PREFIX:=github.com/diagridio/go-etcd-cron
 
 .PHONY: check-proto-version
@@ -56,20 +55,16 @@ check-proto-version: ## Checking the version of proto related tools
 	@test "$(shell protoc-gen-go --version 2>&1)" = "protoc-gen-go $(PROTOC_GEN_GO_VERSION)" \
 	|| { echo "please use protoc-gen-go $(PROTOC_GEN_GO_VERSION) to generate proto"; exit 1; }
 
-# Generate archive files for each binary
-# $(1): the binary name to be archived
-define genProtoc
-.PHONY: gen-proto-$(1)
-gen-proto-$(1):
-	$(PROTOC) --go_out=. --go_opt=module=$(PROTO_PREFIX) --go-grpc_out=. --go-grpc_opt=require_unimplemented_servers=false,module=$(PROTO_PREFIX) ./proto/$(1)/*
-endef
-
-$(foreach ITEM,$(PROTOS),$(eval $(call genProtoc,$(ITEM))))
-
-GEN_PROTOS:=$(foreach ITEM,$(PROTOS),gen-proto-$(ITEM))
-
 .PHONY: gen-proto
-gen-proto: check-proto-version $(GEN_PROTOS) modtidy
+gen-proto: check-proto-version _gen-proto modtidy
+
+.PHONY: _gen-proto
+_gen-proto:
+	$(PROTOC) --go_out=. \
+	  --go_opt=module=$(PROTO_PREFIX) \
+	  --go-grpc_out=. \
+	  --go-grpc_opt=require_unimplemented_servers=false,module=$(PROTO_PREFIX) \
+	  ./proto/*.proto
 
 test:
 	go test -count 1 -timeout 300s --race ./...

@@ -109,6 +109,10 @@ func generic(ctx context.Context, c *client, op func(context.Context) error) err
 			return err
 		}
 
-		<-c.clock.After(time.Second)
+		select {
+		case <-c.clock.After(time.Second):
+		case <-ctx.Done():
+			return ctx.Err()
+		}
 	}
 }

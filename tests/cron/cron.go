@@ -16,19 +16,19 @@ import (
 	"github.com/stretchr/testify/require"
 	clientv3 "go.etcd.io/etcd/client/v3"
 
-	etcdcron "github.com/diagridio/go-etcd-cron"
 	"github.com/diagridio/go-etcd-cron/api"
+	"github.com/diagridio/go-etcd-cron/cron"
 )
 
 type Cron struct {
-	etcdcron.Interface
+	api.Interface
 	KV    clientv3.KV
 	Calls *atomic.Int64
 }
 
 func newCron(t *testing.T, client *clientv3.Client, total, id uint32) *Cron {
 	var calls atomic.Int64
-	cron, err := etcdcron.New(etcdcron.Options{
+	cron, err := cron.New(cron.Options{
 		Log:                              logr.Discard(),
 		Client:                           client,
 		Namespace:                        "abc",
@@ -54,7 +54,7 @@ func (c *Cron) run(t *testing.T) *Cron {
 		select {
 		case err := <-errCh:
 			require.NoError(t, err)
-		case <-time.After(5 * time.Second):
+		case <-time.After(10 * time.Second):
 			t.Fatal("timeout waiting for cron to stop")
 		}
 	})

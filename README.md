@@ -13,36 +13,40 @@ Recurring jobs can have a TTL, a delayed start, expiry time, and a maximum numbe
 ## Getting started
 
 ```go
-import etcdcron "github.com/diagridio/go-etcd-cron"
-import "github.com/diagridio/go-etcd-cron/api"
+import (
+  "github.com/diagridio/go-etcd-cron/api"
+  "github.com/diagridio/go-etcd-cron/cron"
+)
 
-cron, err := etcdcron.New(Options{
-  Client:         client,
-  Namespace:      "abc",
-  PartitionID:    0,
-  PartitionTotal: 1,
-  TriggerFn: func(context.Context, *api.TriggerRequest) bool {
-    // Do something with your trigger here.
-    // Return true if the trigger was successful, false otherwise.
-    // Note, returning false will cause the job to be retried *immediately*.
-  	return true
-  },
-})
-if err != nil {
-  panic(err)
-}
+func main() {
+  cron, err := cron.New(cron.Options{
+    Client:         client,
+    Namespace:      "abc",
+    PartitionID:    0,
+    PartitionTotal: 1,
+    TriggerFn: func(context.Context, *api.TriggerRequest) bool {
+      // Do something with your trigger here.
+      // Return true if the trigger was successful, false otherwise.
+      // Note, returning false will cause the job to be retried *immediately*.
+      return true
+    },
+  })
+  if err != nil {
+    panic(err)
+  }
 
-// TODO: Pass proper context and do something with returned error.
-go cron.Run(context.Background())
+  // TODO: Pass proper context and do something with returned error.
+  go cron.Run(context.Background())
 
-payload, _ := anypb.New(wrapperspb.String("hello"))
-meta, _ := anypb.New(wrapperspb.String("world"))
-tt := time.Now().Add(time.Second).Format(time.RFC3339)
+  payload, _ := anypb.New(wrapperspb.String("hello"))
+  meta, _ := anypb.New(wrapperspb.String("world"))
+  tt := time.Now().Add(time.Second).Format(time.RFC3339)
 
-cron.Add(ctx, "my-job", &api.Job{
-  DueTime:  &tt,
-  Payload:  payload,
-  Metadata: meta,
+  cron.Add(context.TODO(), "my-job", &api.Job{
+    DueTime:  &tt,
+    Payload:  payload,
+    Metadata: meta,
+  })
 }
 ```
 
