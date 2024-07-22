@@ -97,7 +97,6 @@ func Test_Scheduler(t *testing.T) {
 	}
 
 	for name, test := range tests {
-		test := test
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 			builder := &Builder{clock: clock}
@@ -294,7 +293,6 @@ func Test_Parse(t *testing.T) {
 	}
 
 	for name, test := range tests {
-		test := test
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 			builder := &Builder{clock: clock}
@@ -352,7 +350,6 @@ func Test_parsePointInTime(t *testing.T) {
 	}
 
 	for name, test := range tests {
-		test := test
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 			gotTime, gotErr := parsePointInTime(test.str, now)

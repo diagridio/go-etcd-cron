@@ -133,7 +133,6 @@ func Test_repeats(t *testing.T) {
 	}
 
 	for name, test := range tests {
-		test := test
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 			cron, err := cron.ParseStandard(test.schedule)

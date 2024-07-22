@@ -514,7 +514,6 @@ func Test_parallel(t *testing.T) {
 		{"1 queue", 1},
 		{"multi queue", 50},
 	} {
-		test := test
 		t.Run(test.name, func(t *testing.T) {
 			t.Parallel()
 

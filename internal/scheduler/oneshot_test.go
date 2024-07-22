@@ -37,7 +37,6 @@ func Test_oneshot(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		test := test
 		t.Run(strconv.Itoa(int(test.count)), func(t *testing.T) {
 			t.Parallel()
 			oneshot := &oneshot{dueTime: dueTime}

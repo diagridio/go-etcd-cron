@@ -333,7 +333,6 @@ func Test_handleEvent(t *testing.T) {
 	}
 
 	for name, test := range tests {
-		test := test
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 			part, err := partitioner.New(partitioner.Options{

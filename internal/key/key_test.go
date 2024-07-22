@@ -42,7 +42,6 @@ func Test_JobKey(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		test := test
 		t.Run(test.namespace+"/"+test.jobName, func(t *testing.T) {
 			t.Parallel()
 			key := New(Options{
@@ -84,7 +83,6 @@ func Test_CounterKey(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		test := test
 		t.Run(test.namespace+"/"+test.jobName, func(t *testing.T) {
 			t.Parallel()
 			key := New(Options{
@@ -118,7 +116,6 @@ func Test_LeadershipNamespace(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		test := test
 		t.Run(test.namespace, func(t *testing.T) {
 			t.Parallel()
 			key := New(Options{
@@ -156,7 +153,6 @@ func Test_LeadershipKey(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		test := test
 		t.Run(fmt.Sprintf("%s/%d", test.namespace, test.partitionID), func(t *testing.T) {
 			t.Parallel()
 			key := New(Options{
@@ -190,7 +186,6 @@ func Test_JobNamespace(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		test := test
 		t.Run(test.namespace, func(t *testing.T) {
 			t.Parallel()
 			key := New(Options{
@@ -224,7 +219,6 @@ func Test_JobName(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		test := test
 		t.Run(test.key, func(t *testing.T) {
 			t.Parallel()
 			key := New(Options{

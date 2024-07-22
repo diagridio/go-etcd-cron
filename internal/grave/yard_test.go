@@ -120,7 +120,6 @@ func Test_HasJustDeleted(t *testing.T) {
 	}
 
 	for name, test := range tests {
-		test := test
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 			yard := New()
