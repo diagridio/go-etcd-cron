@@ -495,7 +495,8 @@ func Test_validateName(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		test := test
+		name := test.name
+		expErr := test.expErr
 		t.Run(test.name, func(t *testing.T) {
 			t.Parallel()
 			c, err := New(Options{
@@ -506,8 +507,8 @@ func Test_validateName(t *testing.T) {
 				TriggerFn:      func(context.Context, *api.TriggerRequest) bool { return true },
 			})
 			require.NoError(t, err)
-			err = c.(*cron).validateName(test.name)
-			assert.Equal(t, test.expErr, err != nil, "%v", err)
+			err = c.(*cron).validateName(name)
+			assert.Equal(t, expErr, err != nil, "%v", err)
 		})
 	}
 }

@@ -83,8 +83,7 @@ func Test_Delete(t *testing.T) {
 	}
 
 	for name, test := range tests {
-		name, test := name, test
-
+		testInLoop := test
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 
@@ -92,7 +91,7 @@ func Test_Delete(t *testing.T) {
 				t.Parallel()
 
 				kv := new(mock)
-				require.NoError(t, test(&client{kv: kv}))
+				require.NoError(t, testInLoop(&client{kv: kv}))
 				assert.Equal(t, uint32(1), kv.calls.Load())
 			})
 
@@ -101,7 +100,7 @@ func Test_Delete(t *testing.T) {
 
 				kv := new(mock)
 				kv.err = errors.New("this is an error")
-				require.Error(t, test(&client{kv: kv}))
+				require.Error(t, testInLoop(&client{kv: kv}))
 				assert.Equal(t, uint32(1), kv.calls.Load())
 			})
 
@@ -122,7 +121,7 @@ func Test_Delete(t *testing.T) {
 				})
 
 				go func() {
-					errCh <- test(&client{kv: kv, clock: clock})
+					errCh <- testInLoop(&client{kv: kv, clock: clock})
 				}()
 
 				assert.Eventually(t, clock.HasWaiters, time.Second, time.Millisecond*10)
@@ -151,7 +150,7 @@ func Test_Delete(t *testing.T) {
 				})
 
 				go func() {
-					errCh <- test(&client{kv: kv, clock: clock})
+					errCh <- testInLoop(&client{kv: kv, clock: clock})
 				}()
 
 				assert.Eventually(t, clock.HasWaiters, time.Second, time.Millisecond*10)

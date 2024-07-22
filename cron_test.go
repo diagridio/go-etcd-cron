@@ -23,83 +23,41 @@ import (
 	"google.golang.org/protobuf/types/known/wrapperspb"
 
 	"github.com/diagridio/go-etcd-cron/api"
+	"github.com/diagridio/go-etcd-cron/internal/client"
 	"github.com/diagridio/go-etcd-cron/internal/tests"
 )
 
 func Test_retry(t *testing.T) {
 	t.Parallel()
 
-	client := tests.EmbeddedETCDBareClient(t)
-	var triggerd atomic.Int64
-	cron, err := New(Options{
-		Log:            logr.Discard(),
-		Client:         client,
-		Namespace:      "abc",
-		PartitionID:    0,
-		PartitionTotal: 1,
-		TriggerFn: func(context.Context, *api.TriggerRequest) bool {
-			triggerd.Add(1)
-			return triggerd.Load() != 1
-		},
+	var ok atomic.Bool
+	helper := testCronWithOptions(t, testCronOptions{
+		total:    1,
+		returnOk: &ok,
 	})
-	require.NoError(t, err)
-
-	errCh := make(chan error)
-	ctx, cancel := context.WithCancel(context.Background())
-	t.Cleanup(func() {
-		cancel()
-		select {
-		case err := <-errCh:
-			require.NoError(t, err)
-		case <-time.After(5 * time.Second):
-			t.Fatal("timeout waiting for cron to stop")
-		}
-	})
-	go func() {
-		errCh <- cron.Run(ctx)
-	}()
 
 	job := &api.Job{
 		DueTime: ptr.Of(time.Now().Format(time.RFC3339)),
 	}
-	require.NoError(t, cron.Add(ctx, "yoyo", job))
+	require.NoError(t, helper.cron.Add(helper.ctx, "yoyo", job))
 
+	assert.EventuallyWithT(t, func(c *assert.CollectT) {
+		assert.Greater(c, helper.triggered.Load(), int64(2))
+	}, 5*time.Second, 10*time.Millisecond)
+	ok.Store(true)
+	triggered := helper.triggered.Load()
 	<-time.After(3 * time.Second)
-	assert.Equal(t, int64(2), triggerd.Load())
+	assert.Equal(t, triggered+1, helper.triggered.Load())
 }
 
 func Test_payload(t *testing.T) {
 	t.Parallel()
 
-	client := tests.EmbeddedETCDBareClient(t)
 	gotCh := make(chan *api.TriggerRequest, 1)
-	cron, err := New(Options{
-		Log:            logr.Discard(),
-		Client:         client,
-		Namespace:      "abc",
-		PartitionID:    0,
-		PartitionTotal: 1,
-		TriggerFn: func(_ context.Context, api *api.TriggerRequest) bool {
-			gotCh <- api
-			return true
-		},
+	helper := testCronWithOptions(t, testCronOptions{
+		total: 1,
+		gotCh: gotCh,
 	})
-	require.NoError(t, err)
-
-	errCh := make(chan error)
-	ctx, cancel := context.WithCancel(context.Background())
-	t.Cleanup(func() {
-		cancel()
-		select {
-		case err := <-errCh:
-			require.NoError(t, err)
-		case <-time.After(5 * time.Second):
-			t.Fatal("timeout waiting for cron to stop")
-		}
-	})
-	go func() {
-		errCh <- cron.Run(ctx)
-	}()
 
 	payload, err := anypb.New(wrapperspb.String("hello"))
 	require.NoError(t, err)
@@ -110,7 +68,7 @@ func Test_payload(t *testing.T) {
 		Payload:  payload,
 		Metadata: meta,
 	}
-	require.NoError(t, cron.Add(ctx, "yoyo", job))
+	require.NoError(t, helper.cron.Add(helper.ctx, "yoyo", job))
 
 	select {
 	case got := <-gotCh:
@@ -129,95 +87,38 @@ func Test_payload(t *testing.T) {
 func Test_remove(t *testing.T) {
 	t.Parallel()
 
-	client := tests.EmbeddedETCDBareClient(t)
-	var triggered atomic.Int64
-	cron, err := New(Options{
-		Log:            logr.Discard(),
-		Client:         client,
-		Namespace:      "abc",
-		PartitionID:    0,
-		PartitionTotal: 1,
-		TriggerFn: func(context.Context, *api.TriggerRequest) bool {
-			triggered.Add(1)
-			return true
-		},
-	})
-	require.NoError(t, err)
-
-	errCh := make(chan error)
-	ctx, cancel := context.WithCancel(context.Background())
-	t.Cleanup(func() {
-		cancel()
-		select {
-		case err := <-errCh:
-			require.NoError(t, err)
-		case <-time.After(5 * time.Second):
-			t.Fatal("timeout waiting for cron to stop")
-		}
-	})
-	go func() {
-		errCh <- cron.Run(ctx)
-	}()
+	helper := testCron(t, 1)
 
 	job := &api.Job{
 		DueTime: ptr.Of(time.Now().Add(time.Second * 2).Format(time.RFC3339)),
 	}
-	require.NoError(t, cron.Add(ctx, "def", job))
-	require.NoError(t, cron.Delete(ctx, "def"))
+	require.NoError(t, helper.cron.Add(helper.ctx, "def", job))
+	require.NoError(t, helper.cron.Delete(helper.ctx, "def"))
 
 	<-time.After(3 * time.Second)
 
-	assert.Equal(t, int64(0), triggered.Load())
+	assert.Equal(t, int64(0), helper.triggered.Load())
 }
 
 func Test_upsert(t *testing.T) {
 	t.Parallel()
 
-	client := tests.EmbeddedETCDBareClient(t)
-	var triggered atomic.Int64
-	cron, err := New(Options{
-		Log:            logr.Discard(),
-		Client:         client,
-		Namespace:      "abc",
-		PartitionID:    0,
-		PartitionTotal: 1,
-		TriggerFn: func(context.Context, *api.TriggerRequest) bool {
-			triggered.Add(1)
-
-			return true
-		},
-	})
-	require.NoError(t, err)
-
-	errCh := make(chan error)
-	ctx, cancel := context.WithCancel(context.Background())
-	t.Cleanup(func() {
-		cancel()
-		select {
-		case err := <-errCh:
-			require.NoError(t, err)
-		case <-time.After(5 * time.Second):
-			t.Fatal("timeout waiting for cron to stop")
-		}
-	})
-	go func() {
-		errCh <- cron.Run(ctx)
-	}()
+	helper := testCron(t, 1)
 
 	job := &api.Job{
 		DueTime: ptr.Of(time.Now().Add(time.Hour).Format(time.RFC3339)),
 	}
-	require.NoError(t, cron.Add(ctx, "def", job))
+	require.NoError(t, helper.cron.Add(helper.ctx, "def", job))
 	job = &api.Job{
 		DueTime: ptr.Of(time.Now().Add(time.Second).Format(time.RFC3339)),
 	}
-	require.NoError(t, cron.Add(ctx, "def", job))
+	require.NoError(t, helper.cron.Add(helper.ctx, "def", job))
 
 	assert.Eventually(t, func() bool {
-		return triggered.Load() == 1
+		return helper.triggered.Load() == 1
 	}, 5*time.Second, 1*time.Second)
 
-	resp, err := client.Get(context.Background(), "abc/jobs/def")
+	resp, err := helper.client.Get(context.Background(), "abc/jobs/def")
 	require.NoError(t, err)
 	assert.Empty(t, resp.Kvs)
 }
@@ -225,57 +126,20 @@ func Test_upsert(t *testing.T) {
 func Test_patition(t *testing.T) {
 	t.Parallel()
 
-	client := tests.EmbeddedETCDBareClient(t)
-	var triggered atomic.Int64
-
-	crons := make([]Interface, 100)
-	for i := 0; i < 100; i++ {
-		cron, err := New(Options{
-			Log:            logr.Discard(),
-			Client:         client,
-			Namespace:      "abc",
-			PartitionID:    uint32(i),
-			PartitionTotal: 100,
-			TriggerFn: func(context.Context, *api.TriggerRequest) bool {
-				triggered.Add(1)
-				return true
-			},
-		})
-		require.NoError(t, err)
-		crons[i] = cron
-	}
-
-	errCh := make(chan error)
-	ctx, cancel := context.WithCancel(context.Background())
-	t.Cleanup(func() {
-		cancel()
-		for i := 0; i < 100; i++ {
-			select {
-			case err := <-errCh:
-				require.NoError(t, err)
-			case <-time.After(5 * time.Second):
-				t.Fatal("timeout waiting for cron to stop")
-			}
-		}
-	})
-	for i := 0; i < 100; i++ {
-		go func(i int) {
-			errCh <- crons[i].Run(ctx)
-		}(i)
-	}
+	helper := testCron(t, 100)
 
 	for i := 0; i < 100; i++ {
 		job := &api.Job{
 			DueTime: ptr.Of(time.Now().Add(time.Second).Format(time.RFC3339)),
 		}
-		require.NoError(t, crons[0].Add(ctx, "test-"+strconv.Itoa(i), job))
+		require.NoError(t, helper.allCrons[i].Add(helper.ctx, "test-"+strconv.Itoa(i), job))
 	}
 
 	assert.Eventually(t, func() bool {
-		return triggered.Load() == 100
+		return helper.triggered.Load() == 100
 	}, 5*time.Second, 1*time.Second)
 
-	resp, err := client.Get(context.Background(), "abc/jobs", clientv3.WithPrefix())
+	resp, err := helper.client.Get(context.Background(), "abc/jobs", clientv3.WithPrefix())
 	require.NoError(t, err)
 	assert.Empty(t, resp.Kvs)
 }
@@ -283,47 +147,19 @@ func Test_patition(t *testing.T) {
 func Test_oneshot(t *testing.T) {
 	t.Parallel()
 
-	client := tests.EmbeddedETCDBareClient(t)
-	var triggered atomic.Int64
-	cron, err := New(Options{
-		Log:            logr.Discard(),
-		Client:         client,
-		Namespace:      "abc",
-		PartitionID:    0,
-		PartitionTotal: 1,
-		TriggerFn: func(context.Context, *api.TriggerRequest) bool {
-			triggered.Add(1)
-			return true
-		},
-	})
-	require.NoError(t, err)
-
-	errCh := make(chan error)
-	ctx, cancel := context.WithCancel(context.Background())
-	t.Cleanup(func() {
-		cancel()
-		select {
-		case err := <-errCh:
-			require.NoError(t, err)
-		case <-time.After(5 * time.Second):
-			t.Fatal("timeout waiting for cron to stop")
-		}
-	})
-	go func() {
-		errCh <- cron.Run(ctx)
-	}()
+	helper := testCron(t, 1)
 
 	job := &api.Job{
 		DueTime: ptr.Of(time.Now().Add(time.Second).Format(time.RFC3339)),
 	}
 
-	require.NoError(t, cron.Add(ctx, "def", job))
+	require.NoError(t, helper.cron.Add(helper.ctx, "def", job))
 
 	assert.Eventually(t, func() bool {
-		return triggered.Load() == 1
+		return helper.triggered.Load() == 1
 	}, 5*time.Second, 1*time.Second)
 
-	resp, err := client.Get(context.Background(), "abc/jobs/def")
+	resp, err := helper.client.Get(context.Background(), "abc/jobs/def")
 	require.NoError(t, err)
 	assert.Empty(t, resp.Kvs)
 }
@@ -331,48 +167,20 @@ func Test_oneshot(t *testing.T) {
 func Test_repeat(t *testing.T) {
 	t.Parallel()
 
-	client := tests.EmbeddedETCDBareClient(t)
-	var triggered atomic.Int64
-	cron, err := New(Options{
-		Log:            logr.Discard(),
-		Client:         client,
-		Namespace:      "abc",
-		PartitionID:    0,
-		PartitionTotal: 1,
-		TriggerFn: func(context.Context, *api.TriggerRequest) bool {
-			triggered.Add(1)
-			return true
-		},
-	})
-	require.NoError(t, err)
-
-	errCh := make(chan error)
-	ctx, cancel := context.WithCancel(context.Background())
-	t.Cleanup(func() {
-		cancel()
-		select {
-		case err := <-errCh:
-			require.NoError(t, err)
-		case <-time.After(5 * time.Second):
-			t.Fatal("timeout waiting for cron to stop")
-		}
-	})
-	go func() {
-		errCh <- cron.Run(ctx)
-	}()
+	helper := testCron(t, 1)
 
 	job := &api.Job{
 		Schedule: ptr.Of("@every 1s"),
 		Repeats:  ptr.Of(uint32(3)),
 	}
 
-	require.NoError(t, cron.Add(ctx, "def", job))
+	require.NoError(t, helper.cron.Add(helper.ctx, "def", job))
 
-	assert.Eventually(t, func() bool {
-		return triggered.Load() == 3
+	assert.EventuallyWithT(t, func(c *assert.CollectT) {
+		assert.Equal(c, int64(3), helper.triggered.Load())
 	}, 5*time.Second, 1*time.Second)
 
-	resp, err := client.Get(context.Background(), "abc/jobs/def")
+	resp, err := helper.client.Get(context.Background(), "abc/jobs/def")
 	require.NoError(t, err)
 	assert.Empty(t, resp.Kvs)
 }
@@ -671,55 +479,155 @@ func Test_schedule(t *testing.T) {
 func Test_zeroDueTime(t *testing.T) {
 	t.Parallel()
 
-	client := tests.EmbeddedETCDBareClient(t)
-	var triggerd atomic.Int64
-	cron, err := New(Options{
-		Log:            logr.Discard(),
-		Client:         client,
-		Namespace:      "abc",
-		PartitionID:    0,
-		PartitionTotal: 1,
-		TriggerFn: func(context.Context, *api.TriggerRequest) bool {
-			triggerd.Add(1)
-			return true
-		},
-	})
-	require.NoError(t, err)
+	helper := testCron(t, 1)
 
-	errCh := make(chan error)
-	ctx, cancel := context.WithCancel(context.Background())
-	t.Cleanup(func() {
-		cancel()
-		select {
-		case err := <-errCh:
-			require.NoError(t, err)
-		case <-time.After(5 * time.Second):
-			t.Fatal("timeout waiting for cron to stop")
-		}
-	})
-	go func() {
-		errCh <- cron.Run(ctx)
-	}()
-
-	require.NoError(t, cron.Add(ctx, "yoyo", &api.Job{
+	require.NoError(t, helper.cron.Add(helper.ctx, "yoyo", &api.Job{
 		Schedule: ptr.Of("@every 1h"),
 		DueTime:  ptr.Of("0s"),
 	}))
 	assert.Eventually(t, func() bool {
-		return triggerd.Load() == 1
+		return helper.triggered.Load() == 1
 	}, 3*time.Second, time.Millisecond*10)
 
-	require.NoError(t, cron.Add(ctx, "yoyo2", &api.Job{
+	require.NoError(t, helper.cron.Add(helper.ctx, "yoyo2", &api.Job{
 		Schedule: ptr.Of("@every 1h"),
 		DueTime:  ptr.Of("1s"),
 	}))
 	assert.Eventually(t, func() bool {
-		return triggerd.Load() == 2
+		return helper.triggered.Load() == 2
 	}, 3*time.Second, time.Millisecond*10)
 
-	require.NoError(t, cron.Add(ctx, "yoyo3", &api.Job{
+	require.NoError(t, helper.cron.Add(helper.ctx, "yoyo3", &api.Job{
 		Schedule: ptr.Of("@every 1h"),
 	}))
 	<-time.After(2 * time.Second)
-	assert.Equal(t, int64(2), triggerd.Load())
+	assert.Equal(t, int64(2), helper.triggered.Load())
+}
+
+func Test_parallel(t *testing.T) {
+	t.Parallel()
+
+	for _, test := range []struct {
+		name  string
+		total uint32
+	}{
+		{"1 queue", 1},
+		{"multi queue", 50},
+	} {
+		total := test.total
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
+			releaseCh := make(chan struct{})
+			var waiting atomic.Int32
+			var done atomic.Int32
+			helper := testCronWithOptions(t, testCronOptions{
+				total: total,
+				triggerFn: func() {
+					waiting.Add(1)
+					<-releaseCh
+					done.Add(1)
+				},
+			})
+
+			for i := 0; i < 100; i++ {
+				require.NoError(t, helper.cron.Add(helper.ctx, strconv.Itoa(i), &api.Job{
+					DueTime: ptr.Of("0s"),
+				}))
+			}
+
+			assert.EventuallyWithT(t, func(c *assert.CollectT) {
+				assert.Equal(c, int32(100), waiting.Load())
+			}, 5*time.Second, 10*time.Millisecond)
+			close(releaseCh)
+			assert.EventuallyWithT(t, func(c *assert.CollectT) {
+				assert.Equal(c, int32(100), done.Load())
+			}, 5*time.Second, 10*time.Millisecond)
+		})
+	}
+}
+
+type testCronOptions struct {
+	total     uint32
+	returnOk  *atomic.Bool
+	gotCh     chan *api.TriggerRequest
+	triggerFn func()
+}
+
+type helper struct {
+	ctx       context.Context
+	client    client.Interface
+	cron      Interface
+	allCrons  []Interface
+	triggered *atomic.Int64
+}
+
+func testCron(t *testing.T, total uint32) *helper {
+	t.Helper()
+	return testCronWithOptions(t, testCronOptions{
+		total: total,
+	})
+}
+
+func testCronWithOptions(t *testing.T, opts testCronOptions) *helper {
+	t.Helper()
+
+	require.Greater(t, opts.total, uint32(0))
+	cl := tests.EmbeddedETCDBareClient(t)
+
+	var triggered atomic.Int64
+	var cron Interface
+	allCrns := make([]Interface, opts.total)
+	for i := 0; i < int(opts.total); i++ {
+		c, err := New(Options{
+			Log:            logr.Discard(),
+			Client:         cl,
+			Namespace:      "abc",
+			PartitionID:    uint32(i),
+			PartitionTotal: opts.total,
+			TriggerFn: func(_ context.Context, req *api.TriggerRequest) bool {
+				ok := opts.returnOk == nil || opts.returnOk.Load()
+				triggered.Add(1)
+				if opts.gotCh != nil {
+					opts.gotCh <- req
+				}
+				if opts.triggerFn != nil {
+					opts.triggerFn()
+				}
+				return ok
+			},
+		})
+		require.NoError(t, err)
+		allCrns[i] = c
+		if i == 0 {
+			cron = c
+		}
+	}
+
+	errCh := make(chan error, opts.total)
+	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(func() {
+		cancel()
+		for i := 0; i < int(opts.total); i++ {
+			select {
+			case err := <-errCh:
+				require.NoError(t, err)
+			case <-time.After(5 * time.Second):
+				t.Fatal("timeout waiting for cron to stop")
+			}
+		}
+	})
+	for i := uint32(0); i < opts.total; i++ {
+		go func(i uint32) {
+			errCh <- allCrns[i].Run(ctx)
+		}(i)
+	}
+
+	return &helper{
+		ctx:       ctx,
+		client:    client.New(cl),
+		cron:      cron,
+		allCrons:  allCrns,
+		triggered: &triggered,
+	}
 }

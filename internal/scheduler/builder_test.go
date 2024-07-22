@@ -97,13 +97,13 @@ func Test_Scheduler(t *testing.T) {
 	}
 
 	for name, test := range tests {
-		test := test
+		testInLoop := test
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 			builder := &Builder{clock: clock}
-			gotScheduler, gotErr := builder.Scheduler(test.job)
-			assert.Equal(t, test.expScheduler, gotScheduler)
-			assert.Equal(t, test.expErr, gotErr != nil, "%v", gotErr)
+			gotScheduler, gotErr := builder.Scheduler(testInLoop.job)
+			assert.Equal(t, testInLoop.expScheduler, gotScheduler)
+			assert.Equal(t, testInLoop.expErr, gotErr != nil, "%v", gotErr)
 		})
 	}
 }
@@ -294,17 +294,17 @@ func Test_Parse(t *testing.T) {
 	}
 
 	for name, test := range tests {
-		test := test
+		testInLoop := test
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 			builder := &Builder{clock: clock}
-			gotStored, gotErr := builder.Parse(test.job)
+			gotStored, gotErr := builder.Parse(testInLoop.job)
 			if gotStored != nil {
 				assert.NotEqual(t, uint32(0), gotStored.GetPartitionId())
 				gotStored.PartitionId = 0
 			}
-			assert.Equal(t, test.expStored, gotStored)
-			assert.Equal(t, test.expErr, gotErr != nil, "%v", gotErr)
+			assert.Equal(t, testInLoop.expStored, gotStored)
+			assert.Equal(t, testInLoop.expErr, gotErr != nil, "%v", gotErr)
 		})
 	}
 }
@@ -352,12 +352,12 @@ func Test_parsePointInTime(t *testing.T) {
 	}
 
 	for name, test := range tests {
-		test := test
+		testInLoop := test
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
-			gotTime, gotErr := parsePointInTime(test.str, now)
-			assert.Equal(t, test.expTime, gotTime)
-			assert.Equal(t, test.expErr, gotErr != nil, "%v", gotErr)
+			gotTime, gotErr := parsePointInTime(testInLoop.str, now)
+			assert.Equal(t, testInLoop.expTime, gotTime)
+			assert.Equal(t, testInLoop.expErr, gotErr != nil, "%v", gotErr)
 		})
 	}
 }

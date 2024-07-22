@@ -133,21 +133,21 @@ func Test_repeats(t *testing.T) {
 	}
 
 	for name, test := range tests {
-		test := test
+		testInLoop := test
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
-			cron, err := cron.ParseStandard(test.schedule)
+			cron, err := cron.ParseStandard(testInLoop.schedule)
 			require.NoError(t, err)
 
 			repeats := &repeats{
-				start:   test.start,
-				dueTime: test.dueTime,
-				exp:     test.exp,
+				start:   testInLoop.start,
+				dueTime: testInLoop.dueTime,
+				exp:     testInLoop.exp,
 				cron:    cron,
-				total:   test.total,
+				total:   testInLoop.total,
 			}
 
-			assert.Equal(t, test.expNext, repeats.Next(test.count, test.last))
+			assert.Equal(t, testInLoop.expNext, repeats.Next(testInLoop.count, testInLoop.last))
 		})
 	}
 }

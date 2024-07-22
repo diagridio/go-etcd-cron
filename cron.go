@@ -107,7 +107,7 @@ type cron struct {
 	wg      sync.WaitGroup
 	// queueLock prevents an informed schedule from overwriting a job as it is
 	// being triggered, i.e. prevent a PUT and mid-trigger race condition.
-	queueLock sync.RWMutex
+	queueLock concurrency.MutexMap[string]
 }
 
 // New creates a new cron instance.
@@ -178,6 +178,7 @@ func New(opts Options) (Interface, error) {
 		readyCh:              make(chan struct{}),
 		closeCh:              make(chan struct{}),
 		errCh:                make(chan error),
+		queueLock:            concurrency.NewMutexMap[string](),
 	}, nil
 }
 
@@ -190,12 +191,20 @@ func (c *cron) Run(ctx context.Context) error {
 
 	c.queue = queue.NewProcessor[string, *counter.Counter](
 		func(counter *counter.Counter) {
-			c.queueLock.RLock()
+			c.queueLock.Lock(counter.Key())
+			if ctx.Err() != nil {
+				c.queueLock.Unlock(counter.Key())
+				return
+			}
+
 			c.wg.Add(1)
 			go func() {
-				defer c.queueLock.RUnlock()
 				defer c.wg.Done()
-				c.handleTrigger(ctx, counter)
+				if c.handleTrigger(ctx, counter) {
+					c.queueLock.Unlock(counter.Key())
+				} else {
+					c.queueLock.DeleteUnlock(counter.Key())
+				}
 			}()
 		},
 	).WithClock(c.clock)
@@ -259,7 +268,8 @@ func (c *cron) Run(ctx context.Context) error {
 }
 
 // handleTrigger handles triggering a schedule job.
-func (c *cron) handleTrigger(ctx context.Context, counter *counter.Counter) {
+// Returns true if the job is being re-enqueued, false otherwise.
+func (c *cron) handleTrigger(ctx context.Context, counter *counter.Counter) bool {
 	if !c.triggerFn(ctx, counter.TriggerRequest()) {
 		// If the trigger function returns false, i.e. failed client side,
 		// re-enqueue the job immediately.
@@ -269,7 +279,7 @@ func (c *cron) handleTrigger(ctx context.Context, counter *counter.Counter) {
 			case c.errCh <- err:
 			}
 		}
-		return
+		return true
 	}
 
 	ok, err := counter.Trigger(ctx)
@@ -283,29 +293,26 @@ func (c *cron) handleTrigger(ctx context.Context, counter *counter.Counter) {
 			case c.errCh <- err:
 			}
 		}
+
+		return true
 	}
+
+	return false
 }
 
 // handleInformerEvent handles an etcd informed event.
-// TODO: @joshvanl: add a safe per key read lock to prevent locking all
-// triggers and an unrelated write. Must be able to handle a key being
-// de-queued and unlocked (deleted) whilst an Add schedule is waiting on the
-// lock, and visa versa. I don't think there is much if any we gain though as
-// we _always_ hack to lock somewhere..
 func (c *cron) handleInformerEvent(ctx context.Context, e *informer.Event) error {
-	c.queueLock.Lock()
-	defer c.queueLock.Unlock()
-
-	select {
-	case <-ctx.Done():
+	if ctx.Err() != nil {
 		return ctx.Err()
-	default:
 	}
 
+	c.queueLock.Lock(string(e.Key))
 	if e.IsPut {
+		defer c.queueLock.Unlock(string(e.Key))
 		return c.schedule(ctx, c.key.JobName(e.Key), e.Job)
 	}
 
+	defer c.queueLock.DeleteUnlock(string(e.Key))
 	return c.queue.Dequeue(string(e.Key))
 }
 

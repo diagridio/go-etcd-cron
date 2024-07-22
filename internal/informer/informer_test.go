@@ -333,7 +333,7 @@ func Test_handleEvent(t *testing.T) {
 	}
 
 	for name, test := range tests {
-		test := test
+		testInLoop := test
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 			part, err := partitioner.New(partitioner.Options{
@@ -345,8 +345,8 @@ func Test_handleEvent(t *testing.T) {
 			collector := fake.New()
 
 			yard := grave.New()
-			if test.yardDelete != nil {
-				yard.Deleted(*test.yardDelete)
+			if testInLoop.yardDelete != nil {
+				yard.Deleted(*testInLoop.yardDelete)
 			}
 
 			i := New(Options{
@@ -358,10 +358,10 @@ func Test_handleEvent(t *testing.T) {
 					PartitionID: 0,
 				}),
 			})
-			gotEvent, err := i.handleEvent(test.ev)
-			assert.Equal(t, test.expEvent, gotEvent)
-			assert.Equal(t, test.expErr, err != nil, "%v", err)
-			assert.Equal(t, test.expCollectorPops, collector.HasPoped())
+			gotEvent, err := i.handleEvent(testInLoop.ev)
+			assert.Equal(t, testInLoop.expEvent, gotEvent)
+			assert.Equal(t, testInLoop.expErr, err != nil, "%v", err)
+			assert.Equal(t, testInLoop.expCollectorPops, collector.HasPoped())
 		})
 	}
 }
