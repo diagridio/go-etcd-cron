@@ -3,7 +3,7 @@ module github.com/diagridio/go-etcd-cron
 go 1.22
 
 require (
-	github.com/dapr/kit v0.13.1-0.20240624212434-e2508d6e9e79
+	github.com/dapr/kit v0.13.1-0.20240722163453-58c6d9df14d3
 	github.com/go-logr/logr v1.3.0
 	github.com/go-logr/zapr v1.3.0
 	github.com/stretchr/testify v1.9.0
@@ -78,5 +78,3 @@ require (
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 	sigs.k8s.io/yaml v1.3.0 // indirect
 )
-
-replace github.com/dapr/kit => ../../dapr/kit
