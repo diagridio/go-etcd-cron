@@ -7,35 +7,108 @@ package client
 
 import (
 	"context"
-	"strings"
+	"errors"
 	"time"
 
+	"go.etcd.io/etcd/api/v3/v3rpc/rpctypes"
 	clientv3 "go.etcd.io/etcd/client/v3"
-	"go.etcd.io/etcd/server/v3/etcdserver"
+	"k8s.io/utils/clock"
 )
 
-func Delete(client clientv3.KV, key string) error {
-	for {
-		ok, err := deleteOp(client, key)
-		if err != nil || ok {
-			return err
-		}
-		time.Sleep(time.Second)
+type Interface interface {
+	clientv3.Lease
+	clientv3.KV
+	clientv3.Watcher
+
+	DeleteMulti(keys ...string) error
+}
+
+type client struct {
+	*clientv3.Client
+	kv    clientv3.KV
+	clock clock.Clock
+}
+
+func New(cl *clientv3.Client) Interface {
+	var kv clientv3.KV
+	if cl != nil {
+		kv = cl.KV
+	}
+	return &client{
+		Client: cl,
+		kv:     kv,
+		clock:  clock.RealClock{},
 	}
 }
 
-func deleteOp(client clientv3.KV, key string) (bool, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
-	defer cancel()
+func (c *client) Put(ctx context.Context, key, val string, opts ...clientv3.OpOption) (*clientv3.PutResponse, error) {
+	return genericPP[string, string, clientv3.OpOption, clientv3.PutResponse](ctx, c, c.kv.Put, key, val, opts...)
+}
 
-	_, err := client.Delete(ctx, key)
-	if err == nil {
-		return true, nil
+func (c *client) Get(ctx context.Context, key string, opts ...clientv3.OpOption) (*clientv3.GetResponse, error) {
+	return genericP[string, clientv3.OpOption, clientv3.GetResponse](ctx, c, c.kv.Get, key, opts...)
+}
+
+func (c *client) Delete(ctx context.Context, key string, opts ...clientv3.OpOption) (*clientv3.DeleteResponse, error) {
+	return genericP[string, clientv3.OpOption, clientv3.DeleteResponse](ctx, c, c.kv.Delete, key, opts...)
+}
+
+func (c *client) DeleteMulti(keys ...string) error {
+	for i := 0; i < len(keys); i += 128 {
+		batchI := min(128, len(keys)-i)
+		ops := make([]clientv3.Op, batchI)
+		for j := 0; j < batchI; j++ {
+			ops[j] = clientv3.OpDelete(keys[i+j])
+		}
+
+		err := generic(context.Background(), c, func(ctx context.Context) error {
+			_, terr := c.kv.Txn(ctx).Then(ops...).Commit()
+			return terr
+		})
+		if err != nil {
+			return err
+		}
 	}
 
-	if strings.HasSuffix(err.Error(), etcdserver.ErrTooManyRequests.Error()) {
-		return false, nil
-	}
+	return nil
+}
 
-	return false, err
+type genericPPFunc[T any, K any, O any, R any] func(context.Context, T, K, ...O) (*R, error)
+
+func genericPP[T any, K any, O any, R any](ctx context.Context, c *client, op genericPPFunc[T, K, O, R], t T, k K, o ...O) (*R, error) {
+	var r *R
+	var err error
+	return r, generic(ctx, c, func(ctx context.Context) error {
+		r, err = op(ctx, t, k, o...)
+		return err
+	})
+}
+
+type genericPFunc[T any, O any, R any] func(context.Context, T, ...O) (*R, error)
+
+func genericP[T any, O any, R any](ctx context.Context, c *client, op genericPFunc[T, O, R], t T, o ...O) (*R, error) {
+	var r *R
+	var err error
+	return r, generic(ctx, c, func(ctx context.Context) error {
+		r, err = op(ctx, t, o...)
+		return err
+	})
+}
+
+func generic(ctx context.Context, c *client, op func(context.Context) error) error {
+	for {
+		ctx, cancel := context.WithTimeout(ctx, 20*time.Second)
+		defer cancel()
+
+		err := op(ctx)
+		if err == nil {
+			return nil
+		}
+
+		if !errors.Is(err, rpctypes.ErrTooManyRequests) {
+			return err
+		}
+
+		<-c.clock.After(time.Second)
+	}
 }

@@ -82,13 +82,13 @@ func Test_Run(t *testing.T) {
 
 		client := tests.EmbeddedETCD(t)
 
-		jobUID1, err := proto.Marshal(&api.JobStored{Uuid: 1})
+		jobUID1, err := proto.Marshal(&api.JobStored{PartitionId: 1})
 		require.NoError(t, err)
-		jobUID2, err := proto.Marshal(&api.JobStored{Uuid: 2})
+		jobUID2, err := proto.Marshal(&api.JobStored{PartitionId: 2})
 		require.NoError(t, err)
-		jobUID3, err := proto.Marshal(&api.JobStored{Uuid: 3})
+		jobUID3, err := proto.Marshal(&api.JobStored{PartitionId: 3})
 		require.NoError(t, err)
-		jobUID4, err := proto.Marshal(&api.JobStored{Uuid: 4})
+		jobUID4, err := proto.Marshal(&api.JobStored{PartitionId: 4})
 		require.NoError(t, err)
 
 		ctx, cancel := context.WithCancel(context.Background())
@@ -153,17 +153,17 @@ func Test_Run(t *testing.T) {
 
 		client := tests.EmbeddedETCD(t)
 
-		jobUID1, err := proto.Marshal(&api.JobStored{Uuid: 1})
+		jobUID1, err := proto.Marshal(&api.JobStored{PartitionId: 1})
 		require.NoError(t, err)
-		jobUID2, err := proto.Marshal(&api.JobStored{Uuid: 2})
+		jobUID2, err := proto.Marshal(&api.JobStored{PartitionId: 2})
 		require.NoError(t, err)
-		jobUID3, err := proto.Marshal(&api.JobStored{Uuid: 3})
+		jobUID3, err := proto.Marshal(&api.JobStored{PartitionId: 3})
 		require.NoError(t, err)
-		jobUID4, err := proto.Marshal(&api.JobStored{Uuid: 4})
+		jobUID4, err := proto.Marshal(&api.JobStored{PartitionId: 4})
 		require.NoError(t, err)
-		jobUID5, err := proto.Marshal(&api.JobStored{Uuid: 5})
+		jobUID5, err := proto.Marshal(&api.JobStored{PartitionId: 5})
 		require.NoError(t, err)
-		jobUID6, err := proto.Marshal(&api.JobStored{Uuid: 6})
+		jobUID6, err := proto.Marshal(&api.JobStored{PartitionId: 6})
 		require.NoError(t, err)
 
 		ctx, cancel := context.WithCancel(context.Background())
@@ -245,9 +245,9 @@ func Test_Run(t *testing.T) {
 func Test_handleEvent(t *testing.T) {
 	t.Parallel()
 
-	jobUID1, err := proto.Marshal(&api.JobStored{Uuid: 1})
+	jobUID1, err := proto.Marshal(&api.JobStored{PartitionId: 1})
 	require.NoError(t, err)
-	jobUID2, err := proto.Marshal(&api.JobStored{Uuid: 2})
+	jobUID2, err := proto.Marshal(&api.JobStored{PartitionId: 2})
 	require.NoError(t, err)
 
 	var job2 api.JobStored

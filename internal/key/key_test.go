@@ -96,24 +96,24 @@ func Test_CounterKey(t *testing.T) {
 	}
 }
 
-func Test_LeaseNamespace(t *testing.T) {
+func Test_LeadershipNamespace(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
-		namespace  string
-		expLeaseNS string
+		namespace       string
+		expLeadershipNS string
 	}{
 		{
-			namespace:  "",
-			expLeaseNS: "leases",
+			namespace:       "",
+			expLeadershipNS: "leadership",
 		},
 		{
-			namespace:  "123",
-			expLeaseNS: "123/leases",
+			namespace:       "123",
+			expLeadershipNS: "123/leadership",
 		},
 		{
-			namespace:  "/123/abc",
-			expLeaseNS: "/123/abc/leases",
+			namespace:       "/123/abc",
+			expLeadershipNS: "/123/abc/leadership",
 		},
 	}
 
@@ -125,33 +125,33 @@ func Test_LeaseNamespace(t *testing.T) {
 				Namespace:   test.namespace,
 				PartitionID: 123,
 			})
-			assert.Equal(t, test.expLeaseNS, key.LeaseNamespace())
+			assert.Equal(t, test.expLeadershipNS, key.LeadershipNamespace())
 		})
 	}
 }
 
-func Test_LeaseKey(t *testing.T) {
+func Test_LeadershipKey(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
-		namespace   string
-		partitionID uint32
-		expLeaseKey string
+		namespace        string
+		partitionID      uint32
+		expLeadershipKey string
 	}{
 		{
-			namespace:   "",
-			partitionID: 0,
-			expLeaseKey: "leases/0",
+			namespace:        "",
+			partitionID:      0,
+			expLeadershipKey: "leadership/0",
 		},
 		{
-			namespace:   "123",
-			partitionID: 0,
-			expLeaseKey: "123/leases/0",
+			namespace:        "123",
+			partitionID:      0,
+			expLeadershipKey: "123/leadership/0",
 		},
 		{
-			namespace:   "/123/abc",
-			partitionID: 3,
-			expLeaseKey: "/123/abc/leases/3",
+			namespace:        "/123/abc",
+			partitionID:      3,
+			expLeadershipKey: "/123/abc/leadership/3",
 		},
 	}
 
@@ -163,7 +163,7 @@ func Test_LeaseKey(t *testing.T) {
 				Namespace:   test.namespace,
 				PartitionID: test.partitionID,
 			})
-			assert.Equal(t, test.expLeaseKey, key.LeaseKey())
+			assert.Equal(t, test.expLeadershipKey, key.LeadershipKey())
 		})
 	}
 }

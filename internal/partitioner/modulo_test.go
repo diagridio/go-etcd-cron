@@ -15,94 +15,94 @@ func Test_parter(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
-		id    uint32
-		total uint32
-		uuid  uint32
-		exp   bool
+		id          uint32
+		total       uint32
+		partitionID uint32
+		exp         bool
 	}{
 		{
-			id:    0,
-			total: 2,
-			uuid:  1,
-			exp:   false,
+			id:          0,
+			total:       2,
+			partitionID: 1,
+			exp:         false,
 		},
 		{
-			id:    1,
-			total: 2,
-			uuid:  1,
-			exp:   true,
+			id:          1,
+			total:       2,
+			partitionID: 1,
+			exp:         true,
 		},
 		{
-			id:    0,
-			total: 2,
-			uuid:  2,
-			exp:   true,
+			id:          0,
+			total:       2,
+			partitionID: 2,
+			exp:         true,
 		},
 		{
-			id:    1,
-			total: 2,
-			uuid:  2,
-			exp:   false,
+			id:          1,
+			total:       2,
+			partitionID: 2,
+			exp:         false,
 		},
 		{
-			id:    1,
-			total: 3,
-			uuid:  1,
-			exp:   true,
+			id:          1,
+			total:       3,
+			partitionID: 1,
+			exp:         true,
 		},
 		{
-			id:    1,
-			total: 3,
-			uuid:  2,
-			exp:   false,
+			id:          1,
+			total:       3,
+			partitionID: 2,
+			exp:         false,
 		},
 		{
-			id:    1,
-			total: 3,
-			uuid:  3,
-			exp:   false,
+			id:          1,
+			total:       3,
+			partitionID: 3,
+			exp:         false,
 		},
 		{
-			id:    1,
-			total: 4,
-			uuid:  1,
-			exp:   true,
+			id:          1,
+			total:       4,
+			partitionID: 1,
+			exp:         true,
 		},
 		{
-			id:    1,
-			total: 4,
-			uuid:  2,
-			exp:   false,
+			id:          1,
+			total:       4,
+			partitionID: 2,
+			exp:         false,
 		},
 		{
-			id:    0,
-			total: 4,
-			uuid:  3,
-			exp:   false,
+			id:          0,
+			total:       4,
+			partitionID: 3,
+			exp:         false,
 		},
 		{
-			id:    2,
-			total: 4,
-			uuid:  3,
-			exp:   false,
+			id:          2,
+			total:       4,
+			partitionID: 3,
+			exp:         false,
 		},
 		{
-			id:    3,
-			total: 4,
-			uuid:  3,
-			exp:   true,
+			id:          3,
+			total:       4,
+			partitionID: 3,
+			exp:         true,
 		},
 		{
-			id:    2,
-			total: 4,
-			uuid:  4,
-			exp:   false,
+			id:          2,
+			total:       4,
+			partitionID: 4,
+			exp:         false,
 		},
 		{
-			id:    1,
-			total: 5,
-			uuid:  1,
-			exp:   true,
+			id:          1,
+			total:       5,
+			partitionID: 1,
+			exp:         true,
 		},
 	}
 
@@ -111,6 +111,6 @@ func Test_parter(t *testing.T) {
 			id:    test.id,
 			total: test.total,
 		}
-		assert.Equal(t, test.exp, parter.IsJobManaged(test.uuid), "test: %+v", test)
+		assert.Equal(t, test.exp, parter.IsJobManaged(test.partitionID), "test: %+v", test)
 	}
 }

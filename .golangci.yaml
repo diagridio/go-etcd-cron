@@ -19,3 +19,6 @@ linters:
  - gci
  - funlen
  - maintidx
+linters-settings:
+  goimports:
+    local-prefixes: github.com/diagridio

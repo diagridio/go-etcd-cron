@@ -14,7 +14,6 @@ import (
 	"time"
 
 	"github.com/go-logr/logr"
-	clientv3 "go.etcd.io/etcd/client/v3"
 	"k8s.io/utils/clock"
 
 	"github.com/diagridio/go-etcd-cron/internal/client"
@@ -26,7 +25,7 @@ type Options struct {
 	Log logr.Logger
 
 	// Client is the ETCD client to use for deleting keys.
-	Client clientv3.KV
+	Client client.Interface
 }
 
 // Interface is a garbage collector. It is used to queue-up deletion of ETCD
@@ -48,7 +47,7 @@ type Interface interface {
 // collector is the implementation of the garbage collector.
 type collector struct {
 	log          logr.Logger
-	client       clientv3.KV
+	client       client.Interface
 	clock        clock.Clock
 	keys         map[string]struct{}
 	soonerCh     chan struct{}
@@ -74,7 +73,6 @@ func New(opts Options) Interface {
 	}
 }
 
-//nolint:contextcheck
 func (c *collector) Run(ctx context.Context) error {
 	if !c.running.CompareAndSwap(false, true) {
 		return errors.New("garbage collector is already running")
@@ -134,10 +132,13 @@ func (c *collector) collect() error {
 
 	c.log.Info("Collecting garbage", "keys", len(c.keys))
 
+	keyList := make([]string, 0, len(c.keys))
 	for key := range c.keys {
-		if err := client.Delete(c.client, key); err != nil {
-			return fmt.Errorf("failed to delete key %s: %w", key, err)
-		}
+		keyList = append(keyList, key)
+	}
+
+	if err := c.client.DeleteMulti(keyList...); err != nil {
+		return fmt.Errorf("failed to delete keys: %w", err)
 	}
 
 	c.log.Info("Garbage collection complete", "keys", len(c.keys))

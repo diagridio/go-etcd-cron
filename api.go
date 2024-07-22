@@ -11,8 +11,10 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/diagridio/go-etcd-cron/api"
 	"google.golang.org/protobuf/proto"
+	"k8s.io/apimachinery/pkg/util/validation"
+
+	"github.com/diagridio/go-etcd-cron/api"
 )
 
 // Add adds a new cron job to the cron instance.
@@ -25,7 +27,7 @@ func (c *cron) Add(ctx context.Context, name string, job *api.Job) error {
 		return ctx.Err()
 	}
 
-	if err := validateName(name); err != nil {
+	if err := c.validateName(name); err != nil {
 		return err
 	}
 
@@ -44,7 +46,6 @@ func (c *cron) Add(ctx context.Context, name string, job *api.Job) error {
 	}
 
 	_, err = c.client.Put(ctx, c.key.JobKey(name), string(b))
-
 	return err
 }
 
@@ -58,7 +59,7 @@ func (c *cron) Get(ctx context.Context, name string) (*api.Job, error) {
 		return nil, ctx.Err()
 	}
 
-	if err := validateName(name); err != nil {
+	if err := c.validateName(name); err != nil {
 		return nil, err
 	}
 
@@ -90,24 +91,27 @@ func (c *cron) Delete(ctx context.Context, name string) error {
 		return ctx.Err()
 	}
 
-	if err := validateName(name); err != nil {
+	if err := c.validateName(name); err != nil {
 		return err
 	}
 
-	qerr := c.queue.Dequeue(name)
-	_, err := c.client.Delete(ctx, c.key.JobKey(name))
+	if _, err := c.client.Delete(ctx, c.key.JobKey(name)); err != nil {
+		return err
+	}
 
-	return errors.Join(err, qerr)
+	return c.queue.Dequeue(c.key.JobKey(name))
 }
 
 // validateName validates the name of a job.
-func validateName(name string) error {
+func (c *cron) validateName(name string) error {
 	if len(name) == 0 {
 		return errors.New("job name cannot be empty")
 	}
 
-	if strings.Contains(name, "/") || strings.Contains(name, ".") {
-		return fmt.Errorf("job name cannot contain '/' or '.': %s", name)
+	for _, segment := range strings.Split(strings.ToLower(c.validateNameReplacer.Replace(name)), "||") {
+		if errs := validation.IsDNS1123Subdomain(segment); len(errs) > 0 {
+			return fmt.Errorf("job name is invalid %q: %s", name, strings.Join(errs, ", "))
+		}
 	}
 
 	return nil

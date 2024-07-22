@@ -7,6 +7,7 @@ package etcdcron
 
 import (
 	"context"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -22,7 +23,7 @@ import (
 func Test_CRUD(t *testing.T) {
 	t.Parallel()
 
-	client := tests.EmbeddedETCD(t)
+	client := tests.EmbeddedETCDBareClient(t)
 	cron, err := New(Options{
 		Log:            logr.Discard(),
 		Client:         client,
@@ -97,7 +98,7 @@ func Test_Add(t *testing.T) {
 	t.Run("returns context error if cron not ready in time", func(t *testing.T) {
 		t.Parallel()
 
-		client := tests.EmbeddedETCD(t)
+		client := tests.EmbeddedETCDBareClient(t)
 		cron, err := New(Options{
 			Log:            logr.Discard(),
 			Client:         client,
@@ -118,7 +119,7 @@ func Test_Add(t *testing.T) {
 	t.Run("returns closed error if cron is closed", func(t *testing.T) {
 		t.Parallel()
 
-		client := tests.EmbeddedETCD(t)
+		client := tests.EmbeddedETCDBareClient(t)
 		cron, err := New(Options{
 			Log:            logr.Discard(),
 			Client:         client,
@@ -141,7 +142,7 @@ func Test_Add(t *testing.T) {
 	t.Run("invalid name should error", func(t *testing.T) {
 		t.Parallel()
 
-		client := tests.EmbeddedETCD(t)
+		client := tests.EmbeddedETCDBareClient(t)
 		cron, err := New(Options{
 			Log:            logr.Discard(),
 			Client:         client,
@@ -175,7 +176,7 @@ func Test_Add(t *testing.T) {
 	t.Run("empty job should error", func(t *testing.T) {
 		t.Parallel()
 
-		client := tests.EmbeddedETCD(t)
+		client := tests.EmbeddedETCDBareClient(t)
 		cron, err := New(Options{
 			Log:            logr.Discard(),
 			Client:         client,
@@ -211,7 +212,7 @@ func Test_Get(t *testing.T) {
 	t.Run("returns context error if cron not ready in time", func(t *testing.T) {
 		t.Parallel()
 
-		client := tests.EmbeddedETCD(t)
+		client := tests.EmbeddedETCDBareClient(t)
 		cron, err := New(Options{
 			Log:            logr.Discard(),
 			Client:         client,
@@ -232,7 +233,7 @@ func Test_Get(t *testing.T) {
 	t.Run("returns closed error if cron is closed", func(t *testing.T) {
 		t.Parallel()
 
-		client := tests.EmbeddedETCD(t)
+		client := tests.EmbeddedETCDBareClient(t)
 		cron, err := New(Options{
 			Log:            logr.Discard(),
 			Client:         client,
@@ -255,7 +256,7 @@ func Test_Get(t *testing.T) {
 	t.Run("invalid name should error", func(t *testing.T) {
 		t.Parallel()
 
-		client := tests.EmbeddedETCD(t)
+		client := tests.EmbeddedETCDBareClient(t)
 		cron, err := New(Options{
 			Log:            logr.Discard(),
 			Client:         client,
@@ -293,7 +294,7 @@ func Test_Delete(t *testing.T) {
 	t.Run("returns context error if cron not ready in time", func(t *testing.T) {
 		t.Parallel()
 
-		client := tests.EmbeddedETCD(t)
+		client := tests.EmbeddedETCDBareClient(t)
 		cron, err := New(Options{
 			Log:            logr.Discard(),
 			Client:         client,
@@ -312,7 +313,7 @@ func Test_Delete(t *testing.T) {
 	t.Run("returns closed error if cron is closed", func(t *testing.T) {
 		t.Parallel()
 
-		client := tests.EmbeddedETCD(t)
+		client := tests.EmbeddedETCDBareClient(t)
 		cron, err := New(Options{
 			Log:            logr.Discard(),
 			Client:         client,
@@ -333,7 +334,7 @@ func Test_Delete(t *testing.T) {
 	t.Run("invalid name should error", func(t *testing.T) {
 		t.Parallel()
 
-		client := tests.EmbeddedETCD(t)
+		client := tests.EmbeddedETCDBareClient(t)
 		cron, err := New(Options{
 			Log:            logr.Discard(),
 			Client:         client,
@@ -360,6 +361,51 @@ func Test_Delete(t *testing.T) {
 		}()
 
 		require.Error(t, cron.Delete(context.Background(), "./."))
+	})
+
+	t.Run("deleting a job should dequeue it", func(t *testing.T) {
+		t.Parallel()
+
+		var calls atomic.Int64
+		client := tests.EmbeddedETCDBareClient(t)
+		cron, err := New(Options{
+			Log:            logr.Discard(),
+			Client:         client,
+			Namespace:      "abc",
+			PartitionID:    0,
+			PartitionTotal: 1,
+			TriggerFn:      func(context.Context, *api.TriggerRequest) bool { calls.Add(1); return true },
+		})
+		require.NoError(t, err)
+
+		errCh := make(chan error)
+		ctx, cancel := context.WithCancel(context.Background())
+		t.Cleanup(func() {
+			cancel()
+			select {
+			case err := <-errCh:
+				require.NoError(t, err)
+			case <-time.After(5 * time.Second):
+				t.Fatal("timeout waiting for cron to stop")
+			}
+		})
+		go func() {
+			errCh <- cron.Run(ctx)
+		}()
+
+		require.NoError(t, cron.Add(context.Background(), "abc", &api.Job{
+			Schedule: ptr.Of("@every 1s"),
+		}))
+
+		assert.Eventually(t, func() bool {
+			return calls.Load() > 0
+		}, time.Second*3, time.Millisecond*10)
+
+		require.NoError(t, cron.Delete(context.Background(), "abc"))
+		current := calls.Load()
+
+		time.Sleep(time.Second * 2)
+		assert.Equal(t, current, calls.Load())
 	})
 }
 
@@ -400,7 +446,7 @@ func Test_validateName(t *testing.T) {
 		},
 		{
 			name:   "fo.o",
-			expErr: true,
+			expErr: false,
 		},
 		{
 			name:   "fo...o",
@@ -410,13 +456,57 @@ func Test_validateName(t *testing.T) {
 			name:   "valid",
 			expErr: false,
 		},
+		{
+			name:   "||",
+			expErr: true,
+		},
+		{
+			name:   "foo||",
+			expErr: true,
+		},
+		{
+			name:   "||foo",
+			expErr: true,
+		},
+		{
+			name:   "foo||foo",
+			expErr: false,
+		},
+		{
+			name:   "foo.bar||foo",
+			expErr: false,
+		},
+		{
+			name:   "foo.BAR||foo",
+			expErr: false,
+		},
+		{
+			name:   "foo.BAR_f-oo||foo",
+			expErr: false,
+		},
+		{
+			name:   "actorreminder||dapr-tests||dapr.internal.dapr-tests.perf-workflowsapp.workflow||24b3fbad-0db5-4e81-a272-71f6018a66a6||start-4NYDFil-",
+			expErr: false,
+		},
+		{
+			name:   "aABVCD||dapr-::123:123||dapr.internal.dapr-tests.perf-workflowsapp.workflow||24b3fbad-0db5-4e81-a272-71f6018a66a6||start-4NYDFil-",
+			expErr: false,
+		},
 	}
 
 	for _, test := range tests {
 		test := test
 		t.Run(test.name, func(t *testing.T) {
 			t.Parallel()
-			err := validateName(test.name)
+			c, err := New(Options{
+				Log:            logr.Discard(),
+				Namespace:      "",
+				PartitionID:    0,
+				PartitionTotal: 1,
+				TriggerFn:      func(context.Context, *api.TriggerRequest) bool { return true },
+			})
+			require.NoError(t, err)
+			err = c.(*cron).validateName(test.name)
 			assert.Equal(t, test.expErr, err != nil, "%v", err)
 		})
 	}

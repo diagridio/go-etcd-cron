@@ -35,16 +35,18 @@ func Test_New(t *testing.T) {
 		now := time.Now().UTC()
 
 		job := &api.JobStored{
-			Start: timestamppb.New(now),
-			Uuid:  123,
+			Begin: &api.JobStored_Start{
+				Start: timestamppb.New(now),
+			},
+			PartitionId: 123,
 			Job: &api.Job{
 				DueTime: ptr.Of(now.Format(time.RFC3339)),
 			},
 		}
 		counter := &api.Counter{
-			LastTrigger: nil,
-			Count:       0,
-			JobUuid:     123,
+			LastTrigger:    nil,
+			Count:          0,
+			JobPartitionId: 123,
 		}
 
 		sched, err := scheduler.NewBuilder().Scheduler(job)
@@ -96,7 +98,7 @@ func Test_New(t *testing.T) {
 		assert.Equal(t, counterBytes, resp.Kvs[0].Value)
 	})
 
-	t.Run("if the counter already exists and UUID matches, expect counter be kept the same", func(t *testing.T) {
+	t.Run("if the counter already exists and partition ID matches, expect counter be kept the same", func(t *testing.T) {
 		t.Parallel()
 
 		client := tests.EmbeddedETCD(t)
@@ -104,16 +106,18 @@ func Test_New(t *testing.T) {
 		now := time.Now().UTC()
 
 		job := &api.JobStored{
-			Start: timestamppb.New(now),
-			Uuid:  123,
+			Begin: &api.JobStored_Start{
+				Start: timestamppb.New(now),
+			},
+			PartitionId: 123,
 			Job: &api.Job{
 				DueTime: ptr.Of(now.Format(time.RFC3339)),
 			},
 		}
 		counter := &api.Counter{
-			LastTrigger: nil,
-			Count:       0,
-			JobUuid:     123,
+			LastTrigger:    nil,
+			Count:          0,
+			JobPartitionId: 123,
 		}
 
 		sched, err := scheduler.NewBuilder().Scheduler(job)
@@ -177,7 +181,7 @@ func Test_New(t *testing.T) {
 		assert.Equal(t, counterBytes, resp.Kvs[0].Value)
 	})
 
-	t.Run("if the counter already exists but UUID doesn't match, expect counter to be written with new value", func(t *testing.T) {
+	t.Run("if the counter already exists but partition ID doesn't match, expect counter to be written with new value", func(t *testing.T) {
 		t.Parallel()
 
 		client := tests.EmbeddedETCD(t)
@@ -185,16 +189,18 @@ func Test_New(t *testing.T) {
 		now := time.Now().UTC()
 
 		job := &api.JobStored{
-			Start: timestamppb.New(now),
-			Uuid:  123,
+			Begin: &api.JobStored_Start{
+				Start: timestamppb.New(now),
+			},
+			PartitionId: 123,
 			Job: &api.Job{
 				DueTime: ptr.Of(now.Format(time.RFC3339)),
 			},
 		}
 		counter := &api.Counter{
-			LastTrigger: timestamppb.New(now),
-			Count:       1,
-			JobUuid:     456,
+			LastTrigger:    timestamppb.New(now),
+			Count:          1,
+			JobPartitionId: 456,
 		}
 
 		sched, err := scheduler.NewBuilder().Scheduler(job)
@@ -253,9 +259,9 @@ func Test_New(t *testing.T) {
 		assert.Equal(t, jobBytes, resp.Kvs[0].Value)
 
 		counter = &api.Counter{
-			LastTrigger: nil,
-			Count:       0,
-			JobUuid:     123,
+			LastTrigger:    nil,
+			Count:          0,
+			JobPartitionId: 123,
 		}
 		counterBytes, err = proto.Marshal(counter)
 		require.NoError(t, err)
@@ -265,7 +271,7 @@ func Test_New(t *testing.T) {
 		assert.Equal(t, counterBytes, resp.Kvs[0].Value)
 	})
 
-	t.Run("if the counter already exists and UUID matches but is expired, expect both job and counter to be deleted", func(t *testing.T) {
+	t.Run("if the counter already exists and partition ID matches but is expired, expect both job and counter to be deleted", func(t *testing.T) {
 		t.Parallel()
 
 		client := tests.EmbeddedETCD(t)
@@ -273,16 +279,18 @@ func Test_New(t *testing.T) {
 		now := time.Now().UTC()
 
 		job := &api.JobStored{
-			Start: timestamppb.New(now),
-			Uuid:  123,
+			Begin: &api.JobStored_Start{
+				Start: timestamppb.New(now),
+			},
+			PartitionId: 123,
 			Job: &api.Job{
 				DueTime: ptr.Of(now.Format(time.RFC3339)),
 			},
 		}
 		counter := &api.Counter{
-			LastTrigger: timestamppb.New(now),
-			Count:       1,
-			JobUuid:     123,
+			LastTrigger:    timestamppb.New(now),
+			Count:          1,
+			JobPartitionId: 123,
 		}
 
 		sched, err := scheduler.NewBuilder().Scheduler(job)
@@ -351,8 +359,10 @@ func Test_New(t *testing.T) {
 		now := time.Now().UTC()
 
 		job := &api.JobStored{
-			Start: timestamppb.New(now),
-			Uuid:  123,
+			Begin: &api.JobStored_Start{
+				Start: timestamppb.New(now),
+			},
+			PartitionId: 123,
 			Job: &api.Job{
 				DueTime: ptr.Of(now.Format(time.RFC3339)),
 			},
@@ -426,13 +436,15 @@ func Test_Trigger(t *testing.T) {
 		now := time.Now().UTC()
 
 		job := &api.JobStored{
-			Start: timestamppb.New(now),
+			Begin: &api.JobStored_Start{
+				Start: timestamppb.New(now),
+			},
 			Job: &api.Job{
 				DueTime:  ptr.Of(now.Format(time.RFC3339)),
 				Schedule: ptr.Of("@every 1s"),
 			},
 		}
-		counter := &api.Counter{LastTrigger: nil, JobUuid: 123}
+		counter := &api.Counter{LastTrigger: nil, JobPartitionId: 123}
 
 		sched, err := scheduler.NewBuilder().Scheduler(job)
 		require.NoError(t, err)
@@ -488,9 +500,9 @@ func Test_Trigger(t *testing.T) {
 		assert.Equal(t, jobBytes, resp.Kvs[0].Value)
 
 		counterBytes, err = proto.Marshal(&api.Counter{
-			LastTrigger: timestamppb.New(now),
-			JobUuid:     123,
-			Count:       1,
+			LastTrigger:    timestamppb.New(now),
+			JobPartitionId: 123,
+			Count:          1,
 		})
 		require.NoError(t, err)
 
@@ -508,15 +520,17 @@ func Test_Trigger(t *testing.T) {
 		now := time.Now().UTC()
 
 		job := &api.JobStored{
-			Start: timestamppb.New(now),
+			Begin: &api.JobStored_Start{
+				Start: timestamppb.New(now),
+			},
 			Job: &api.Job{
 				DueTime: ptr.Of(now.Format(time.RFC3339)),
 			},
 		}
 		counter := &api.Counter{
-			LastTrigger: nil,
-			JobUuid:     123,
-			Count:       0,
+			LastTrigger:    nil,
+			JobPartitionId: 123,
+			Count:          0,
 		}
 
 		sched, err := scheduler.NewBuilder().Scheduler(job)
@@ -588,12 +602,14 @@ func Test_tickNext(t *testing.T) {
 		now := time.Now().UTC()
 
 		job := &api.JobStored{
-			Start: timestamppb.New(now),
+			Begin: &api.JobStored_Start{
+				Start: timestamppb.New(now),
+			},
 			Job: &api.Job{
 				DueTime: ptr.Of(now.Format(time.RFC3339)),
 			},
 		}
-		counter := &api.Counter{LastTrigger: nil, JobUuid: 123}
+		counter := &api.Counter{LastTrigger: nil, JobPartitionId: 123}
 
 		sched, err := scheduler.NewBuilder().Scheduler(job)
 		require.NoError(t, err)
@@ -661,15 +677,17 @@ func Test_tickNext(t *testing.T) {
 		now := time.Now().UTC()
 
 		job := &api.JobStored{
-			Start: timestamppb.New(now),
+			Begin: &api.JobStored_Start{
+				Start: timestamppb.New(now),
+			},
 			Job: &api.Job{
 				DueTime: ptr.Of(now.Format(time.RFC3339)),
 			},
 		}
 		counter := &api.Counter{
-			LastTrigger: timestamppb.New(now),
-			JobUuid:     123,
-			Count:       1,
+			LastTrigger:    timestamppb.New(now),
+			JobPartitionId: 123,
+			Count:          1,
 		}
 
 		sched, err := scheduler.NewBuilder().Scheduler(job)
@@ -737,7 +755,9 @@ func Test_updateNext(t *testing.T) {
 	builder := scheduler.NewBuilder()
 
 	oneshot, err := builder.Scheduler(&api.JobStored{
-		Start: timestamppb.New(now),
+		Begin: &api.JobStored_DueTime{
+			DueTime: timestamppb.New(now),
+		},
 		Job: &api.Job{
 			DueTime: ptr.Of(now.Format(time.RFC3339)),
 		},
@@ -745,7 +765,9 @@ func Test_updateNext(t *testing.T) {
 	require.NoError(t, err)
 
 	repeats, err := builder.Scheduler(&api.JobStored{
-		Start: timestamppb.New(now),
+		Begin: &api.JobStored_Start{
+			Start: timestamppb.New(now),
+		},
 		Job: &api.Job{
 			Schedule: ptr.Of("@every 1s"),
 			Repeats:  ptr.Of(uint32(4)),
@@ -754,7 +776,9 @@ func Test_updateNext(t *testing.T) {
 	require.NoError(t, err)
 
 	expires, err := builder.Scheduler(&api.JobStored{
-		Start:      timestamppb.New(now),
+		Begin: &api.JobStored_Start{
+			Start: timestamppb.New(now),
+		},
 		Expiration: timestamppb.New(now.Add(5 * time.Second)),
 		Job: &api.Job{
 			Schedule: ptr.Of("@every 1s"),

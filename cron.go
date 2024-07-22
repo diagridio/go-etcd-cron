@@ -9,6 +9,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"sync"
 	"sync/atomic"
 
@@ -22,6 +23,7 @@ import (
 	"k8s.io/utils/clock"
 
 	"github.com/diagridio/go-etcd-cron/api"
+	"github.com/diagridio/go-etcd-cron/internal/client"
 	"github.com/diagridio/go-etcd-cron/internal/counter"
 	"github.com/diagridio/go-etcd-cron/internal/garbage"
 	"github.com/diagridio/go-etcd-cron/internal/grave"
@@ -84,17 +86,18 @@ type Options struct {
 // cron is the implementation of the cron interface.
 type cron struct {
 	log       logr.Logger
-	client    clientv3.KV
 	triggerFn TriggerFunction
 
-	part         partitioner.Interface
-	key          *key.Key
-	informer     *informer.Informer
-	yard         *grave.Yard
-	queue        *queue.Processor[string, *counter.Counter]
-	schedBuilder *scheduler.Builder
-	leadership   *leadership.Leadership
-	collector    garbage.Interface
+	client               client.Interface
+	part                 partitioner.Interface
+	key                  *key.Key
+	informer             *informer.Informer
+	yard                 *grave.Yard
+	queue                *queue.Processor[string, *counter.Counter]
+	schedBuilder         *scheduler.Builder
+	leadership           *leadership.Leadership
+	collector            garbage.Interface
+	validateNameReplacer *strings.Replacer
 
 	clock   clock.Clock
 	running atomic.Bool
@@ -131,20 +134,22 @@ func New(opts Options) (Interface, error) {
 		log = log.WithName("diagrid-cron")
 	}
 
-	yard := grave.New()
+	client := client.New(opts.Client)
 
 	collector := garbage.New(garbage.Options{
 		Log:    log,
-		Client: opts.Client,
+		Client: client,
 	})
 
 	key := key.New(key.Options{
 		Namespace:   opts.Namespace,
 		PartitionID: opts.PartitionID,
 	})
+
+	yard := grave.New()
 	informer := informer.New(informer.Options{
 		Key:         key,
-		Client:      opts.Client,
+		Client:      client,
 		Collector:   collector,
 		Partitioner: part,
 		Yard:        yard,
@@ -152,26 +157,27 @@ func New(opts Options) (Interface, error) {
 
 	leadership := leadership.New(leadership.Options{
 		Log:            log,
-		Client:         opts.Client,
+		Client:         client,
 		PartitionTotal: opts.PartitionTotal,
 		Key:            key,
 	})
 
 	return &cron{
-		log:          log,
-		client:       opts.Client,
-		triggerFn:    opts.TriggerFn,
-		key:          key,
-		leadership:   leadership,
-		yard:         yard,
-		informer:     informer,
-		collector:    collector,
-		part:         part,
-		schedBuilder: scheduler.NewBuilder(),
-		clock:        clock.RealClock{},
-		readyCh:      make(chan struct{}),
-		closeCh:      make(chan struct{}),
-		errCh:        make(chan error),
+		log:                  log,
+		client:               client,
+		triggerFn:            opts.TriggerFn,
+		key:                  key,
+		leadership:           leadership,
+		yard:                 yard,
+		informer:             informer,
+		collector:            collector,
+		part:                 part,
+		schedBuilder:         scheduler.NewBuilder(),
+		validateNameReplacer: strings.NewReplacer("_", "", ":", "", "-", ""),
+		clock:                clock.RealClock{},
+		readyCh:              make(chan struct{}),
+		closeCh:              make(chan struct{}),
+		errCh:                make(chan error),
 	}, nil
 }
 

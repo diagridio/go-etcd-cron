@@ -35,22 +35,26 @@ func Test_Scheduler(t *testing.T) {
 	}{
 		"if no schedule, expect oneshot": {
 			job: &api.JobStored{
-				Start: timestamppb.New(now),
-				Job:   &api.Job{Schedule: nil},
+				Begin: &api.JobStored_DueTime{
+					DueTime: timestamppb.New(now),
+				},
+				Job: &api.Job{Schedule: nil},
 			},
 			expScheduler: &oneshot{dueTime: now},
 			expErr:       false,
 		},
 		"if schedule, expect repeats": {
 			job: &api.JobStored{
-				Start:      timestamppb.New(now),
+				Begin: &api.JobStored_Start{
+					Start: timestamppb.New(now),
+				},
 				Expiration: timestamppb.New(now.Add(2 * time.Hour)),
 				Job: &api.Job{
 					Schedule: ptr.Of("@every 1h"),
 				},
 			},
 			expScheduler: &repeats{
-				start: now,
+				start: ptr.Of(now),
 				exp:   timestamppb.New(now.Add(2 * time.Hour)),
 				cron:  cronSched,
 				total: nil,
@@ -59,7 +63,9 @@ func Test_Scheduler(t *testing.T) {
 		},
 		"if schedule, expect repeats with exp nil": {
 			job: &api.JobStored{
-				Start:      timestamppb.New(now),
+				Begin: &api.JobStored_Start{
+					Start: timestamppb.New(now),
+				},
 				Expiration: nil,
 				Job: &api.Job{
 					Schedule: ptr.Of("@every 1h"),
@@ -67,7 +73,7 @@ func Test_Scheduler(t *testing.T) {
 				},
 			},
 			expScheduler: &repeats{
-				start: now,
+				start: ptr.Of(now),
 				exp:   nil,
 				cron:  cronSched,
 				total: ptr.Of(uint32(100)),
@@ -76,7 +82,9 @@ func Test_Scheduler(t *testing.T) {
 		},
 		"if bad schedule string, expect error": {
 			job: &api.JobStored{
-				Start:      timestamppb.New(now),
+				Begin: &api.JobStored_Start{
+					Start: timestamppb.New(now),
+				},
 				Expiration: timestamppb.New(now.Add(2 * time.Hour)),
 				Job: &api.Job{
 					Schedule: ptr.Of("bad string"),
@@ -164,7 +172,9 @@ func Test_Parse(t *testing.T) {
 					Ttl:      nil,
 					Repeats:  nil,
 				},
-				Start:      timestamppb.New(time.Date(2024, 4, 24, 11, 42, 22, 0, time.UTC)),
+				Begin: &api.JobStored_DueTime{
+					DueTime: timestamppb.New(time.Date(2024, 4, 24, 11, 42, 22, 0, time.UTC)),
+				},
 				Expiration: nil,
 			},
 			expErr: false,
@@ -183,7 +193,9 @@ func Test_Parse(t *testing.T) {
 					Ttl:      nil,
 					Repeats:  nil,
 				},
-				Start:      timestamppb.New(time.Date(2024, 4, 24, 11, 42, 22, 0, time.UTC)),
+				Begin: &api.JobStored_DueTime{
+					DueTime: timestamppb.New(time.Date(2024, 4, 24, 11, 42, 22, 0, time.UTC)),
+				},
 				Expiration: nil,
 			},
 			expErr: false,
@@ -202,7 +214,9 @@ func Test_Parse(t *testing.T) {
 					Ttl:      ptr.Of("2h"),
 					Repeats:  nil,
 				},
-				Start:      timestamppb.New(now),
+				Begin: &api.JobStored_Start{
+					Start: timestamppb.New(now),
+				},
 				Expiration: timestamppb.New(now.Add(2 * time.Hour)),
 			},
 			expErr: false,
@@ -221,7 +235,9 @@ func Test_Parse(t *testing.T) {
 					Ttl:      ptr.Of("2h"),
 					Repeats:  ptr.Of(uint32(100)),
 				},
-				Start:      timestamppb.New(time.Date(2024, 4, 24, 11, 42, 22, 0, time.UTC)),
+				Begin: &api.JobStored_DueTime{
+					DueTime: timestamppb.New(time.Date(2024, 4, 24, 11, 42, 22, 0, time.UTC)),
+				},
 				Expiration: timestamppb.New(time.Date(2024, 4, 24, 13, 42, 22, 0, time.UTC)),
 			},
 			expErr: false,
@@ -250,7 +266,9 @@ func Test_Parse(t *testing.T) {
 					Ttl:      ptr.Of("2024-04-24T11:42:22Z"),
 					Repeats:  nil,
 				},
-				Start:      timestamppb.New(time.Date(2024, 4, 24, 11, 42, 22, 0, time.UTC)),
+				Begin: &api.JobStored_DueTime{
+					DueTime: timestamppb.New(time.Date(2024, 4, 24, 11, 42, 22, 0, time.UTC)),
+				},
 				Expiration: timestamppb.New(time.Date(2024, 4, 24, 11, 42, 22, 0, time.UTC)),
 			},
 			expErr: false,
@@ -282,8 +300,8 @@ func Test_Parse(t *testing.T) {
 			builder := &Builder{clock: clock}
 			gotStored, gotErr := builder.Parse(test.job)
 			if gotStored != nil {
-				assert.NotEqual(t, uint32(0), gotStored.GetUuid())
-				gotStored.Uuid = 0
+				assert.NotEqual(t, uint32(0), gotStored.GetPartitionId())
+				gotStored.PartitionId = 0
 			}
 			assert.Equal(t, test.expStored, gotStored)
 			assert.Equal(t, test.expErr, gotErr != nil, "%v", gotErr)
