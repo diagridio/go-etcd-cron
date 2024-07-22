@@ -53,14 +53,15 @@ func Test_New(t *testing.T) {
 	}
 
 	for name, test := range tests {
+		testInLoop := test
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 			parter, err := New(Options{
-				ID:    test.id,
-				Total: test.total,
+				ID:    testInLoop.id,
+				Total: testInLoop.total,
 			})
-			assert.Equal(t, test.exp, parter)
-			assert.Equal(t, test.expErr, err != nil, "%v", err)
+			assert.Equal(t, testInLoop.exp, parter)
+			assert.Equal(t, testInLoop.expErr, err != nil, "%v", err)
 		})
 	}
 }

@@ -880,11 +880,13 @@ func Test_updateNext(t *testing.T) {
 	}
 
 	for name, test := range tests {
+		counter := test.counter
+		exp := test.exp
+		expNext := test.expNext
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
-			c := test.counter
-			assert.Equal(t, test.exp, c.updateNext())
-			assert.Equal(t, test.expNext, c.next)
+			assert.Equal(t, exp, counter.updateNext())
+			assert.Equal(t, expNext, counter.next)
 		})
 	}
 }

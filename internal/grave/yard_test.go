@@ -120,16 +120,17 @@ func Test_HasJustDeleted(t *testing.T) {
 	}
 
 	for name, test := range tests {
+		testInLoop := test
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 			yard := New()
 
-			for _, key := range test.deletes {
+			for _, key := range testInLoop.deletes {
 				yard.Deleted(key)
 			}
 
-			assert.Equal(t, test.expBool, yard.HasJustDeleted(test.key))
-			assert.Equal(t, test.expMap, yard.deletesMap)
+			assert.Equal(t, testInLoop.expBool, yard.HasJustDeleted(testInLoop.key))
+			assert.Equal(t, testInLoop.expMap, yard.deletesMap)
 		})
 	}
 }

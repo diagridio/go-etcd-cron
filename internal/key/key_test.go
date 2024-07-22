@@ -42,13 +42,14 @@ func Test_JobKey(t *testing.T) {
 	}
 
 	for _, test := range tests {
+		testInLoop := test
 		t.Run(test.namespace+"/"+test.jobName, func(t *testing.T) {
 			t.Parallel()
 			key := New(Options{
-				Namespace:   test.namespace,
-				PartitionID: test.partitionID,
+				Namespace:   testInLoop.namespace,
+				PartitionID: testInLoop.partitionID,
 			})
-			assert.Equal(t, test.expJobKey, key.JobKey(test.jobName))
+			assert.Equal(t, testInLoop.expJobKey, key.JobKey(testInLoop.jobName))
 		})
 	}
 }
@@ -83,13 +84,14 @@ func Test_CounterKey(t *testing.T) {
 	}
 
 	for _, test := range tests {
+		testInLoop := test
 		t.Run(test.namespace+"/"+test.jobName, func(t *testing.T) {
 			t.Parallel()
 			key := New(Options{
-				Namespace:   test.namespace,
-				PartitionID: test.partitionID,
+				Namespace:   testInLoop.namespace,
+				PartitionID: testInLoop.partitionID,
 			})
-			assert.Equal(t, test.expCounterKey, key.CounterKey(test.jobName))
+			assert.Equal(t, testInLoop.expCounterKey, key.CounterKey(testInLoop.jobName))
 		})
 	}
 }
@@ -116,13 +118,14 @@ func Test_LeadershipNamespace(t *testing.T) {
 	}
 
 	for _, test := range tests {
+		testInLoop := test
 		t.Run(test.namespace, func(t *testing.T) {
 			t.Parallel()
 			key := New(Options{
-				Namespace:   test.namespace,
+				Namespace:   testInLoop.namespace,
 				PartitionID: 123,
 			})
-			assert.Equal(t, test.expLeadershipNS, key.LeadershipNamespace())
+			assert.Equal(t, testInLoop.expLeadershipNS, key.LeadershipNamespace())
 		})
 	}
 }
@@ -153,13 +156,14 @@ func Test_LeadershipKey(t *testing.T) {
 	}
 
 	for _, test := range tests {
+		testInLoop := test
 		t.Run(fmt.Sprintf("%s/%d", test.namespace, test.partitionID), func(t *testing.T) {
 			t.Parallel()
 			key := New(Options{
-				Namespace:   test.namespace,
-				PartitionID: test.partitionID,
+				Namespace:   testInLoop.namespace,
+				PartitionID: testInLoop.partitionID,
 			})
-			assert.Equal(t, test.expLeadershipKey, key.LeadershipKey())
+			assert.Equal(t, testInLoop.expLeadershipKey, key.LeadershipKey())
 		})
 	}
 }
@@ -186,13 +190,14 @@ func Test_JobNamespace(t *testing.T) {
 	}
 
 	for _, test := range tests {
+		testInLoop := test
 		t.Run(test.namespace, func(t *testing.T) {
 			t.Parallel()
 			key := New(Options{
-				Namespace:   test.namespace,
+				Namespace:   testInLoop.namespace,
 				PartitionID: 123,
 			})
-			assert.Equal(t, test.expJobNS, key.JobNamespace())
+			assert.Equal(t, testInLoop.expJobNS, key.JobNamespace())
 		})
 	}
 }
@@ -219,13 +224,14 @@ func Test_JobName(t *testing.T) {
 	}
 
 	for _, test := range tests {
+		testInLoop := test
 		t.Run(test.key, func(t *testing.T) {
 			t.Parallel()
 			key := New(Options{
 				Namespace:   "/123",
 				PartitionID: 123,
 			})
-			assert.Equal(t, test.expJobName, key.JobName([]byte(test.key)))
+			assert.Equal(t, testInLoop.expJobName, key.JobName([]byte(testInLoop.key)))
 		})
 	}
 }

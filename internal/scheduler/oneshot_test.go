@@ -37,10 +37,11 @@ func Test_oneshot(t *testing.T) {
 	}
 
 	for _, test := range tests {
+		testInLoop := test
 		t.Run(strconv.Itoa(int(test.count)), func(t *testing.T) {
 			t.Parallel()
 			oneshot := &oneshot{dueTime: dueTime}
-			assert.Equal(t, test.expNext, oneshot.Next(test.count, nil))
+			assert.Equal(t, testInLoop.expNext, oneshot.Next(testInLoop.count, nil))
 		})
 	}
 }

@@ -128,7 +128,7 @@ func Test_patition(t *testing.T) {
 
 	helper := testCron(t, 100)
 
-	for i := range 100 {
+	for i := 0; i < 100; i++ {
 		job := &api.Job{
 			DueTime: ptr.Of(time.Now().Add(time.Second).Format(time.RFC3339)),
 		}
@@ -514,6 +514,7 @@ func Test_parallel(t *testing.T) {
 		{"1 queue", 1},
 		{"multi queue", 50},
 	} {
+		total := test.total
 		t.Run(test.name, func(t *testing.T) {
 			t.Parallel()
 
@@ -521,7 +522,7 @@ func Test_parallel(t *testing.T) {
 			var waiting atomic.Int32
 			var done atomic.Int32
 			helper := testCronWithOptions(t, testCronOptions{
-				total: test.total,
+				total: total,
 				triggerFn: func() {
 					waiting.Add(1)
 					<-releaseCh
@@ -529,7 +530,7 @@ func Test_parallel(t *testing.T) {
 				},
 			})
 
-			for i := range 100 {
+			for i := 0; i < 100; i++ {
 				require.NoError(t, helper.cron.Add(helper.ctx, strconv.Itoa(i), &api.Job{
 					DueTime: ptr.Of("0s"),
 				}))
@@ -577,12 +578,12 @@ func testCronWithOptions(t *testing.T, opts testCronOptions) *helper {
 	var triggered atomic.Int64
 	var cron Interface
 	allCrns := make([]Interface, opts.total)
-	for i := range opts.total {
+	for i := 0; i < int(opts.total); i++ {
 		c, err := New(Options{
 			Log:            logr.Discard(),
 			Client:         cl,
 			Namespace:      "abc",
-			PartitionID:    i,
+			PartitionID:    uint32(i),
 			PartitionTotal: opts.total,
 			TriggerFn: func(_ context.Context, req *api.TriggerRequest) bool {
 				ok := opts.returnOk == nil || opts.returnOk.Load()
@@ -607,7 +608,7 @@ func testCronWithOptions(t *testing.T, opts testCronOptions) *helper {
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(func() {
 		cancel()
-		for range opts.total {
+		for i := 0; i < int(opts.total); i++ {
 			select {
 			case err := <-errCh:
 				require.NoError(t, err)
