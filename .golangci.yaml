@@ -20,8 +20,6 @@ linters:
  - funlen
  - maintidx
  - containedctx
- # TODO: Add intrange linter back
- - intrange
 linters-settings:
   goimports:
     local-prefixes: github.com/diagridio
