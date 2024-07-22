@@ -10,5 +10,5 @@ jobs:
     - uses: actions/setup-go@v5
     - uses: golangci/golangci-lint-action@v3.7.0
       with:
-        args: --enable-all
+        version: v1.55.2
     - run: go test -v --race ./...

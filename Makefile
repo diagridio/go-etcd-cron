@@ -1,4 +1,31 @@
 ################################################################################
+# Target: lint                                                                 #
+################################################################################
+# Please use golangci-lint with matching version, otherwise you might encounter errors.
+# You can download at https://github.com/golangci/golangci-lint/releases/
+# Check .github/wortkflows/test.yaml for the version used in GitHub actions.
+
+ifeq ($(GOOS),windows)
+GOLANGCI_LINT:=golangci-lint.exe
+else
+GOLANGCI_LINT:=golangci-lint
+endif
+
+.PHONY: lint
+lint:
+	$(GOLANGCI_LINT) run --timeout=20m
+
+
+################################################################################
+# Target: check-linter                                                         #
+################################################################################
+.SILENT: check-linter # Silence output other than the application run
+.PHONY: check-linter
+check-linter:
+	$(RUN_BUILD_TOOLS) check-linter
+
+
+################################################################################
 # Target: modtidy                                                              #
 ################################################################################
 .PHONY: modtidy
