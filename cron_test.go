@@ -128,7 +128,7 @@ func Test_patition(t *testing.T) {
 
 	helper := testCron(t, 100)
 
-	for i := 0; i < 100; i++ {
+	for i := range 100 {
 		job := &api.Job{
 			DueTime: ptr.Of(time.Now().Add(time.Second).Format(time.RFC3339)),
 		}
@@ -529,7 +529,7 @@ func Test_parallel(t *testing.T) {
 				},
 			})
 
-			for i := 0; i < 100; i++ {
+			for i := range 100 {
 				require.NoError(t, helper.cron.Add(helper.ctx, strconv.Itoa(i), &api.Job{
 					DueTime: ptr.Of("0s"),
 				}))
@@ -562,6 +562,7 @@ type helper struct {
 }
 
 func testCron(t *testing.T, total uint32) *helper {
+	t.Helper()
 	return testCronWithOptions(t, testCronOptions{
 		total: total,
 	})
@@ -576,7 +577,7 @@ func testCronWithOptions(t *testing.T, opts testCronOptions) *helper {
 	var triggered atomic.Int64
 	var cron Interface
 	allCrns := make([]Interface, opts.total)
-	for i := uint32(0); i < opts.total; i++ {
+	for i := range opts.total {
 		c, err := New(Options{
 			Log:            logr.Discard(),
 			Client:         cl,
@@ -606,7 +607,7 @@ func testCronWithOptions(t *testing.T, opts testCronOptions) *helper {
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(func() {
 		cancel()
-		for i := uint32(0); i < opts.total; i++ {
+		for range opts.total {
 			select {
 			case err := <-errCh:
 				require.NoError(t, err)
