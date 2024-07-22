@@ -2,6 +2,8 @@ module github.com/diagridio/go-etcd-cron
 
 go 1.22
 
+toolchain go1.22.5
+
 require (
 	github.com/dapr/kit v0.13.1-0.20240722163453-58c6d9df14d3
 	github.com/go-logr/logr v1.3.0
