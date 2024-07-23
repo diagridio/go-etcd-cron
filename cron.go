@@ -107,7 +107,8 @@ type cron struct {
 	wg      sync.WaitGroup
 	// queueLock prevents an informed schedule from overwriting a job as it is
 	// being triggered, i.e. prevent a PUT and mid-trigger race condition.
-	queueLock concurrency.MutexMap[string]
+	queueLock  concurrency.MutexMap[string]
+	queueCache *sync.Map
 }
 
 // New creates a new cron instance.
@@ -179,6 +180,7 @@ func New(opts Options) (Interface, error) {
 		closeCh:              make(chan struct{}),
 		errCh:                make(chan error),
 		queueLock:            concurrency.NewMutexMap[string](),
+		queueCache:           new(sync.Map),
 	}, nil
 }
 
@@ -191,9 +193,10 @@ func (c *cron) Run(ctx context.Context) error {
 
 	c.queue = queue.NewProcessor[string, *counter.Counter](
 		func(counter *counter.Counter) {
-			c.queueLock.Lock(counter.Key())
-			if ctx.Err() != nil {
-				c.queueLock.Unlock(counter.Key())
+			c.queueLock.RLock(counter.Key())
+			_, ok := c.queueCache.Load(counter.Key())
+			if !ok || ctx.Err() != nil {
+				c.queueLock.DeleteRUnlock(counter.Key())
 				return
 			}
 
@@ -201,9 +204,10 @@ func (c *cron) Run(ctx context.Context) error {
 			go func() {
 				defer c.wg.Done()
 				if c.handleTrigger(ctx, counter) {
-					c.queueLock.Unlock(counter.Key())
+					c.queueLock.RUnlock(counter.Key())
 				} else {
-					c.queueLock.DeleteUnlock(counter.Key())
+					c.queueCache.Delete(counter.Key())
+					c.queueLock.DeleteRUnlock(counter.Key())
 				}
 			}()
 		},
@@ -313,6 +317,7 @@ func (c *cron) handleInformerEvent(ctx context.Context, e *informer.Event) error
 	}
 
 	defer c.queueLock.DeleteUnlock(string(e.Key))
+	c.queueCache.Delete(string(e.Key))
 	return c.queue.Dequeue(string(e.Key))
 }
 
@@ -342,5 +347,6 @@ func (c *cron) schedule(ctx context.Context, name string, job *api.JobStored) er
 	default:
 	}
 
+	c.queueCache.Store(counter.Key(), nil)
 	return c.queue.Enqueue(counter)
 }

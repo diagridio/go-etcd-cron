@@ -170,7 +170,7 @@ func Test_repeat(t *testing.T) {
 	helper := testCron(t, 1)
 
 	job := &api.Job{
-		Schedule: ptr.Of("@every 1s"),
+		Schedule: ptr.Of("@every 10ms"),
 		Repeats:  ptr.Of(uint32(3)),
 	}
 
@@ -523,7 +523,7 @@ func Test_parallel(t *testing.T) {
 			var done atomic.Int32
 			helper := testCronWithOptions(t, testCronOptions{
 				total: total,
-				triggerFn: func() {
+				triggerFn: func(*api.TriggerRequest) {
 					waiting.Add(1)
 					<-releaseCh
 					done.Add(1)
@@ -547,11 +547,66 @@ func Test_parallel(t *testing.T) {
 	}
 }
 
+func Test_DeleteRace(t *testing.T) {
+	t.Parallel()
+
+	triggered := make([]atomic.Int64, 20)
+	helper := testCronWithOptions(t, testCronOptions{
+		total: 1,
+		triggerFn: func(req *api.TriggerRequest) {
+			i, err := strconv.Atoi(req.Name)
+			require.NoError(t, err)
+			triggered[i].Add(1)
+		},
+	})
+
+	jobNames := make([]string, 20)
+	for i := range jobNames {
+		jobNames[i] = strconv.Itoa(i)
+		require.NoError(t, helper.cron.Add(helper.ctx, jobNames[i], &api.Job{
+			Schedule: ptr.Of("@every 1s"),
+		}))
+	}
+
+	cron := helper.cron.(*cron)
+
+	for i, name := range jobNames {
+		i := i
+		name := name
+		keyName := "abc/jobs/" + name
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			assert.EventuallyWithT(t, func(c *assert.CollectT) {
+				_, ok := cron.queueCache.Load(keyName)
+				assert.True(c, ok)
+			}, 5*time.Second, time.Millisecond)
+
+			assert.EventuallyWithT(t, func(c *assert.CollectT) {
+				assert.GreaterOrEqual(c, triggered[i].Load(), int64(1))
+			}, 5*time.Second, time.Millisecond)
+
+			_, ok := cron.queueCache.Load(keyName)
+			assert.True(t, ok)
+			require.NoError(t, helper.cron.Delete(helper.ctx, name))
+
+			_, ok = cron.queueCache.Load(keyName)
+			assert.False(t, ok)
+
+			currentTriggered := triggered[i].Load()
+			time.Sleep(time.Second * 2)
+			assert.Equal(t, currentTriggered, triggered[i].Load())
+			_, ok = cron.queueCache.Load(keyName)
+			assert.False(t, ok)
+		})
+	}
+}
+
 type testCronOptions struct {
 	total     uint32
 	returnOk  *atomic.Bool
 	gotCh     chan *api.TriggerRequest
-	triggerFn func()
+	triggerFn func(*api.TriggerRequest)
 }
 
 type helper struct {
@@ -592,7 +647,7 @@ func testCronWithOptions(t *testing.T, opts testCronOptions) *helper {
 					opts.gotCh <- req
 				}
 				if opts.triggerFn != nil {
-					opts.triggerFn()
+					opts.triggerFn(req)
 				}
 				return ok
 			},
