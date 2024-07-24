@@ -95,11 +95,17 @@ func (c *cron) Delete(ctx context.Context, name string) error {
 		return err
 	}
 
-	if _, err := c.client.Delete(ctx, c.key.JobKey(name)); err != nil {
+	jobKey := c.key.JobKey(name)
+
+	c.queueLock.Lock(jobKey)
+	defer c.queueLock.Unlock(jobKey)
+
+	if _, err := c.client.Delete(ctx, jobKey); err != nil {
 		return err
 	}
 
-	return nil
+	c.queueCache.Delete(jobKey)
+	return c.queue.Dequeue(jobKey)
 }
 
 // validateName validates the name of a job.
