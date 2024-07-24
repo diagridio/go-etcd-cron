@@ -98,13 +98,19 @@ func (c *cron) Delete(ctx context.Context, name string) error {
 	jobKey := c.key.JobKey(name)
 
 	c.queueLock.Lock(jobKey)
-	defer c.queueLock.Unlock(jobKey)
 
 	if _, err := c.client.Delete(ctx, jobKey); err != nil {
+		defer c.queueLock.Unlock(jobKey)
 		return err
 	}
 
+	if _, ok := c.queueCache.Load(jobKey); !ok {
+		defer c.queueLock.DeleteUnlock(jobKey)
+		return nil
+	}
+
 	c.queueCache.Delete(jobKey)
+	defer c.queueLock.Unlock(jobKey)
 	return c.queue.Dequeue(jobKey)
 }
 
