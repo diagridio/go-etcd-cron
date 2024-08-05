@@ -500,8 +500,14 @@ func Test_zeroDueTime(t *testing.T) {
 	require.NoError(t, helper.cron.Add(helper.ctx, "yoyo3", &api.Job{
 		Schedule: ptr.Of("@every 1h"),
 	}))
+
+	require.NoError(t, helper.cron.Add(helper.ctx, "yoyo4", &api.Job{
+		Repeats:  ptr.Of(uint32(1)),
+		DueTime:  ptr.Of("0s"),
+		Schedule: ptr.Of("@every 60s"),
+	}))
 	<-time.After(2 * time.Second)
-	assert.Equal(t, int64(2), helper.triggered.Load())
+	assert.Equal(t, int64(3), helper.triggered.Load())
 }
 
 func Test_parallel(t *testing.T) {
