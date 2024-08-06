@@ -184,7 +184,8 @@ func (c *Counter) TriggerRequest() *api.TriggerRequest {
 //nonlint:contextcheck
 func (c *Counter) tickNext() (bool, error) {
 	if !c.updateNext() {
-		if err := c.client.DeleteMulti(c.jobKey); err != nil {
+		// Tries to delete the counterKey with the jobKey.
+		if err := c.client.DeleteMulti(c.jobKey, c.counterKey); err != nil {
 			return false, err
 		}
 		// Mark the job as just been deleted, and push the counter key for garbage
