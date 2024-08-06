@@ -103,6 +103,8 @@ func (c *cron) Delete(ctx context.Context, name string) error {
 	if _, err := c.client.Delete(ctx, jobKey); err != nil {
 		return err
 	}
+	counterKey := c.key.CounterKey(name)
+	c.collector.Push(counterKey)
 
 	if _, ok := c.queueCache.Load(jobKey); !ok {
 		return nil
