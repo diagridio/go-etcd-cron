@@ -12,6 +12,7 @@ import (
 	"strings"
 	"sync"
 	"sync/atomic"
+	"time"
 
 	"github.com/dapr/kit/concurrency"
 	"github.com/dapr/kit/events/queue"
@@ -20,6 +21,7 @@ import (
 	"go.etcd.io/etcd/client/pkg/v3/logutil"
 	clientv3 "go.etcd.io/etcd/client/v3"
 	"go.uber.org/zap"
+	"k8s.io/apimachinery/pkg/util/validation"
 	"k8s.io/utils/clock"
 
 	"github.com/diagridio/go-etcd-cron/api"
@@ -59,6 +61,10 @@ type Interface interface {
 
 	// Delete deletes a job from the cron instance.
 	Delete(ctx context.Context, name string) error
+
+	// DeletePrefixes deletes all jobs with the given prefixes from the cron
+	// instance.
+	DeletePrefixes(ctx context.Context, prefixes ...string) error
 }
 
 // Options are the options for creating a new cron instance.
@@ -81,6 +87,17 @@ type Options struct {
 
 	// TriggerFn is the function to call when a cron job is triggered.
 	TriggerFn TriggerFunction
+
+	// CounterGarbageCollectionInterval is the interval at which to run the
+	// garbage collection for counters is run. Counters are also garbage
+	// collected on shutdown. Counters are batch deleted, so a larger value
+	// increases the counter bucket and reduces the number of database
+	// operations.
+	// This value rarely needs to be set and is mostly used for testing. A small
+	// interval value will increase database operations and thus degrade cron
+	// performance.
+	// Defaults to 180 seconds.
+	CounterGarbageCollectionInterval *time.Duration
 }
 
 // cron is the implementation of the cron interface.
@@ -137,10 +154,14 @@ func New(opts Options) (Interface, error) {
 
 	client := client.New(opts.Client)
 
-	collector := garbage.New(garbage.Options{
-		Log:    log,
-		Client: client,
+	collector, err := garbage.New(garbage.Options{
+		Log:                log,
+		Client:             client,
+		CollectionInterval: opts.CounterGarbageCollectionInterval,
 	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to create garbage collector: %w", err)
+	}
 
 	key := key.New(key.Options{
 		Namespace:   opts.Namespace,
@@ -318,6 +339,7 @@ func (c *cron) handleInformerEvent(ctx context.Context, e *informer.Event) error
 
 	defer c.queueLock.DeleteUnlock(string(e.Key))
 	c.queueCache.Delete(string(e.Key))
+	c.collector.Push(c.key.CounterKey(c.key.JobName(e.Key)))
 	return c.queue.Dequeue(string(e.Key))
 }
 
@@ -349,4 +371,19 @@ func (c *cron) schedule(ctx context.Context, name string, job *api.JobStored) er
 
 	c.queueCache.Store(counter.Key(), nil)
 	return c.queue.Enqueue(counter)
+}
+
+// validateName validates the name of a job.
+func (c *cron) validateName(name string) error {
+	if len(name) == 0 {
+		return errors.New("job name cannot be empty")
+	}
+
+	for _, segment := range strings.Split(strings.ToLower(c.validateNameReplacer.Replace(name)), "||") {
+		if errs := validation.IsDNS1123Subdomain(segment); len(errs) > 0 {
+			return fmt.Errorf("job name is invalid %q: %s", name, strings.Join(errs, ", "))
+		}
+	}
+
+	return nil
 }

@@ -26,6 +26,10 @@ type Options struct {
 
 	// Client is the ETCD client to use for deleting keys.
 	Client client.Interface
+
+	// CollectionInterval is the interval at which the garbage collector runs.
+	// When nil, defaults to 180 seconds.
+	CollectionInterval *time.Duration
 }
 
 // Interface is a garbage collector. It is used to queue-up deletion of ETCD
@@ -46,15 +50,16 @@ type Interface interface {
 
 // collector is the implementation of the garbage collector.
 type collector struct {
-	log          logr.Logger
-	client       client.Interface
-	clock        clock.Clock
-	keys         map[string]struct{}
-	soonerCh     chan struct{}
-	lock         sync.Mutex
-	running      atomic.Bool
-	closed       atomic.Bool
-	garbageLimit int
+	log                logr.Logger
+	client             client.Interface
+	clock              clock.Clock
+	keys               map[string]struct{}
+	soonerCh           chan struct{}
+	lock               sync.Mutex
+	running            atomic.Bool
+	closed             atomic.Bool
+	collectionInterval time.Duration
+	garbageLimit       int
 }
 
 // garbageLimit is the maximum number of keys to queue up for deletion before
@@ -62,15 +67,23 @@ type collector struct {
 const garbageLimit = 500000
 
 // New creates a new garbage collector.
-func New(opts Options) Interface {
-	return &collector{
-		log:          opts.Log.WithName("garbage-collector"),
-		client:       opts.Client,
-		clock:        clock.RealClock{},
-		soonerCh:     make(chan struct{}, 100),
-		keys:         make(map[string]struct{}),
-		garbageLimit: garbageLimit,
+func New(opts Options) (Interface, error) {
+	collectionInterval := 180 * time.Second
+	if opts.CollectionInterval != nil {
+		if *opts.CollectionInterval <= 0 {
+			return nil, errors.New("collection interval must be greater than 0")
+		}
+		collectionInterval = *opts.CollectionInterval
 	}
+	return &collector{
+		log:                opts.Log.WithName("garbage-collector"),
+		client:             opts.Client,
+		clock:              clock.RealClock{},
+		soonerCh:           make(chan struct{}, 100),
+		keys:               make(map[string]struct{}),
+		garbageLimit:       garbageLimit,
+		collectionInterval: collectionInterval,
+	}, nil
 }
 
 func (c *collector) Run(ctx context.Context) error {
@@ -90,7 +103,7 @@ func (c *collector) Run(ctx context.Context) error {
 				return err
 			}
 
-		case <-c.clock.After(180 * time.Second):
+		case <-c.clock.After(c.collectionInterval):
 			if err := c.collect(); err != nil {
 				return err
 			}

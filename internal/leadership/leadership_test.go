@@ -17,7 +17,7 @@ import (
 
 	"github.com/diagridio/go-etcd-cron/internal/client"
 	"github.com/diagridio/go-etcd-cron/internal/key"
-	"github.com/diagridio/go-etcd-cron/internal/tests"
+	"github.com/diagridio/go-etcd-cron/tests"
 )
 
 //nolint:gocyclo

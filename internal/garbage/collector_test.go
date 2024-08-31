@@ -11,13 +11,56 @@ import (
 	"testing"
 	"time"
 
+	"github.com/dapr/kit/ptr"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	clientv3 "go.etcd.io/etcd/client/v3"
 	clocktesting "k8s.io/utils/clock/testing"
 
-	"github.com/diagridio/go-etcd-cron/internal/tests"
+	"github.com/diagridio/go-etcd-cron/tests"
 )
+
+func Test_New(t *testing.T) {
+	t.Parallel()
+
+	t.Run("should error if custom interval is less than 0", func(t *testing.T) {
+		t.Parallel()
+
+		_, err := New(Options{
+			CollectionInterval: ptr.Of(-time.Second),
+		})
+		require.Error(t, err)
+	})
+
+	t.Run("should error if custom interval is 0", func(t *testing.T) {
+		t.Parallel()
+
+		_, err := New(Options{
+			CollectionInterval: ptr.Of(time.Duration(0)),
+		})
+		require.Error(t, err)
+	})
+
+	t.Run("should not error if custom interval is 1s", func(t *testing.T) {
+		t.Parallel()
+
+		coll, err := New(Options{
+			CollectionInterval: ptr.Of(time.Second),
+		})
+		require.NoError(t, err)
+		c := coll.(*collector)
+		assert.Equal(t, time.Second, c.collectionInterval)
+	})
+
+	t.Run("should default to 180s if custom interval is not provided", func(t *testing.T) {
+		t.Parallel()
+
+		coll, err := New(Options{})
+		require.NoError(t, err)
+		c := coll.(*collector)
+		assert.Equal(t, time.Second*180, c.collectionInterval)
+	})
+}
 
 func Test_Run(t *testing.T) {
 	t.Parallel()
@@ -25,7 +68,9 @@ func Test_Run(t *testing.T) {
 	t.Run("doubling Run should return error", func(t *testing.T) {
 		t.Parallel()
 
-		c := New(Options{}).(*collector)
+		coll, err := New(Options{})
+		require.NoError(t, err)
+		c := coll.(*collector)
 		c.clock = clocktesting.NewFakeClock(time.Now())
 
 		ctx, cancel := context.WithCancel(context.Background())
@@ -49,7 +94,9 @@ func Test_Run(t *testing.T) {
 	t.Run("pushing after 500k runs after Run has returned should not error", func(t *testing.T) {
 		t.Parallel()
 
-		c := New(Options{}).(*collector)
+		coll, err := New(Options{})
+		require.NoError(t, err)
+		c := coll.(*collector)
 		c.clock = clocktesting.NewFakeClock(time.Now())
 
 		ctx, cancel := context.WithCancel(context.Background())
@@ -67,9 +114,11 @@ func Test_Run(t *testing.T) {
 		t.Parallel()
 
 		client := tests.EmbeddedETCD(t)
-		c := New(Options{
+		coll, err := New(Options{
 			Client: client,
-		}).(*collector)
+		})
+		require.NoError(t, err)
+		c := coll.(*collector)
 		c.clock = clocktesting.NewFakeClock(time.Now())
 
 		ctx, cancel := context.WithCancel(context.Background())
@@ -109,9 +158,11 @@ func Test_Run(t *testing.T) {
 		t.Parallel()
 
 		client := tests.EmbeddedETCD(t)
-		c := New(Options{
+		coll, err := New(Options{
 			Client: client,
-		}).(*collector)
+		})
+		require.NoError(t, err)
+		c := coll.(*collector)
 		c.clock = clocktesting.NewFakeClock(time.Now())
 		c.garbageLimit = 100
 
@@ -130,7 +181,7 @@ func Test_Run(t *testing.T) {
 		}
 
 		key := "test-100"
-		_, err := client.Put(context.Background(), key, "value")
+		_, err = client.Put(context.Background(), key, "value")
 		require.NoError(t, err)
 		c.Push(key)
 
@@ -160,9 +211,11 @@ func Test_Run(t *testing.T) {
 
 		client := tests.EmbeddedETCD(t)
 		clock := clocktesting.NewFakeClock(time.Now())
-		c := New(Options{
+		coll, err := New(Options{
 			Client: client,
-		}).(*collector)
+		})
+		require.NoError(t, err)
+		c := coll.(*collector)
 		c.clock = clock
 
 		ctx, cancel := context.WithCancel(context.Background())
@@ -200,6 +253,55 @@ func Test_Run(t *testing.T) {
 			require.NoError(t, err)
 		}
 	})
+
+	t.Run("if ticks past custom 60s, then should delete all garbage keys", func(t *testing.T) {
+		t.Parallel()
+
+		client := tests.EmbeddedETCD(t)
+		clock := clocktesting.NewFakeClock(time.Now())
+		coll, err := New(Options{
+			Client:             client,
+			CollectionInterval: ptr.Of(time.Second * 60),
+		})
+		require.NoError(t, err)
+		c := coll.(*collector)
+		c.clock = clock
+
+		ctx, cancel := context.WithCancel(context.Background())
+
+		errCh := make(chan error, 1)
+		go func() {
+			errCh <- c.Run(ctx)
+		}()
+
+		for i := 0; i < 10; i++ {
+			key := fmt.Sprintf("test-%d", i)
+			_, err := client.Put(context.Background(), key, "value")
+			require.NoError(t, err)
+			c.Push(key)
+		}
+
+		assert.True(t, clock.HasWaiters())
+		clock.Step(time.Second*60 - 1)
+		assert.True(t, clock.HasWaiters())
+		clock.Step(1)
+
+		assert.EventuallyWithT(t, func(c *assert.CollectT) {
+			resp, err := client.Get(context.Background(), "test", clientv3.WithPrefix())
+			if assert.NoError(c, err) {
+				assert.Empty(c, resp.Kvs)
+				assert.Equal(c, int64(0), resp.Count)
+			}
+		}, time.Second*5, time.Millisecond*10)
+
+		cancel()
+		select {
+		case <-time.After(time.Second * 5):
+			t.Fatal("expected collector to return")
+		case err := <-errCh:
+			require.NoError(t, err)
+		}
+	})
 }
 
 func Test_Push(t *testing.T) {
@@ -208,7 +310,9 @@ func Test_Push(t *testing.T) {
 	t.Run("pushing a key should add it to the list", func(t *testing.T) {
 		t.Parallel()
 
-		c := New(Options{}).(*collector)
+		coll, err := New(Options{})
+		require.NoError(t, err)
+		c := coll.(*collector)
 		assert.Empty(t, c.keys)
 		c.Push("test")
 		assert.Len(t, c.keys, 1)
@@ -217,7 +321,9 @@ func Test_Push(t *testing.T) {
 	t.Run("double pushing a key does nothing", func(t *testing.T) {
 		t.Parallel()
 
-		c := New(Options{}).(*collector)
+		coll, err := New(Options{})
+		require.NoError(t, err)
+		c := coll.(*collector)
 		assert.Empty(t, c.keys)
 		c.Push("test")
 		assert.Len(t, c.keys, 1)
@@ -230,7 +336,9 @@ func Test_Push(t *testing.T) {
 	t.Run("popping more than 500k keys should trigger the sooner channel", func(t *testing.T) {
 		t.Parallel()
 
-		c := New(Options{}).(*collector)
+		coll, err := New(Options{})
+		require.NoError(t, err)
+		c := coll.(*collector)
 
 		select {
 		case <-c.soonerCh:
@@ -264,7 +372,9 @@ func Test_Pop(t *testing.T) {
 	t.Run("popping a key should remove it from the list", func(t *testing.T) {
 		t.Parallel()
 
-		c := New(Options{}).(*collector)
+		coll, err := New(Options{})
+		require.NoError(t, err)
+		c := coll.(*collector)
 		c.keys["test"] = struct{}{}
 		assert.Len(t, c.keys, 1)
 		c.Pop("test")
@@ -274,7 +384,9 @@ func Test_Pop(t *testing.T) {
 	t.Run("popping a key which doesn't exist should not panic", func(t *testing.T) {
 		t.Parallel()
 
-		c := New(Options{}).(*collector)
+		coll, err := New(Options{})
+		require.NoError(t, err)
+		c := coll.(*collector)
 		c.keys["not-test"] = struct{}{}
 		assert.Len(t, c.keys, 1)
 		c.Pop("test")
@@ -288,7 +400,9 @@ func Test_collect(t *testing.T) {
 	t.Run("if there are no keys to delete, then expect no call", func(t *testing.T) {
 		t.Parallel()
 
-		c := New(Options{}).(*collector)
+		coll, err := New(Options{})
+		require.NoError(t, err)
+		c := coll.(*collector)
 		assert.Empty(t, c.keys)
 		require.NoError(t, c.collect())
 	})
@@ -297,9 +411,11 @@ func Test_collect(t *testing.T) {
 		t.Parallel()
 
 		client := tests.EmbeddedETCD(t)
-		c := New(Options{
+		coll, err := New(Options{
 			Client: client,
-		}).(*collector)
+		})
+		require.NoError(t, err)
+		c := coll.(*collector)
 
 		for i := 0; i < 10; i++ {
 			_, err := client.Put(context.Background(), fmt.Sprintf("/test/%d", i), "value")
@@ -325,13 +441,15 @@ func Test_collect(t *testing.T) {
 		}
 	})
 
-	t.Run("should no delete other keys which are not marked for deletion", func(t *testing.T) {
+	t.Run("should not delete other keys which are not marked for deletion", func(t *testing.T) {
 		t.Parallel()
 
 		client := tests.EmbeddedETCD(t)
-		c := New(Options{
+		coll, err := New(Options{
 			Client: client,
-		}).(*collector)
+		})
+		require.NoError(t, err)
+		c := coll.(*collector)
 
 		for i := 0; i < 10; i++ {
 			_, err := client.Put(context.Background(), fmt.Sprintf("/test/%d", i), "value")

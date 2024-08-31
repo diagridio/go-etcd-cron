@@ -24,7 +24,7 @@ import (
 	"github.com/diagridio/go-etcd-cron/internal/grave"
 	"github.com/diagridio/go-etcd-cron/internal/key"
 	"github.com/diagridio/go-etcd-cron/internal/partitioner"
-	"github.com/diagridio/go-etcd-cron/internal/tests"
+	"github.com/diagridio/go-etcd-cron/tests"
 )
 
 func Test_Run(t *testing.T) {
@@ -40,10 +40,12 @@ func Test_Run(t *testing.T) {
 		t.Parallel()
 
 		client := tests.EmbeddedETCD(t)
+		collector, err := garbage.New(garbage.Options{Client: client})
+		require.NoError(t, err)
 		i := New(Options{
 			Partitioner: part,
 			Client:      client,
-			Collector:   garbage.New(garbage.Options{Client: client}),
+			Collector:   collector,
 			Yard:        grave.New(),
 			Key: key.New(key.Options{
 				Namespace:   "abc",
@@ -81,6 +83,8 @@ func Test_Run(t *testing.T) {
 		t.Parallel()
 
 		client := tests.EmbeddedETCD(t)
+		collector, err := garbage.New(garbage.Options{Client: client})
+		require.NoError(t, err)
 
 		jobUID1, err := proto.Marshal(&api.JobStored{PartitionId: 1})
 		require.NoError(t, err)
@@ -104,7 +108,7 @@ func Test_Run(t *testing.T) {
 		i := New(Options{
 			Partitioner: part,
 			Client:      client,
-			Collector:   garbage.New(garbage.Options{Client: client}),
+			Collector:   collector,
 			Yard:        grave.New(),
 			Key: key.New(key.Options{
 				Namespace:   "abc",
@@ -152,6 +156,8 @@ func Test_Run(t *testing.T) {
 		t.Parallel()
 
 		client := tests.EmbeddedETCD(t)
+		collector, err := garbage.New(garbage.Options{Client: client})
+		require.NoError(t, err)
 
 		jobUID1, err := proto.Marshal(&api.JobStored{PartitionId: 1})
 		require.NoError(t, err)
@@ -180,7 +186,7 @@ func Test_Run(t *testing.T) {
 		i := New(Options{
 			Partitioner: part,
 			Client:      client,
-			Collector:   garbage.New(garbage.Options{Client: client}),
+			Collector:   collector,
 			Yard:        grave.New(),
 			Key: key.New(key.Options{
 				Namespace:   "abc",

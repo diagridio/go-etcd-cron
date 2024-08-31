@@ -9,10 +9,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"strings"
 
+	clientv3 "go.etcd.io/etcd/client/v3"
 	"google.golang.org/protobuf/proto"
-	"k8s.io/apimachinery/pkg/util/validation"
 
 	"github.com/diagridio/go-etcd-cron/api"
 )
@@ -103,8 +102,6 @@ func (c *cron) Delete(ctx context.Context, name string) error {
 	if _, err := c.client.Delete(ctx, jobKey); err != nil {
 		return err
 	}
-	counterKey := c.key.CounterKey(name)
-	c.collector.Push(counterKey)
 
 	if _, ok := c.queueCache.Load(jobKey); !ok {
 		return nil
@@ -114,17 +111,54 @@ func (c *cron) Delete(ctx context.Context, name string) error {
 	return c.queue.Dequeue(jobKey)
 }
 
-// validateName validates the name of a job.
-func (c *cron) validateName(name string) error {
-	if len(name) == 0 {
-		return errors.New("job name cannot be empty")
+// DeletePrefixes deletes cron jobs with the given prefixes from the cron
+// instance.
+func (c *cron) DeletePrefixes(ctx context.Context, prefixes ...string) error {
+	select {
+	case <-c.readyCh:
+	case <-c.closeCh:
+		return errors.New("cron is closed")
+	case <-ctx.Done():
+		return ctx.Err()
 	}
 
-	for _, segment := range strings.Split(strings.ToLower(c.validateNameReplacer.Replace(name)), "||") {
-		if errs := validation.IsDNS1123Subdomain(segment); len(errs) > 0 {
-			return fmt.Errorf("job name is invalid %q: %s", name, strings.Join(errs, ", "))
+	for _, prefix := range prefixes {
+		if len(prefix) == 0 {
+			continue
+		}
+
+		if err := c.validateName(prefix); err != nil {
+			return err
 		}
 	}
 
-	return nil
+	var errs []error
+	removeFromCache := func(jobKey string) {
+		c.queueLock.Lock(jobKey)
+		defer c.queueLock.DeleteUnlock(jobKey)
+
+		if _, ok := c.queueCache.Load(jobKey); ok {
+			return
+		}
+
+		c.queueCache.Delete(jobKey)
+		errs = append(errs, c.queue.Dequeue(jobKey))
+	}
+
+	for _, prefix := range prefixes {
+		keyPrefix := c.key.JobKey(prefix)
+		c.log.V(3).Info("deleting jobs with prefix", "prefix", keyPrefix)
+
+		resp, err := c.client.Delete(ctx, keyPrefix, clientv3.WithPrefix(), clientv3.WithPrevKV())
+		if err != nil {
+			errs = append(errs, fmt.Errorf("failed to delete jobs with prefix %q: %w", prefix, err))
+			continue
+		}
+
+		for _, kv := range resp.PrevKvs {
+			removeFromCache(string(kv.Key))
+		}
+	}
+
+	return errors.Join(errs...)
 }

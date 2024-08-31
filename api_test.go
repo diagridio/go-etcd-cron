@@ -3,11 +3,11 @@ Copyright (c) 2024 Diagrid Inc.
 Licensed under the MIT License.
 */
 
-package etcdcron
+package etcdcron_test
 
 import (
 	"context"
-	"sync/atomic"
+	"strconv"
 	"testing"
 	"time"
 
@@ -16,15 +16,17 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	etcdcron "github.com/diagridio/go-etcd-cron"
 	"github.com/diagridio/go-etcd-cron/api"
-	"github.com/diagridio/go-etcd-cron/internal/tests"
+	"github.com/diagridio/go-etcd-cron/tests"
+	"github.com/diagridio/go-etcd-cron/tests/cron"
 )
 
 func Test_CRUD(t *testing.T) {
 	t.Parallel()
 
 	client := tests.EmbeddedETCDBareClient(t)
-	cron, err := New(Options{
+	cron, err := etcdcron.New(etcdcron.Options{
 		Log:            logr.Discard(),
 		Client:         client,
 		Namespace:      "",
@@ -99,7 +101,7 @@ func Test_Add(t *testing.T) {
 		t.Parallel()
 
 		client := tests.EmbeddedETCDBareClient(t)
-		cron, err := New(Options{
+		cron, err := etcdcron.New(etcdcron.Options{
 			Log:            logr.Discard(),
 			Client:         client,
 			Namespace:      "abc",
@@ -120,7 +122,7 @@ func Test_Add(t *testing.T) {
 		t.Parallel()
 
 		client := tests.EmbeddedETCDBareClient(t)
-		cron, err := New(Options{
+		cron, err := etcdcron.New(etcdcron.Options{
 			Log:            logr.Discard(),
 			Client:         client,
 			Namespace:      "abc",
@@ -143,7 +145,7 @@ func Test_Add(t *testing.T) {
 		t.Parallel()
 
 		client := tests.EmbeddedETCDBareClient(t)
-		cron, err := New(Options{
+		cron, err := etcdcron.New(etcdcron.Options{
 			Log:            logr.Discard(),
 			Client:         client,
 			Namespace:      "abc",
@@ -177,7 +179,7 @@ func Test_Add(t *testing.T) {
 		t.Parallel()
 
 		client := tests.EmbeddedETCDBareClient(t)
-		cron, err := New(Options{
+		cron, err := etcdcron.New(etcdcron.Options{
 			Log:            logr.Discard(),
 			Client:         client,
 			Namespace:      "abc",
@@ -213,7 +215,7 @@ func Test_Get(t *testing.T) {
 		t.Parallel()
 
 		client := tests.EmbeddedETCDBareClient(t)
-		cron, err := New(Options{
+		cron, err := etcdcron.New(etcdcron.Options{
 			Log:            logr.Discard(),
 			Client:         client,
 			Namespace:      "abc",
@@ -234,7 +236,7 @@ func Test_Get(t *testing.T) {
 		t.Parallel()
 
 		client := tests.EmbeddedETCDBareClient(t)
-		cron, err := New(Options{
+		cron, err := etcdcron.New(etcdcron.Options{
 			Log:            logr.Discard(),
 			Client:         client,
 			Namespace:      "abc",
@@ -257,7 +259,7 @@ func Test_Get(t *testing.T) {
 		t.Parallel()
 
 		client := tests.EmbeddedETCDBareClient(t)
-		cron, err := New(Options{
+		cron, err := etcdcron.New(etcdcron.Options{
 			Log:            logr.Discard(),
 			Client:         client,
 			Namespace:      "abc",
@@ -294,221 +296,228 @@ func Test_Delete(t *testing.T) {
 	t.Run("returns context error if cron not ready in time", func(t *testing.T) {
 		t.Parallel()
 
-		client := tests.EmbeddedETCDBareClient(t)
-		cron, err := New(Options{
-			Log:            logr.Discard(),
-			Client:         client,
-			Namespace:      "abc",
-			PartitionID:    0,
-			PartitionTotal: 1,
-			TriggerFn:      func(context.Context, *api.TriggerRequest) bool { return true },
-		})
-		require.NoError(t, err)
+		c := cron.SinglePartition(t)
 
 		ctx, cancel := context.WithCancel(context.Background())
 		cancel()
-		require.Error(t, cron.Delete(ctx, "def"))
+		require.Error(t, c.Delete(ctx, "def"))
 	})
 
 	t.Run("returns closed error if cron is closed", func(t *testing.T) {
 		t.Parallel()
 
-		client := tests.EmbeddedETCDBareClient(t)
-		cron, err := New(Options{
-			Log:            logr.Discard(),
-			Client:         client,
-			Namespace:      "abc",
-			PartitionID:    0,
-			PartitionTotal: 1,
-			TriggerFn:      func(context.Context, *api.TriggerRequest) bool { return true },
-		})
-		require.NoError(t, err)
+		c := cron.SinglePartition(t)
 
 		ctx, cancel := context.WithCancel(context.Background())
 		cancel()
-		require.NoError(t, cron.Run(ctx))
+		require.NoError(t, c.Run(ctx))
 
-		require.Error(t, cron.Delete(context.Background(), "def"))
+		require.Error(t, c.Delete(context.Background(), "def"))
 	})
 
 	t.Run("invalid name should error", func(t *testing.T) {
 		t.Parallel()
 
-		client := tests.EmbeddedETCDBareClient(t)
-		cron, err := New(Options{
-			Log:            logr.Discard(),
-			Client:         client,
-			Namespace:      "abc",
-			PartitionID:    0,
-			PartitionTotal: 1,
-			TriggerFn:      func(context.Context, *api.TriggerRequest) bool { return true },
-		})
-		require.NoError(t, err)
+		c := cron.SinglePartitionRun(t)
 
-		errCh := make(chan error)
-		ctx, cancel := context.WithCancel(context.Background())
-		t.Cleanup(func() {
-			cancel()
-			select {
-			case err := <-errCh:
-				require.NoError(t, err)
-			case <-time.After(5 * time.Second):
-				t.Fatal("timeout waiting for cron to stop")
-			}
-		})
-		go func() {
-			errCh <- cron.Run(ctx)
-		}()
-
-		require.Error(t, cron.Delete(context.Background(), "./."))
+		require.Error(t, c.Delete(context.Background(), "./."))
 	})
 
-	t.Run("deleting a job should dequeue it", func(t *testing.T) {
+	t.Run("deleting a job should dequeue it and delete counter", func(t *testing.T) {
 		t.Parallel()
 
-		var calls atomic.Int64
-		client := tests.EmbeddedETCDBareClient(t)
-		cron, err := New(Options{
-			Log:            logr.Discard(),
-			Client:         client,
-			Namespace:      "abc",
-			PartitionID:    0,
-			PartitionTotal: 1,
-			TriggerFn:      func(context.Context, *api.TriggerRequest) bool { calls.Add(1); return true },
-		})
-		require.NoError(t, err)
+		c := cron.SinglePartitionRun(t)
 
-		errCh := make(chan error)
-		ctx, cancel := context.WithCancel(context.Background())
-		t.Cleanup(func() {
-			cancel()
-			select {
-			case err := <-errCh:
-				require.NoError(t, err)
-			case <-time.After(5 * time.Second):
-				t.Fatal("timeout waiting for cron to stop")
-			}
-		})
-		go func() {
-			errCh <- cron.Run(ctx)
-		}()
-
-		require.NoError(t, cron.Add(context.Background(), "abc", &api.Job{
+		require.NoError(t, c.Add(context.Background(), "abc", &api.Job{
 			Schedule: ptr.Of("@every 1s"),
 		}))
 
 		assert.Eventually(t, func() bool {
-			return calls.Load() > 0
+			return c.Calls.Load() > 0
 		}, time.Second*3, time.Millisecond*10)
 
-		require.NoError(t, cron.Delete(context.Background(), "abc"))
-		current := calls.Load()
+		assert.EventuallyWithT(t, func(co *assert.CollectT) {
+			assert.Len(co, c.Counters(t).Kvs, 1)
+		}, time.Second*3, time.Millisecond*10)
+
+		require.NoError(t, c.Delete(context.Background(), "abc"))
+
+		assert.EventuallyWithT(t, func(co *assert.CollectT) {
+			assert.Len(co, c.Counters(t).Kvs, 0)
+		}, time.Second*3, time.Millisecond*10)
+
+		current := c.Calls.Load()
 
 		time.Sleep(time.Second * 2)
-		assert.Equal(t, current, calls.Load())
+		assert.Equal(t, current, c.Calls.Load())
+	})
+
+	t.Run("deleting jobs in cluster should delete jobs", func(t *testing.T) {
+		t.Parallel()
+
+		cr := cron.TripplePartitionRun(t)
+
+		for i := 0; i < 1000; i++ {
+			require.NoError(t, cr.Add(context.Background(), "a"+strconv.Itoa(i), &api.Job{Schedule: ptr.Of("@every 1s")}))
+		}
+
+		assert.Len(t, cr.Jobs(t).Kvs, 1000)
+		assert.EventuallyWithT(t, func(c *assert.CollectT) {
+			assert.Len(c, cr.Counters(t).Kvs, 1000)
+		}, time.Second*10, time.Millisecond*10)
+
+		for i := 0; i < 1000; i++ {
+			require.NoError(t, cr.Delete(context.Background(), "a"+strconv.Itoa(i)))
+		}
+
+		assert.Empty(t, cr.Jobs(t).Kvs)
+
+		assert.EventuallyWithT(t, func(c *assert.CollectT) {
+			assert.Empty(c, cr.Counters(t).Kvs)
+		}, time.Second*10, time.Millisecond*10)
+
+		calls := cr.Calls.Load()
+		time.Sleep(time.Second * 2)
+		assert.Equal(t, calls, cr.Calls.Load())
 	})
 }
 
-func Test_validateName(t *testing.T) {
+func Test_DeletePrefixes(t *testing.T) {
 	t.Parallel()
 
-	tests := []struct {
-		name   string
-		expErr bool
-	}{
-		{
-			name:   "",
-			expErr: true,
-		},
-		{
-			name:   "/",
-			expErr: true,
-		},
-		{
-			name:   "/foo/",
-			expErr: true,
-		},
-		{
-			name:   "foo/",
-			expErr: true,
-		},
-		{
-			name:   ".",
-			expErr: true,
-		},
-		{
-			name:   "..",
-			expErr: true,
-		},
-		{
-			name:   "./.",
-			expErr: true,
-		},
-		{
-			name:   "fo.o",
-			expErr: false,
-		},
-		{
-			name:   "fo...o",
-			expErr: true,
-		},
-		{
-			name:   "valid",
-			expErr: false,
-		},
-		{
-			name:   "||",
-			expErr: true,
-		},
-		{
-			name:   "foo||",
-			expErr: true,
-		},
-		{
-			name:   "||foo",
-			expErr: true,
-		},
-		{
-			name:   "foo||foo",
-			expErr: false,
-		},
-		{
-			name:   "foo.bar||foo",
-			expErr: false,
-		},
-		{
-			name:   "foo.BAR||foo",
-			expErr: false,
-		},
-		{
-			name:   "foo.BAR_f-oo||foo",
-			expErr: false,
-		},
-		{
-			name:   "actorreminder||dapr-tests||dapr.internal.dapr-tests.perf-workflowsapp.workflow||24b3fbad-0db5-4e81-a272-71f6018a66a6||start-4NYDFil-",
-			expErr: false,
-		},
-		{
-			name:   "aABVCD||dapr-::123:123||dapr.internal.dapr-tests.perf-workflowsapp.workflow||24b3fbad-0db5-4e81-a272-71f6018a66a6||start-4NYDFil-",
-			expErr: false,
-		},
-	}
+	t.Run("returns context error if cron not ready in time", func(t *testing.T) {
+		t.Parallel()
 
-	for _, test := range tests {
-		name := test.name
-		expErr := test.expErr
-		t.Run(test.name, func(t *testing.T) {
-			t.Parallel()
-			c, err := New(Options{
-				Log:            logr.Discard(),
-				Namespace:      "",
-				PartitionID:    0,
-				PartitionTotal: 1,
-				TriggerFn:      func(context.Context, *api.TriggerRequest) bool { return true },
-			})
-			require.NoError(t, err)
-			err = c.(*cron).validateName(name)
-			assert.Equal(t, expErr, err != nil, "%v", err)
-		})
-	}
+		c := cron.SinglePartition(t)
+
+		ctx, cancel := context.WithCancel(context.Background())
+		cancel()
+		require.Error(t, c.DeletePrefixes(ctx, "foobar"))
+	})
+
+	t.Run("returns closed error if cron is closed", func(t *testing.T) {
+		t.Parallel()
+
+		c := cron.SinglePartition(t)
+
+		ctx, cancel := context.WithCancel(context.Background())
+		cancel()
+		require.NoError(t, c.Run(ctx))
+
+		require.Error(t, c.DeletePrefixes(context.Background(), "foobar"))
+	})
+
+	t.Run("invalid name should error", func(t *testing.T) {
+		t.Parallel()
+
+		c := cron.SinglePartitionRun(t)
+		require.Error(t, c.DeletePrefixes(context.Background(), "./."))
+	})
+
+	t.Run("deleting a job should dequeue it and delete counter", func(t *testing.T) {
+		t.Parallel()
+
+		cr := cron.SinglePartitionRun(t)
+
+		require.NoError(t, cr.Add(context.Background(), "a1", &api.Job{
+			Schedule: ptr.Of("@every 1s"),
+		}))
+		require.NoError(t, cr.Add(context.Background(), "b2", &api.Job{
+			Schedule: ptr.Of("@every 1s"),
+		}))
+
+		assert.Len(t, cr.Jobs(t).Kvs, 2)
+
+		assert.EventuallyWithT(t, func(t *assert.CollectT) {
+			assert.Greater(t, cr.Calls.Load(), int64(0))
+		}, time.Second*3, time.Millisecond*10)
+
+		assert.EventuallyWithT(t, func(c *assert.CollectT) {
+			counters := cr.Counters(t)
+			if assert.Len(c, counters.Kvs, 2) {
+				assert.ElementsMatch(t,
+					[]string{"abc/counters/a1", "abc/counters/b2"},
+					[]string{string(counters.Kvs[0].Key), string(counters.Kvs[1].Key)},
+				)
+			}
+		}, time.Second*3, time.Millisecond*10)
+
+		require.NoError(t, cr.DeletePrefixes(context.Background(), "a"))
+
+		assert.Len(t, cr.Jobs(t).Kvs, 1)
+
+		assert.EventuallyWithT(t, func(c *assert.CollectT) {
+			assert.Len(c, cr.Counters(t).Kvs, 1)
+		}, time.Second*3, time.Millisecond*10)
+	})
+
+	t.Run("deleting with empty string should delete all jobs", func(t *testing.T) {
+		t.Parallel()
+
+		cr := cron.SinglePartitionRun(t)
+
+		require.NoError(t, cr.Add(context.Background(), "a1", &api.Job{Schedule: ptr.Of("@every 1s")}))
+		require.NoError(t, cr.Add(context.Background(), "b2", &api.Job{Schedule: ptr.Of("@every 1s")}))
+		require.NoError(t, cr.Add(context.Background(), "c3", &api.Job{Schedule: ptr.Of("@every 1s")}))
+
+		assert.Len(t, cr.Jobs(t).Kvs, 3)
+		assert.EventuallyWithT(t, func(c *assert.CollectT) {
+			assert.Len(c, cr.Counters(t).Kvs, 3)
+		}, time.Second*3, time.Millisecond*10)
+
+		require.NoError(t, cr.DeletePrefixes(context.Background(), ""))
+
+		assert.Empty(t, cr.Jobs(t).Kvs)
+
+		assert.EventuallyWithT(t, func(c *assert.CollectT) {
+			assert.Empty(c, cr.Counters(t).Kvs)
+		}, time.Second*3, time.Millisecond*10)
+	})
+
+	t.Run("deleting all with prefix in cluster should delete all jobs with prefix", func(t *testing.T) {
+		t.Parallel()
+
+		cr := cron.TripplePartitionRun(t)
+
+		for i := 0; i < 1000; i++ {
+			require.NoError(t, cr.Add(context.Background(), "a"+strconv.Itoa(i), &api.Job{Schedule: ptr.Of("@every 1s")}))
+		}
+
+		assert.Len(t, cr.Jobs(t).Kvs, 1000)
+		assert.EventuallyWithT(t, func(c *assert.CollectT) {
+			assert.Len(c, cr.Counters(t).Kvs, 1000)
+		}, time.Second*10, time.Millisecond*10)
+
+		require.NoError(t, cr.DeletePrefixes(context.Background(), "a"))
+
+		assert.Empty(t, cr.Jobs(t).Kvs)
+
+		assert.EventuallyWithT(t, func(c *assert.CollectT) {
+			assert.Empty(c, cr.Counters(t).Kvs)
+		}, time.Second*10, time.Millisecond*10)
+
+		calls := cr.Calls.Load()
+		time.Sleep(time.Second * 2)
+		assert.Equal(t, calls, cr.Calls.Load())
+	})
+
+	t.Run("deleting no prefixes should delete nothing", func(t *testing.T) {
+		t.Parallel()
+
+		cr := cron.SinglePartitionRun(t)
+
+		require.NoError(t, cr.Add(context.Background(), "a1", &api.Job{Schedule: ptr.Of("@every 1s")}))
+		require.NoError(t, cr.Add(context.Background(), "b2", &api.Job{Schedule: ptr.Of("@every 1s")}))
+		require.NoError(t, cr.Add(context.Background(), "c3", &api.Job{Schedule: ptr.Of("@every 1s")}))
+
+		assert.Len(t, cr.Jobs(t).Kvs, 3)
+		assert.EventuallyWithT(t, func(c *assert.CollectT) {
+			assert.Len(c, cr.Counters(t).Kvs, 3)
+		}, time.Second*3, time.Millisecond*10)
+
+		require.NoError(t, cr.DeletePrefixes(context.Background()))
+
+		assert.Len(t, cr.Jobs(t).Kvs, 3)
+		assert.Len(t, cr.Counters(t).Kvs, 3)
+	})
 }
