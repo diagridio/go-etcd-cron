@@ -46,6 +46,9 @@ func Test_retry(t *testing.T) {
 	}, 5*time.Second, 10*time.Millisecond)
 	ok.Store(true)
 	triggered := helper.triggered.Load()
+	assert.EventuallyWithT(t, func(c *assert.CollectT) {
+		assert.Equal(c, triggered+1, helper.triggered.Load())
+	}, time.Second*5, time.Millisecond*10)
 	<-time.After(3 * time.Second)
 	assert.Equal(t, triggered+1, helper.triggered.Load())
 }
