@@ -310,6 +310,7 @@ func Test_handleEvent(t *testing.T) {
 		"if job is for partition, return job on DELETE": {
 			ev: &clientv3.Event{
 				Type:   clientv3.EventTypeDelete,
+				Kv:     &mvccpb.KeyValue{Value: jobUID2, Key: []byte("abc/jobs/3")},
 				PrevKv: &mvccpb.KeyValue{Value: jobUID2},
 			},
 			expEvent: &Event{
