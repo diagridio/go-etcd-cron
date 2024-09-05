@@ -24,7 +24,7 @@ import (
 
 	"github.com/diagridio/go-etcd-cron/api"
 	"github.com/diagridio/go-etcd-cron/internal/client"
-	"github.com/diagridio/go-etcd-cron/internal/tests"
+	"github.com/diagridio/go-etcd-cron/tests"
 )
 
 func Test_retry(t *testing.T) {
@@ -687,5 +687,109 @@ func testCronWithOptions(t *testing.T, opts testCronOptions) *helper {
 		cron:      cron,
 		allCrons:  allCrns,
 		triggered: &triggered,
+	}
+}
+
+func Test_validateName(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name   string
+		expErr bool
+	}{
+		{
+			name:   "",
+			expErr: true,
+		},
+		{
+			name:   "/",
+			expErr: true,
+		},
+		{
+			name:   "/foo/",
+			expErr: true,
+		},
+		{
+			name:   "foo/",
+			expErr: true,
+		},
+		{
+			name:   ".",
+			expErr: true,
+		},
+		{
+			name:   "..",
+			expErr: true,
+		},
+		{
+			name:   "./.",
+			expErr: true,
+		},
+		{
+			name:   "fo.o",
+			expErr: false,
+		},
+		{
+			name:   "fo...o",
+			expErr: true,
+		},
+		{
+			name:   "valid",
+			expErr: false,
+		},
+		{
+			name:   "||",
+			expErr: true,
+		},
+		{
+			name:   "foo||",
+			expErr: true,
+		},
+		{
+			name:   "||foo",
+			expErr: true,
+		},
+		{
+			name:   "foo||foo",
+			expErr: false,
+		},
+		{
+			name:   "foo.bar||foo",
+			expErr: false,
+		},
+		{
+			name:   "foo.BAR||foo",
+			expErr: false,
+		},
+		{
+			name:   "foo.BAR_f-oo||foo",
+			expErr: false,
+		},
+		{
+			name:   "actorreminder||dapr-tests||dapr.internal.dapr-tests.perf-workflowsapp.workflow||24b3fbad-0db5-4e81-a272-71f6018a66a6||start-4NYDFil-",
+			expErr: false,
+		},
+		{
+			name:   "aABVCD||dapr-::123:123||dapr.internal.dapr-tests.perf-workflowsapp.workflow||24b3fbad-0db5-4e81-a272-71f6018a66a6||start-4NYDFil-",
+			expErr: false,
+		},
+	}
+
+	for _, test := range tests {
+		name := test.name
+		expErr := test.expErr
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			c, err := New(Options{
+				Log:            logr.Discard(),
+				Namespace:      "",
+				PartitionID:    0,
+				PartitionTotal: 1,
+				TriggerFn:      func(context.Context, *api.TriggerRequest) bool { return true },
+			})
+			require.NoError(t, err)
+			err = c.(*cron).validateName(name)
+			assert.Equal(t, expErr, err != nil, "%v", err)
+		})
 	}
 }

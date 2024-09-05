@@ -160,7 +160,9 @@ func (i *Informer) handleEvent(ev *clientv3.Event) (*Event, error) {
 		if i.yard.HasJustDeleted(string(ev.PrevKv.Key)) {
 			return nil, nil
 		}
-		i.collector.Push(i.key.CounterKey(i.key.JobName(ev.Kv.Key)))
+		if ev.Kv != nil {
+			i.collector.Push(i.key.CounterKey(i.key.JobName(ev.Kv.Key)))
+		}
 
 		kv = ev.PrevKv
 	default:

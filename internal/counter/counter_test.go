@@ -21,7 +21,7 @@ import (
 	"github.com/diagridio/go-etcd-cron/internal/grave"
 	"github.com/diagridio/go-etcd-cron/internal/key"
 	"github.com/diagridio/go-etcd-cron/internal/scheduler"
-	"github.com/diagridio/go-etcd-cron/internal/tests"
+	"github.com/diagridio/go-etcd-cron/tests"
 )
 
 func Test_New(t *testing.T) {
@@ -62,7 +62,8 @@ func Test_New(t *testing.T) {
 		_, err = client.Put(context.Background(), "abc/counters/1", string(counterBytes))
 		require.NoError(t, err)
 
-		collector := garbage.New(garbage.Options{Client: client})
+		collector, err := garbage.New(garbage.Options{Client: client})
+		require.NoError(t, err)
 		collector.Push("abc/counters/1")
 
 		yard := grave.New()
@@ -133,7 +134,8 @@ func Test_New(t *testing.T) {
 		_, err = client.Put(context.Background(), "abc/counters/1", string(counterBytes))
 		require.NoError(t, err)
 
-		collector := garbage.New(garbage.Options{Client: client})
+		collector, err := garbage.New(garbage.Options{Client: client})
+		require.NoError(t, err)
 
 		yard := grave.New()
 
@@ -216,7 +218,8 @@ func Test_New(t *testing.T) {
 		_, err = client.Put(context.Background(), "abc/counters/1", string(counterBytes))
 		require.NoError(t, err)
 
-		collector := garbage.New(garbage.Options{Client: client})
+		collector, err := garbage.New(garbage.Options{Client: client})
+		require.NoError(t, err)
 
 		yard := grave.New()
 
@@ -306,7 +309,8 @@ func Test_New(t *testing.T) {
 		_, err = client.Put(context.Background(), "abc/counters/1", string(counterBytes))
 		require.NoError(t, err)
 
-		collector := garbage.New(garbage.Options{Client: client})
+		collector, err := garbage.New(garbage.Options{Client: client})
+		require.NoError(t, err)
 
 		yard := grave.New()
 
@@ -377,7 +381,8 @@ func Test_New(t *testing.T) {
 		_, err = client.Put(context.Background(), "abc/jobs/1", string(jobBytes))
 		require.NoError(t, err)
 
-		collector := garbage.New(garbage.Options{Client: client})
+		collector, err := garbage.New(garbage.Options{Client: client})
+		require.NoError(t, err)
 
 		yard := grave.New()
 
@@ -459,7 +464,8 @@ func Test_Trigger(t *testing.T) {
 		_, err = client.Put(context.Background(), "abc/counters/1", string(counterBytes))
 		require.NoError(t, err)
 
-		collector := garbage.New(garbage.Options{Client: client})
+		collector, err := garbage.New(garbage.Options{Client: client})
+		require.NoError(t, err)
 
 		ctx, cancel := context.WithCancel(context.Background())
 		errCh := make(chan error)
@@ -546,7 +552,8 @@ func Test_Trigger(t *testing.T) {
 		_, err = client.Put(context.Background(), "abc/counters/1", string(counterBytes))
 		require.NoError(t, err)
 
-		collector := garbage.New(garbage.Options{Client: client})
+		collector, err := garbage.New(garbage.Options{Client: client})
+		require.NoError(t, err)
 
 		ctx, cancel := context.WithCancel(context.Background())
 		errCh := make(chan error)
@@ -624,7 +631,8 @@ func Test_tickNext(t *testing.T) {
 		_, err = client.Put(context.Background(), "abc/counters/1", string(counterBytes))
 		require.NoError(t, err)
 
-		collector := garbage.New(garbage.Options{Client: client})
+		collector, err := garbage.New(garbage.Options{Client: client})
+		require.NoError(t, err)
 
 		ctx, cancel := context.WithCancel(context.Background())
 		errCh := make(chan error)
@@ -703,7 +711,8 @@ func Test_tickNext(t *testing.T) {
 		_, err = client.Put(context.Background(), "abc/counters/1", string(counterBytes))
 		require.NoError(t, err)
 
-		collector := garbage.New(garbage.Options{Client: client})
+		collector, err := garbage.New(garbage.Options{Client: client})
+		require.NoError(t, err)
 
 		ctx, cancel := context.WithCancel(context.Background())
 		errCh := make(chan error)
