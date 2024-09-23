@@ -15,6 +15,7 @@ import (
 
 	"github.com/dapr/kit/ptr"
 	"github.com/diagridio/go-etcd-cron/api"
+	"github.com/diagridio/go-etcd-cron/internal/api/stored"
 	"github.com/diagridio/go-etcd-cron/internal/garbage"
 	"github.com/diagridio/go-etcd-cron/internal/grave"
 	"github.com/diagridio/go-etcd-cron/internal/informer"
@@ -44,8 +45,8 @@ func Test_delete_race(t *testing.T) {
 		require.NoError(t, queue.HandleInformerEvent(context.Background(), &informer.Event{
 			IsPut: true,
 			Key:   []byte(jobKeys[i]),
-			Job: &api.JobStored{
-				Begin:       &api.JobStored_DueTime{DueTime: timestamppb.New(time.Now())},
+			Job: &stored.Job{
+				Begin:       &stored.Job_DueTime{DueTime: timestamppb.New(time.Now())},
 				PartitionId: 1,
 				Job:         &api.Job{Schedule: ptr.Of("@every 1s")},
 			},
