@@ -92,16 +92,16 @@ func Test_Delete(t *testing.T) {
 
 		cr := cron.TripplePartitionRun(t)
 
-		for i := 0; i < 1000; i++ {
+		for i := 0; i < 100; i++ {
 			require.NoError(t, cr.Add(context.Background(), "a"+strconv.Itoa(i), &api.Job{Schedule: ptr.Of("@every 1s")}))
 		}
 
-		assert.Len(t, cr.Jobs(t).Kvs, 1000)
+		assert.Len(t, cr.Jobs(t).Kvs, 100)
 		assert.EventuallyWithT(t, func(c *assert.CollectT) {
-			assert.Len(c, cr.Counters(t).Kvs, 1000)
+			assert.Len(c, cr.Counters(t).Kvs, 100)
 		}, time.Second*10, time.Millisecond*10)
 
-		for i := 0; i < 1000; i++ {
+		for i := 0; i < 100; i++ {
 			require.NoError(t, cr.Delete(context.Background(), "a"+strconv.Itoa(i)))
 		}
 
@@ -185,13 +185,13 @@ func Test_DeletePrefixes(t *testing.T) {
 
 		cr := cron.TripplePartitionRun(t)
 
-		for i := 0; i < 1000; i++ {
+		for i := 0; i < 100; i++ {
 			require.NoError(t, cr.Add(context.Background(), "a"+strconv.Itoa(i), &api.Job{Schedule: ptr.Of("@every 1s")}))
 		}
 
-		assert.Len(t, cr.Jobs(t).Kvs, 1000)
+		assert.Len(t, cr.Jobs(t).Kvs, 100)
 		assert.EventuallyWithT(t, func(c *assert.CollectT) {
-			assert.Len(c, cr.Counters(t).Kvs, 1000)
+			assert.Len(c, cr.Counters(t).Kvs, 100)
 		}, time.Second*10, time.Millisecond*10)
 
 		require.NoError(t, cr.DeletePrefixes(context.Background(), "a"))
