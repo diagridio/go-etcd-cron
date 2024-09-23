@@ -17,6 +17,7 @@ import (
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	"github.com/diagridio/go-etcd-cron/api"
+	"github.com/diagridio/go-etcd-cron/internal/api/stored"
 	"github.com/diagridio/go-etcd-cron/internal/garbage"
 	"github.com/diagridio/go-etcd-cron/internal/grave"
 	"github.com/diagridio/go-etcd-cron/internal/key"
@@ -43,7 +44,7 @@ func Test_New(t *testing.T) {
 				DueTime: ptr.Of(now.Format(time.RFC3339)),
 			},
 		}
-		counter := &api.Counter{
+		counter := &stored.Counter{
 			LastTrigger:    nil,
 			Count:          0,
 			JobPartitionId: 123,
@@ -115,7 +116,7 @@ func Test_New(t *testing.T) {
 				DueTime: ptr.Of(now.Format(time.RFC3339)),
 			},
 		}
-		counter := &api.Counter{
+		counter := &stored.Counter{
 			LastTrigger:    nil,
 			Count:          0,
 			JobPartitionId: 123,
@@ -199,7 +200,7 @@ func Test_New(t *testing.T) {
 				DueTime: ptr.Of(now.Format(time.RFC3339)),
 			},
 		}
-		counter := &api.Counter{
+		counter := &stored.Counter{
 			LastTrigger:    timestamppb.New(now),
 			Count:          1,
 			JobPartitionId: 456,
@@ -261,7 +262,7 @@ func Test_New(t *testing.T) {
 		require.Len(t, resp.Kvs, 1)
 		assert.Equal(t, jobBytes, resp.Kvs[0].Value)
 
-		counter = &api.Counter{
+		counter = &stored.Counter{
 			LastTrigger:    nil,
 			Count:          0,
 			JobPartitionId: 123,
@@ -290,7 +291,7 @@ func Test_New(t *testing.T) {
 				DueTime: ptr.Of(now.Format(time.RFC3339)),
 			},
 		}
-		counter := &api.Counter{
+		counter := &stored.Counter{
 			LastTrigger:    timestamppb.New(now),
 			Count:          1,
 			JobPartitionId: 123,
@@ -449,7 +450,7 @@ func Test_Trigger(t *testing.T) {
 				Schedule: ptr.Of("@every 1s"),
 			},
 		}
-		counter := &api.Counter{LastTrigger: nil, JobPartitionId: 123}
+		counter := &stored.Counter{LastTrigger: nil, JobPartitionId: 123}
 
 		sched, err := scheduler.NewBuilder().Scheduler(job)
 		require.NoError(t, err)
@@ -505,7 +506,7 @@ func Test_Trigger(t *testing.T) {
 		require.Len(t, resp.Kvs, 1)
 		assert.Equal(t, jobBytes, resp.Kvs[0].Value)
 
-		counterBytes, err = proto.Marshal(&api.Counter{
+		counterBytes, err = proto.Marshal(&stored.Counter{
 			LastTrigger:    timestamppb.New(now),
 			JobPartitionId: 123,
 			Count:          1,
@@ -533,7 +534,7 @@ func Test_Trigger(t *testing.T) {
 				DueTime: ptr.Of(now.Format(time.RFC3339)),
 			},
 		}
-		counter := &api.Counter{
+		counter := &stored.Counter{
 			LastTrigger:    nil,
 			JobPartitionId: 123,
 			Count:          0,
@@ -616,7 +617,7 @@ func Test_tickNext(t *testing.T) {
 				DueTime: ptr.Of(now.Format(time.RFC3339)),
 			},
 		}
-		counter := &api.Counter{LastTrigger: nil, JobPartitionId: 123}
+		counter := &stored.Counter{LastTrigger: nil, JobPartitionId: 123}
 
 		sched, err := scheduler.NewBuilder().Scheduler(job)
 		require.NoError(t, err)
@@ -692,7 +693,7 @@ func Test_tickNext(t *testing.T) {
 				DueTime: ptr.Of(now.Format(time.RFC3339)),
 			},
 		}
-		counter := &api.Counter{
+		counter := &stored.Counter{
 			LastTrigger:    timestamppb.New(now),
 			JobPartitionId: 123,
 			Count:          1,
@@ -807,7 +808,7 @@ func Test_updateNext(t *testing.T) {
 				job: &api.JobStored{Job: &api.Job{
 					Repeats: ptr.Of(uint32(4)),
 				}},
-				count: &api.Counter{
+				count: &stored.Counter{
 					Count: 4,
 				},
 			},
@@ -819,7 +820,7 @@ func Test_updateNext(t *testing.T) {
 				job: &api.JobStored{Job: &api.Job{
 					Repeats: ptr.Of(uint32(4)),
 				}},
-				count: &api.Counter{Count: 5},
+				count: &stored.Counter{Count: 5},
 			},
 			exp: false,
 		},
@@ -829,7 +830,7 @@ func Test_updateNext(t *testing.T) {
 				job: &api.JobStored{Job: &api.Job{
 					Repeats: ptr.Of(uint32(4)),
 				}},
-				count: &api.Counter{
+				count: &stored.Counter{
 					Count:       2,
 					LastTrigger: timestamppb.New(now.Add(5 * time.Second)),
 				},
@@ -842,7 +843,7 @@ func Test_updateNext(t *testing.T) {
 				job: &api.JobStored{Job: &api.Job{
 					Repeats: ptr.Of(uint32(4)),
 				}},
-				count: &api.Counter{
+				count: &stored.Counter{
 					Count:       4,
 					LastTrigger: timestamppb.New(now),
 				},
@@ -856,7 +857,7 @@ func Test_updateNext(t *testing.T) {
 					Expiration: timestamppb.New(now.Add(-5 * time.Second)),
 					Job:        new(api.Job),
 				},
-				count: &api.Counter{
+				count: &stored.Counter{
 					Count:       0,
 					LastTrigger: nil,
 				},
@@ -867,7 +868,7 @@ func Test_updateNext(t *testing.T) {
 			counter: &Counter{
 				schedule: oneshot,
 				job:      &api.JobStored{Job: new(api.Job)},
-				count: &api.Counter{
+				count: &stored.Counter{
 					Count:       0,
 					LastTrigger: nil,
 				},
@@ -879,7 +880,7 @@ func Test_updateNext(t *testing.T) {
 			counter: &Counter{
 				schedule: oneshot,
 				job:      &api.JobStored{Job: new(api.Job)},
-				count: &api.Counter{
+				count: &stored.Counter{
 					Count:       1,
 					LastTrigger: nil,
 				},

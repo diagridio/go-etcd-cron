@@ -24,6 +24,7 @@ import (
 	"google.golang.org/protobuf/types/known/wrapperspb"
 
 	"github.com/diagridio/go-etcd-cron/api"
+	"github.com/diagridio/go-etcd-cron/internal/api/stored"
 	"github.com/diagridio/go-etcd-cron/internal/client"
 	"github.com/diagridio/go-etcd-cron/tests"
 )
@@ -402,7 +403,7 @@ func Test_schedule(t *testing.T) {
 			},
 		})
 		require.NoError(t, err)
-		counterBytes, err := proto.Marshal(&api.Counter{
+		counterBytes, err := proto.Marshal(&stored.Counter{
 			LastTrigger:    nil,
 			Count:          0,
 			JobPartitionId: 123,
@@ -463,7 +464,7 @@ func Test_schedule(t *testing.T) {
 			},
 		})
 		require.NoError(t, err)
-		counterBytes, err := proto.Marshal(&api.Counter{
+		counterBytes, err := proto.Marshal(&stored.Counter{
 			LastTrigger:    timestamppb.New(now),
 			Count:          1,
 			JobPartitionId: 123,
