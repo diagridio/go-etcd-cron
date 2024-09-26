@@ -187,6 +187,7 @@ func (a *api) List(ctx context.Context, prefix string) (*cronapi.ListResponse, e
 	resp, err := a.client.Get(ctx,
 		a.key.JobKey(prefix),
 		clientv3.WithPrefix(),
+		clientv3.WithLimit(0),
 	)
 	if err != nil {
 		return nil, err

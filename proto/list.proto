@@ -25,6 +25,9 @@ message ListResponse {
   repeated NamedJob jobs = 1;
 
   // more indicates there are more jobs in the given prefix which do not fit in
-  // the response size.
-	bool more = 2;
+  // the response size. There is no limit requested from Etcd for the number of
+  // jobs to return.
+  // A `true` value simply indicates that there are more jobs in the prefix,
+  // there is currently no way to order, filter or paginate the results.
+  bool more = 2;
 }
