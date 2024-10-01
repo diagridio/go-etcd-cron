@@ -6,7 +6,7 @@ Licensed under the MIT License.
 package key
 
 import (
-	"path/filepath"
+	"path"
 	"strconv"
 )
 
@@ -38,30 +38,30 @@ func New(opts Options) *Key {
 
 // JobKey returns the job key for the given job name.
 func (k *Key) JobKey(name string) string {
-	return filepath.Join(k.namespace, "jobs", name)
+	return path.Join(k.namespace, "jobs", name)
 }
 
 // CounterKey returns the counter key for the given job name.
 func (k *Key) CounterKey(name string) string {
-	return filepath.Join(k.namespace, "counters", name)
+	return path.Join(k.namespace, "counters", name)
 }
 
 // LeadershipNamespace returns the namespace key for the leadership keys.
 func (k *Key) LeadershipNamespace() string {
-	return filepath.Join(k.namespace, "leadership")
+	return path.Join(k.namespace, "leadership")
 }
 
 // LeadershipKey returns the leadership key for this partition ID.
 func (k *Key) LeadershipKey() string {
-	return filepath.Join(k.namespace, "leadership", k.partitionID)
+	return path.Join(k.namespace, "leadership", k.partitionID)
 }
 
 // JobNamespace returns the job namespace key.
 func (k *Key) JobNamespace() string {
-	return filepath.Join(k.namespace, "jobs")
+	return path.Join(k.namespace, "jobs")
 }
 
 // JobName returns the job name from the given key.
 func (k *Key) JobName(key []byte) string {
-	return filepath.Base(string(key))
+	return path.Base(string(key))
 }
