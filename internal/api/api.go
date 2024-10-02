@@ -208,6 +208,5 @@ func (a *api) List(ctx context.Context, prefix string) (*cronapi.ListResponse, e
 
 	return &cronapi.ListResponse{
 		Jobs: jobs,
-		More: resp.More,
 	}, nil
 }
