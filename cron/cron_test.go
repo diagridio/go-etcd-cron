@@ -536,7 +536,7 @@ func testCronWithOptions(t *testing.T, opts testCronOptions) *helper {
 			PartitionID:    uint32(i),
 			PartitionTotal: opts.total,
 			TriggerFn: func(_ context.Context, req *api.TriggerRequest) bool {
-				defer triggered.Add(1)
+				defer func() { triggered.Add(1) }()
 				if opts.gotCh != nil {
 					opts.gotCh <- req
 				}
