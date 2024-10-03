@@ -32,10 +32,7 @@
         overlays = [ gomod2nix.overlays.default ];
       };
 
-      ci = import ./nix/ci.nix {
-        inherit src repo pkgs;
-        gomod2nix = (gomod2nix.packages.${system}.default);
-      };
+      ci = import ./nix/ci.nix { inherit pkgs; };
 
     in {
       apps = ci.apps;
@@ -43,9 +40,6 @@
       devShells.default = pkgs.mkShell {
         buildInputs = with pkgs; [
           go
-          gopls
-          gotools
-          go-tools
           gomod2nix.packages.${system}.default
         ];
       };

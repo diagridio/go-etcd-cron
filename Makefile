@@ -36,8 +36,8 @@ modtidy:
 # Target: gen-proto                                                            #
 ################################################################################
 PROTOC ?=protoc
-PROTOC_VERSION = 24.4
-PROTOBUF_SUITE_VERSION = 24.4
+PROTOC_VERSION = 25.4
+PROTOBUF_SUITE_VERSION = 25.4
 PROTOC_GEN_GO_VERSION = v1.32.0
 
 PROTOC_GEN_GO_GRPC_VERSION = 1.3.0

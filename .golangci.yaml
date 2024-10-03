@@ -4,7 +4,6 @@ linters:
  - wsl
  - wrapcheck
  - varnamelen
- - goerr113
  - ireturn
  - nilnil
  - gomnd
