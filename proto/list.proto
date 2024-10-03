@@ -1,0 +1,26 @@
+/*
+Copyright (c) 2024 Diagrid Inc.
+Licensed under the MIT License.
+*/
+
+syntax = "proto3";
+
+package api;
+
+import "proto/job.proto";
+
+option go_package = "github.com/diagridio/go-etcd-cron/api";
+
+message NamedJob {
+  // name is the name of the job.
+  string name = 1;
+
+  // job is the scheduled job.
+  Job job = 2;
+}
+
+// ListResponse is returned by the List RPC.
+message ListResponse {
+  // jobs is the list of jobs.
+  repeated NamedJob jobs = 1;
+}
