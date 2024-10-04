@@ -1,0 +1,37 @@
+/*
+Copyright (c) 2024 Diagrid Inc.
+Licensed under the MIT License.
+*/
+
+syntax = "proto3";
+
+package api;
+
+import "google/protobuf/duration.proto";
+
+option go_package = "github.com/diagridio/go-etcd-cron/api";
+
+// FailurePolicy defines the policy to apply when a job fails to trigger.
+message FailurePolicy {
+  // policy is the policy to apply when a job fails to trigger.
+  oneof policy {
+    FailurePolicyDrop drop = 1;
+    FailurePolicyConstant constant = 2;
+  }
+}
+
+// FailurePolicyDrop is a policy which drops the job tick when the job fails to
+// trigger.
+message FailurePolicyDrop {}
+
+// FailurePolicyRetry is a policy which retries the job at a consistent
+// delay when the job fails to trigger.
+message FailurePolicyConstant {
+  // delay is the constant delay to wait before retrying the job.
+  google.protobuf.Duration delay = 1;
+
+  // max_retries is the optional maximum number of retries to attempt before
+  // giving up.
+  // If unset, the Job will be retried indefinitely.
+  optional uint32 max_retries = 2;
+}

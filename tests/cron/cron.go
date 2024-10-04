@@ -27,6 +27,8 @@ type Cron struct {
 }
 
 func newCron(t *testing.T, client *clientv3.Client, total, id uint32) *Cron {
+	t.Helper()
+
 	var calls atomic.Int64
 	cron, err := cron.New(cron.Options{
 		Log:                              logr.Discard(),
@@ -47,6 +49,8 @@ func newCron(t *testing.T, client *clientv3.Client, total, id uint32) *Cron {
 }
 
 func (c *Cron) run(t *testing.T) *Cron {
+	t.Helper()
+
 	errCh := make(chan error)
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(func() {

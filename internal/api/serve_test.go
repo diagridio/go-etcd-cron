@@ -10,11 +10,11 @@ import (
 	"testing"
 	"time"
 
+	"github.com/dapr/kit/ptr"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	clientv3 "go.etcd.io/etcd/client/v3"
 
-	"github.com/dapr/kit/ptr"
 	"github.com/diagridio/go-etcd-cron/api"
 	"github.com/diagridio/go-etcd-cron/tests/cron"
 )
@@ -52,7 +52,7 @@ func Test_Get(t *testing.T) {
 
 	resp, err = c.Get(context.Background(), "xxx")
 	require.NoError(t, err)
-	assert.Equal(t, ptr.Of("@every 1s"), resp.Schedule)
+	assert.Equal(t, "@every 1s", resp.GetSchedule())
 }
 
 func Test_Delete(t *testing.T) {
@@ -78,7 +78,7 @@ func Test_Delete(t *testing.T) {
 		require.NoError(t, c.Delete(context.Background(), "abc"))
 
 		assert.EventuallyWithT(t, func(co *assert.CollectT) {
-			assert.Len(co, c.Counters(t).Kvs, 0)
+			assert.Empty(co, c.Counters(t).Kvs)
 		}, time.Second*3, time.Millisecond*10)
 
 		current := c.Calls.Load()
@@ -92,7 +92,7 @@ func Test_Delete(t *testing.T) {
 
 		cr := cron.TripplePartitionRun(t)
 
-		for i := 0; i < 100; i++ {
+		for i := range 100 {
 			require.NoError(t, cr.Add(context.Background(), "a"+strconv.Itoa(i), &api.Job{Schedule: ptr.Of("@every 1s")}))
 		}
 
@@ -101,7 +101,7 @@ func Test_Delete(t *testing.T) {
 			assert.Len(c, cr.Counters(t).Kvs, 100)
 		}, time.Second*10, time.Millisecond*10)
 
-		for i := 0; i < 100; i++ {
+		for i := range 100 {
 			require.NoError(t, cr.Delete(context.Background(), "a"+strconv.Itoa(i)))
 		}
 
@@ -135,7 +135,7 @@ func Test_DeletePrefixes(t *testing.T) {
 		assert.Len(t, cr.Jobs(t).Kvs, 2)
 
 		assert.EventuallyWithT(t, func(t *assert.CollectT) {
-			assert.Greater(t, cr.Calls.Load(), int64(0))
+			assert.Positive(t, cr.Calls.Load())
 		}, time.Second*3, time.Millisecond*10)
 
 		assert.EventuallyWithT(t, func(c *assert.CollectT) {
@@ -185,7 +185,7 @@ func Test_DeletePrefixes(t *testing.T) {
 
 		cr := cron.TripplePartitionRun(t)
 
-		for i := 0; i < 100; i++ {
+		for i := range 100 {
 			require.NoError(t, cr.Add(context.Background(), "a"+strconv.Itoa(i), &api.Job{Schedule: ptr.Of("@every 1s")}))
 		}
 
@@ -238,7 +238,7 @@ func Test_List(t *testing.T) {
 
 		resp, err := cron.List(context.Background(), "")
 		require.NoError(t, err)
-		assert.Empty(t, resp.Jobs)
+		assert.Empty(t, resp.GetJobs())
 	})
 
 	t.Run("List should return jobs which are in the namespace", func(t *testing.T) {
@@ -248,7 +248,7 @@ func Test_List(t *testing.T) {
 
 		resp, err := cron.List(context.Background(), "")
 		require.NoError(t, err)
-		assert.Empty(t, resp.Jobs)
+		assert.Empty(t, resp.GetJobs())
 
 		now := time.Now()
 		require.NoError(t, cron.Add(context.Background(), "a123", &api.Job{
@@ -260,46 +260,46 @@ func Test_List(t *testing.T) {
 
 		resp, err = cron.List(context.Background(), "")
 		require.NoError(t, err)
-		assert.Len(t, resp.Jobs, 2)
+		assert.Len(t, resp.GetJobs(), 2)
 		resp, err = cron.List(context.Background(), "a")
 		require.NoError(t, err)
-		assert.Len(t, resp.Jobs, 2)
+		assert.Len(t, resp.GetJobs(), 2)
 		resp, err = cron.List(context.Background(), "a1")
 		require.NoError(t, err)
-		assert.Len(t, resp.Jobs, 1)
+		assert.Len(t, resp.GetJobs(), 1)
 		resp, err = cron.List(context.Background(), "a123")
 		require.NoError(t, err)
-		assert.Len(t, resp.Jobs, 1)
+		assert.Len(t, resp.GetJobs(), 1)
 		resp, err = cron.List(context.Background(), "a345")
 		require.NoError(t, err)
-		assert.Len(t, resp.Jobs, 1)
+		assert.Len(t, resp.GetJobs(), 1)
 		resp, err = cron.List(context.Background(), "1")
 		require.NoError(t, err)
-		assert.Empty(t, resp.Jobs)
+		assert.Empty(t, resp.GetJobs())
 		resp, err = cron.List(context.Background(), "b123")
 		require.NoError(t, err)
-		assert.Empty(t, resp.Jobs)
+		assert.Empty(t, resp.GetJobs())
 
 		require.NoError(t, cron.Delete(context.Background(), "a123"))
 		resp, err = cron.List(context.Background(), "a")
 		require.NoError(t, err)
-		assert.Len(t, resp.Jobs, 1)
+		assert.Len(t, resp.GetJobs(), 1)
 		resp, err = cron.List(context.Background(), "a123")
 		require.NoError(t, err)
-		assert.Empty(t, resp.Jobs, 0)
+		assert.Empty(t, resp.GetJobs())
 		resp, err = cron.List(context.Background(), "a345")
 		require.NoError(t, err)
-		assert.Len(t, resp.Jobs, 1)
+		assert.Len(t, resp.GetJobs(), 1)
 
 		require.NoError(t, cron.Delete(context.Background(), "a345"))
 		resp, err = cron.List(context.Background(), "a")
 		require.NoError(t, err)
-		assert.Empty(t, resp.Jobs, 0)
+		assert.Empty(t, resp.GetJobs())
 		resp, err = cron.List(context.Background(), "a123")
 		require.NoError(t, err)
-		assert.Empty(t, resp.Jobs, 0)
+		assert.Empty(t, resp.GetJobs())
 		resp, err = cron.List(context.Background(), "a345")
 		require.NoError(t, err)
-		assert.Empty(t, resp.Jobs, 0)
+		assert.Empty(t, resp.GetJobs())
 	})
 }

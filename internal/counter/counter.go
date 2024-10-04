@@ -36,7 +36,7 @@ type Options struct {
 	Schedule scheduler.Interface
 
 	// Job is the job to count.
-	Job *api.JobStored
+	Job *stored.Job
 
 	// Yard is a graveyard for signalling that a job has just been deleted and
 	// therefore it's Delete informer event should be ignored.
@@ -58,7 +58,7 @@ type Counter struct {
 	schedule       scheduler.Interface
 	yard           *grave.Yard
 	collector      garbage.Interface
-	job            *api.JobStored
+	job            *stored.Job
 	count          *stored.Counter
 	next           time.Time
 	triggerRequest *api.TriggerRequest
@@ -142,27 +142,6 @@ func New(ctx context.Context, opts Options) (*Counter, bool, error) {
 	return c, true, nil
 }
 
-// Trigger updates the counter state given what the next trigger time was.
-// Returns true if the job will be triggered again.
-func (c *Counter) Trigger(ctx context.Context) (bool, error) {
-	// Increment the counter and update the last trigger time as the next trigger
-	// time.
-	c.count.Count++
-	c.count.LastTrigger = timestamppb.New(c.next)
-	if ok, err := c.tickNext(); err != nil || !ok {
-		return false, err
-	}
-
-	b, err := proto.Marshal(c.count)
-	if err != nil {
-		return false, err
-	}
-
-	// Update the counter in etcd and return the next trigger time.
-	_, err = c.client.Put(ctx, c.counterKey, string(b))
-	return true, err
-}
-
 // ScheduledTime is the time at which the job is scheduled to be triggered
 // next. Implements the kit events queueable item.
 func (c *Counter) ScheduledTime() time.Time {
@@ -179,27 +158,118 @@ func (c *Counter) TriggerRequest() *api.TriggerRequest {
 	return c.triggerRequest
 }
 
-// tickNext updates the next trigger time, and deletes the counter record if
-// needed.
-//
-//nonlint:contextcheck
-func (c *Counter) tickNext() (bool, error) {
-	if !c.updateNext() {
-		if err := c.client.DeleteMulti(c.jobKey); err != nil {
-			return false, err
-		}
-		// Mark the job as just been deleted, and push the counter key for garbage
-		// collection.
-		c.yard.Deleted(c.jobKey)
-		c.collector.Push(c.counterKey)
-		return false, nil
+// TriggerSuccess updates the counter state given what the next trigger time
+// was. Returns true if the job will be triggered again.
+func (c *Counter) TriggerSuccess(ctx context.Context) (bool, error) {
+	// Update the last trigger time as the next trigger time, and increment the
+	// counter.
+	// Set attempts to 0 as this trigger was successful.
+	//nolint:protogetter
+	if lt := c.schedule.Next(c.count.GetCount(), c.count.LastTrigger); lt != nil {
+		c.count.LastTrigger = timestamppb.New(*lt)
+	}
+	c.count.Count++
+	c.count.Attempts = 0
+
+	if ok, err := c.tickNext(); err != nil || !ok {
+		return false, err
 	}
 
-	return true, nil
+	b, err := proto.Marshal(c.count)
+	if err != nil {
+		return false, err
+	}
+
+	// Update the counter in etcd and return the next trigger time.
+	_, err = c.client.Put(ctx, c.counterKey, string(b))
+	return true, err
+}
+
+// TriggerFailed is called when trigging the job has been marked as failed from
+// the consumer. The counter is persisted at every attempt to ensure the number
+// of attempts are durable.
+// Returns true if the job failure policy indicates that the job should be
+// tried again. Returns false if the job should not be attempted again and was
+// deleted.
+func (c *Counter) TriggerFailed(ctx context.Context) (bool, error) {
+	// Increment the attempts counter as this count tick failed.
+	c.count.Attempts++
+
+	// If the failure policy indicates that this tick should not be tried again,
+	// we set the attempts to 0 and move to the next tick.
+	if !c.policyTryAgain() {
+		c.count.Count++
+		c.count.Attempts = 0
+		if ok, err := c.tickNext(); err != nil || !ok {
+			return false, err
+		}
+	}
+
+	b, err := proto.Marshal(c.count)
+	if err != nil {
+		return true, err
+	}
+
+	// Update the counter in etcd and return the next trigger time.
+	_, err = c.client.Put(ctx, c.counterKey, string(b))
+	return true, err
+}
+
+// policyTryAgain returns true if the failure policy indicates this job should
+// be tried again at this tick.
+func (c *Counter) policyTryAgain() bool {
+	fp := c.job.GetJob().GetFailurePolicy()
+	if fp == nil {
+		c.count.LastTrigger = timestamppb.New(c.next)
+		return false
+	}
+
+	//nolint:protogetter
+	switch p := fp.Policy.(type) {
+	case *api.FailurePolicy_Drop:
+		c.count.LastTrigger = timestamppb.New(c.next)
+		return false
+	case *api.FailurePolicy_Constant:
+		// Attempts need to be MaxRetries+1 for this counter tick to be dropped.
+		//nolint:protogetter
+		tryAgain := p.Constant.MaxRetries == nil || *p.Constant.MaxRetries >= c.count.Attempts
+		if tryAgain {
+			c.next = c.next.Add(p.Constant.GetDelay().AsDuration())
+		} else {
+			// We set the LastTrigger to the first attempt to ensure consistency of
+			// the Job schedule, regardless of the failure policy cadence and
+			// attempts.
+			//nolint:protogetter
+			if lt := c.schedule.Next(c.count.GetCount(), c.count.LastTrigger); lt != nil {
+				c.count.LastTrigger = timestamppb.New(*lt)
+			}
+		}
+		return tryAgain
+	default:
+		c.count.LastTrigger = timestamppb.New(c.next)
+		return false
+	}
+}
+
+// tickNext updates the next trigger time, and deletes the counter record if
+// needed.
+func (c *Counter) tickNext() (bool, error) {
+	if c.updateNext() {
+		return true, nil
+	}
+
+	if err := c.client.DeleteMulti(c.jobKey); err != nil {
+		return false, err
+	}
+	// Mark the job as just been deleted, and push the counter key for garbage
+	// collection.
+	c.yard.Deleted(c.jobKey)
+	c.collector.Push(c.counterKey)
+	return false, nil
 }
 
 // updateNext updates the counter's next trigger time.
-// returns false if the job and counter should be deleted because it has
+// Returns false if the job and counter should be deleted because it has
 // expired.
 func (c *Counter) updateNext() bool {
 	// If job completed repeats, delete the counter.

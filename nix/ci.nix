@@ -59,7 +59,8 @@ let
       echo ">> running check-gomod2nix ${repo}"
       check-gomod2nix ${repo}
       echo ">> running golangci-lint"
-      golangci-lint run --enable-all
+      golangci-lint config verify --verbose
+      golangci-lint run --enable-all --max-issues-per-linter=0 --max-same-issues=0
       echo ">> running go test --race -v -count 1 ./..."
       go test --race -v -count 1 ./...
     '';

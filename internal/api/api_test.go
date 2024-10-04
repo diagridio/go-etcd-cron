@@ -15,6 +15,7 @@ import (
 	"github.com/go-logr/logr"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"google.golang.org/protobuf/types/known/durationpb"
 
 	cronapi "github.com/diagridio/go-etcd-cron/api"
 	"github.com/diagridio/go-etcd-cron/internal/garbage"
@@ -24,9 +25,7 @@ import (
 	"github.com/diagridio/go-etcd-cron/tests"
 )
 
-var (
-	errCancel = errors.New("custom cancel")
-)
+var errCancel = errors.New("custom cancel")
 
 func Test_CRUD(t *testing.T) {
 	t.Parallel()
@@ -47,16 +46,31 @@ func Test_CRUD(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, &cronapi.Job{
 		DueTime: ptr.Of(now.Add(time.Hour).Format(time.RFC3339)),
+		FailurePolicy: &cronapi.FailurePolicy{Policy: &cronapi.FailurePolicy_Constant{
+			Constant: &cronapi.FailurePolicyConstant{
+				Delay: durationpb.New(time.Second), MaxRetries: ptr.Of(uint32(3)),
+			},
+		}},
 	}, resp)
 
 	newNow := time.Now()
 	require.NoError(t, api.Add(context.Background(), "def", &cronapi.Job{
 		DueTime: ptr.Of(newNow.Add(time.Hour).Format(time.RFC3339)),
+		FailurePolicy: &cronapi.FailurePolicy{Policy: &cronapi.FailurePolicy_Constant{
+			Constant: &cronapi.FailurePolicyConstant{
+				Delay: durationpb.New(time.Second), MaxRetries: ptr.Of(uint32(3)),
+			},
+		}},
 	}))
 	resp, err = api.Get(context.Background(), "def")
 	require.NoError(t, err)
 	assert.Equal(t, &cronapi.Job{
 		DueTime: ptr.Of(newNow.Add(time.Hour).Format(time.RFC3339)),
+		FailurePolicy: &cronapi.FailurePolicy{Policy: &cronapi.FailurePolicy_Constant{
+			Constant: &cronapi.FailurePolicyConstant{
+				Delay: durationpb.New(time.Second), MaxRetries: ptr.Of(uint32(3)),
+			},
+		}},
 	}, resp)
 
 	require.NoError(t, api.Delete(context.Background(), "def"))
@@ -67,12 +81,22 @@ func Test_CRUD(t *testing.T) {
 
 	require.NoError(t, api.Add(context.Background(), "def", &cronapi.Job{
 		DueTime: ptr.Of(now.Add(time.Hour).Format(time.RFC3339)),
+		FailurePolicy: &cronapi.FailurePolicy{Policy: &cronapi.FailurePolicy_Constant{
+			Constant: &cronapi.FailurePolicyConstant{
+				Delay: durationpb.New(time.Second), MaxRetries: ptr.Of(uint32(3)),
+			},
+		}},
 	}))
 
 	resp, err = api.Get(context.Background(), "def")
 	require.NoError(t, err)
 	assert.Equal(t, &cronapi.Job{
 		DueTime: ptr.Of(now.Add(time.Hour).Format(time.RFC3339)),
+		FailurePolicy: &cronapi.FailurePolicy{Policy: &cronapi.FailurePolicy_Constant{
+			Constant: &cronapi.FailurePolicyConstant{
+				Delay: durationpb.New(time.Second), MaxRetries: ptr.Of(uint32(3)),
+			},
+		}},
 	}, resp)
 }
 

@@ -18,7 +18,7 @@ import (
 	clientv3 "go.etcd.io/etcd/client/v3"
 	"google.golang.org/protobuf/proto"
 
-	"github.com/diagridio/go-etcd-cron/api"
+	"github.com/diagridio/go-etcd-cron/internal/api/stored"
 	"github.com/diagridio/go-etcd-cron/internal/garbage"
 	"github.com/diagridio/go-etcd-cron/internal/garbage/fake"
 	"github.com/diagridio/go-etcd-cron/internal/grave"
@@ -86,13 +86,13 @@ func Test_Run(t *testing.T) {
 		collector, err := garbage.New(garbage.Options{Client: client})
 		require.NoError(t, err)
 
-		jobUID1, err := proto.Marshal(&api.JobStored{PartitionId: 1})
+		jobUID1, err := proto.Marshal(&stored.Job{PartitionId: 1})
 		require.NoError(t, err)
-		jobUID2, err := proto.Marshal(&api.JobStored{PartitionId: 2})
+		jobUID2, err := proto.Marshal(&stored.Job{PartitionId: 2})
 		require.NoError(t, err)
-		jobUID3, err := proto.Marshal(&api.JobStored{PartitionId: 3})
+		jobUID3, err := proto.Marshal(&stored.Job{PartitionId: 3})
 		require.NoError(t, err)
-		jobUID4, err := proto.Marshal(&api.JobStored{PartitionId: 4})
+		jobUID4, err := proto.Marshal(&stored.Job{PartitionId: 4})
 		require.NoError(t, err)
 
 		ctx, cancel := context.WithCancel(context.Background())
@@ -101,7 +101,7 @@ func Test_Run(t *testing.T) {
 			require.NoError(t, err)
 		}
 
-		jobs := make([]api.JobStored, 2)
+		jobs := make([]stored.Job, 2)
 		require.NoError(t, proto.Unmarshal(jobUID2, &jobs[0]))
 		require.NoError(t, proto.Unmarshal(jobUID4, &jobs[1]))
 
@@ -134,7 +134,7 @@ func Test_Run(t *testing.T) {
 		ch, err := i.Events()
 		require.NoError(t, err)
 
-		for i := 0; i < 2; i++ {
+		for i := range 2 {
 			select {
 			case ev := <-ch:
 				assert.True(t, ev.IsPut)
@@ -159,17 +159,17 @@ func Test_Run(t *testing.T) {
 		collector, err := garbage.New(garbage.Options{Client: client})
 		require.NoError(t, err)
 
-		jobUID1, err := proto.Marshal(&api.JobStored{PartitionId: 1})
+		jobUID1, err := proto.Marshal(&stored.Job{PartitionId: 1})
 		require.NoError(t, err)
-		jobUID2, err := proto.Marshal(&api.JobStored{PartitionId: 2})
+		jobUID2, err := proto.Marshal(&stored.Job{PartitionId: 2})
 		require.NoError(t, err)
-		jobUID3, err := proto.Marshal(&api.JobStored{PartitionId: 3})
+		jobUID3, err := proto.Marshal(&stored.Job{PartitionId: 3})
 		require.NoError(t, err)
-		jobUID4, err := proto.Marshal(&api.JobStored{PartitionId: 4})
+		jobUID4, err := proto.Marshal(&stored.Job{PartitionId: 4})
 		require.NoError(t, err)
-		jobUID5, err := proto.Marshal(&api.JobStored{PartitionId: 5})
+		jobUID5, err := proto.Marshal(&stored.Job{PartitionId: 5})
 		require.NoError(t, err)
-		jobUID6, err := proto.Marshal(&api.JobStored{PartitionId: 6})
+		jobUID6, err := proto.Marshal(&stored.Job{PartitionId: 6})
 		require.NoError(t, err)
 
 		ctx, cancel := context.WithCancel(context.Background())
@@ -178,7 +178,7 @@ func Test_Run(t *testing.T) {
 			require.NoError(t, err)
 		}
 
-		jobs := make([]api.JobStored, 3)
+		jobs := make([]stored.Job, 3)
 		require.NoError(t, proto.Unmarshal(jobUID2, &jobs[0]))
 		require.NoError(t, proto.Unmarshal(jobUID4, &jobs[1]))
 		require.NoError(t, proto.Unmarshal(jobUID6, &jobs[2]))
@@ -251,12 +251,12 @@ func Test_Run(t *testing.T) {
 func Test_handleEvent(t *testing.T) {
 	t.Parallel()
 
-	jobUID1, err := proto.Marshal(&api.JobStored{PartitionId: 1})
+	jobUID1, err := proto.Marshal(&stored.Job{PartitionId: 1})
 	require.NoError(t, err)
-	jobUID2, err := proto.Marshal(&api.JobStored{PartitionId: 2})
+	jobUID2, err := proto.Marshal(&stored.Job{PartitionId: 2})
 	require.NoError(t, err)
 
-	var job2 api.JobStored
+	var job2 stored.Job
 	require.NoError(t, proto.Unmarshal(jobUID2, &job2))
 
 	tests := map[string]struct {

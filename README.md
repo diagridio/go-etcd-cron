@@ -27,7 +27,8 @@ func main() {
     TriggerFn: func(context.Context, *api.TriggerRequest) bool {
       // Do something with your trigger here.
       // Return true if the trigger was successful, false otherwise.
-      // Note, returning false will cause the job to be retried *immediately*.
+      // Note, returning false will cause the job to be retried according to
+      // the Jobs configurable FailurePolicy.
       return true
     },
   })
@@ -70,6 +71,11 @@ A Job itself is made up of the following fields:
   Optional.
 - `Payload`: A protobuf Any message that can be used to store the main payload of the job which will be passed to the trigger function.
   Optional.
+- `FailurePolicy` Controls whether the Job should be retired if the trigger
+  function returns false. `Drop` doesn't retry the job, `Constant `Constant` will
+  constantly retry the job trigger for a configurable delay, up to a configurable
+  maximum number of retries (which could be infinite). By default, Jobs have a
+  `Constant` policy, with a 1s delay and 3 maximum retries.
 
 A job must have *at least* either a `Schedule` or a `DueTime` set.
 

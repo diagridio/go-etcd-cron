@@ -8,58 +8,16 @@ package client
 import (
 	"context"
 	"errors"
-	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.etcd.io/etcd/api/v3/v3rpc/rpctypes"
-	clientv3 "go.etcd.io/etcd/client/v3"
 	clocktesting "k8s.io/utils/clock/testing"
+
+	"github.com/diagridio/go-etcd-cron/internal/client/fake"
 )
-
-type mock struct {
-	clientv3.KV
-	calls atomic.Uint32
-	err   error
-}
-
-func (m *mock) If(...clientv3.Cmp) clientv3.Txn {
-	return m
-}
-
-func (m *mock) Else(...clientv3.Op) clientv3.Txn {
-	return m
-}
-
-func (m *mock) Then(...clientv3.Op) clientv3.Txn {
-	return m
-}
-
-func (m *mock) Txn(context.Context) clientv3.Txn {
-	return m
-}
-
-func (m *mock) Put(context.Context, string, string, ...clientv3.OpOption) (*clientv3.PutResponse, error) {
-	m.calls.Add(1)
-	return nil, m.err
-}
-
-func (m *mock) Get(context.Context, string, ...clientv3.OpOption) (*clientv3.GetResponse, error) {
-	m.calls.Add(1)
-	return nil, m.err
-}
-
-func (m *mock) Delete(context.Context, string, ...clientv3.OpOption) (*clientv3.DeleteResponse, error) {
-	m.calls.Add(1)
-	return nil, m.err
-}
-
-func (m *mock) Commit() (*clientv3.TxnResponse, error) {
-	m.calls.Add(1)
-	return nil, m.err
-}
 
 func Test_Delete(t *testing.T) {
 	t.Parallel()
@@ -90,25 +48,24 @@ func Test_Delete(t *testing.T) {
 			t.Run("Successful should return nil", func(t *testing.T) {
 				t.Parallel()
 
-				kv := new(mock)
+				kv := fake.New()
 				require.NoError(t, testInLoop(&client{kv: kv}))
-				assert.Equal(t, uint32(1), kv.calls.Load())
+				assert.Equal(t, uint32(1), kv.Calls())
 			})
 
 			t.Run("With error should return error", func(t *testing.T) {
 				t.Parallel()
 
-				kv := new(mock)
-				kv.err = errors.New("this is an error")
+				kv := fake.New().WithError(errors.New("this is an error"))
 				require.Error(t, testInLoop(&client{kv: kv}))
-				assert.Equal(t, uint32(1), kv.calls.Load())
+				assert.Equal(t, uint32(1), kv.Calls())
 			})
 
 			t.Run("Too many request errors should be retried until successful", func(t *testing.T) {
 				t.Parallel()
 
 				clock := clocktesting.NewFakeClock(time.Now())
-				kv := &mock{err: rpctypes.ErrTooManyRequests}
+				kv := fake.New().WithError(rpctypes.ErrTooManyRequests)
 				errCh := make(chan error)
 				t.Cleanup(func() {
 					select {
@@ -117,7 +74,7 @@ func Test_Delete(t *testing.T) {
 					case <-time.After(time.Second):
 						assert.Fail(t, "timeout waiting for err")
 					}
-					assert.Equal(t, uint32(4), kv.calls.Load())
+					assert.Equal(t, uint32(4), kv.Calls())
 				})
 
 				go func() {
@@ -129,7 +86,7 @@ func Test_Delete(t *testing.T) {
 				assert.Eventually(t, clock.HasWaiters, time.Second, time.Millisecond*10)
 				clock.Sleep(time.Second)
 				assert.Eventually(t, clock.HasWaiters, time.Second, time.Millisecond*10)
-				kv.err = nil
+				kv.WithError(nil)
 				clock.Sleep(time.Second)
 			})
 
@@ -137,7 +94,7 @@ func Test_Delete(t *testing.T) {
 				t.Parallel()
 
 				clock := clocktesting.NewFakeClock(time.Now())
-				kv := &mock{err: rpctypes.ErrTooManyRequests}
+				kv := fake.New().WithError(rpctypes.ErrTooManyRequests)
 				errCh := make(chan error)
 				t.Cleanup(func() {
 					select {
@@ -146,7 +103,7 @@ func Test_Delete(t *testing.T) {
 					case <-time.After(time.Second):
 						assert.Fail(t, "timeout waiting for err")
 					}
-					assert.Equal(t, uint32(4), kv.calls.Load())
+					assert.Equal(t, uint32(4), kv.Calls())
 				})
 
 				go func() {
@@ -158,7 +115,7 @@ func Test_Delete(t *testing.T) {
 				assert.Eventually(t, clock.HasWaiters, time.Second, time.Millisecond*10)
 				clock.Sleep(time.Second)
 				assert.Eventually(t, clock.HasWaiters, time.Second, time.Millisecond*10)
-				kv.err = errors.New("this is an error")
+				kv.WithError(errors.New("this is an error"))
 				clock.Sleep(time.Second)
 			})
 		})
