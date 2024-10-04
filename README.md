@@ -73,7 +73,7 @@ A Job itself is made up of the following fields:
   Optional.
 - `FailurePolicy` Controls whether the Job should be retired if the trigger
   function returns false. `Drop` doesn't retry the job, `Constant `Constant` will
-  constantly retry the job trigger for a configurable internal, up to a configurable
+  constantly retry the job trigger for a configurable interval, up to a configurable
   maximum number of retries (which could be infinite). By default, Jobs have a
   `Constant` policy, with a 1s interval and 3 maximum retries.
 
