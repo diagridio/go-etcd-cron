@@ -94,6 +94,10 @@ func Test_JobName(t *testing.T) {
 			name:   "aABVCD||dapr-::123:123||dapr.internal.dapr-tests.perf-workflowsapp.workflow||24b3fbad-0db5-4e81-a272-71f6018a66a6||start-4NYDFil-",
 			expErr: false,
 		},
+		{
+			name:   "aABVCD||dapr-::123:123||dapr.internal.dapr-tests.perf-  workflowsapp.workflow||24b3fbad-0db5-4e81        -a272-71f6018a66a6||start-4NYDFil-",
+			expErr: false,
+		},
 	}
 
 	for _, test := range tests {

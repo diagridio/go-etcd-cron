@@ -28,7 +28,7 @@ type Validator struct {
 func New(opts Options) *Validator {
 	jobNameSanitizer := opts.JobNameSanitizer
 	if jobNameSanitizer == nil {
-		jobNameSanitizer = strings.NewReplacer("_", "", ":", "", "-", "")
+		jobNameSanitizer = strings.NewReplacer("_", "", ":", "", "-", "", " ", "")
 	}
 	return &Validator{
 		jobNameSanitizer: jobNameSanitizer,
