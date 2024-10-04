@@ -15,6 +15,7 @@ import (
 	"google.golang.org/protobuf/proto"
 
 	cronapi "github.com/diagridio/go-etcd-cron/api"
+	"github.com/diagridio/go-etcd-cron/internal/api/stored"
 	"github.com/diagridio/go-etcd-cron/internal/api/validator"
 	"github.com/diagridio/go-etcd-cron/internal/client"
 	"github.com/diagridio/go-etcd-cron/internal/key"
@@ -125,7 +126,7 @@ func (a *api) Get(ctx context.Context, name string) (*cronapi.Job, error) {
 		return nil, nil
 	}
 
-	var stored cronapi.JobStored
+	var stored stored.Job
 	if err := proto.Unmarshal(resp.Kvs[0].Value, &stored); err != nil {
 		return nil, fmt.Errorf("failed to unmarshal job: %w", err)
 	}
@@ -195,7 +196,7 @@ func (a *api) List(ctx context.Context, prefix string) (*cronapi.ListResponse, e
 
 	jobs := make([]*cronapi.NamedJob, 0, resp.Count)
 	for _, kv := range resp.Kvs {
-		var stored cronapi.JobStored
+		var stored stored.Job
 		if err := proto.Unmarshal(kv.Value, &stored); err != nil {
 			return nil, fmt.Errorf("failed to unmarshal job from prefix %q: %w", prefix, err)
 		}

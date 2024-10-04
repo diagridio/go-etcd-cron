@@ -5,11 +5,11 @@ Licensed under the MIT License.
 
 syntax = "proto3";
 
-package api;
+package stored;
 
 import "google/protobuf/timestamp.proto";
 
-option go_package = "github.com/diagridio/go-etcd-cron/api";
+option go_package = "github.com/diagridio/go-etcd-cron/internal/api/stored";
 
 // Counter holds counter information for a given job.
 message Counter {

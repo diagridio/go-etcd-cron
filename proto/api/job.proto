@@ -12,35 +12,6 @@ import "google/protobuf/timestamp.proto";
 
 option go_package = "github.com/diagridio/go-etcd-cron/api";
 
-// JobStored is the wrapped stored version of a Job which has a partition_id
-// associated.
-message JobStored {
-  // partion_id is an identifier for the job, used for distinguishing jobs with
-  // the same name and assigning the job to a partition.
-  // Doesn't need to be globally unique.
-  uint32 partition_id = 1;
-
-  // begin is the beginning time of the job.
-  oneof begin {
-    // start is the epoch time of the job whereby the clock starts on the
-    // schedule. The job _will not_ trigger at this time.
-    google.protobuf.Timestamp start = 2;
-
-    // due_time is the epoch time of the job whereby the clock starts on the
-    // schedule. The job _will_ trigger at this time.
-    google.protobuf.Timestamp due_time = 3;
-  }
-
-  // expiration is the optional time at which the job should no longer be
-  // scheduled and will be ignored and garbage collected thereafter.
-  // A job may be removed earlier if repeats are exhausted or schedule doesn't
-  // permit.
-  optional google.protobuf.Timestamp expiration = 4;
-
-  // job is the job spec.
-  Job job = 5;
-}
-
 // Job defines a scheduled rhythmic job stored in the database.
 // Job holds the desired spec of the job, not the current trigger state, held
 // by Counter.

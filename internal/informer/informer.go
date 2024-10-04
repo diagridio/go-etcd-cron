@@ -15,7 +15,7 @@ import (
 	clientv3 "go.etcd.io/etcd/client/v3"
 	"google.golang.org/protobuf/proto"
 
-	"github.com/diagridio/go-etcd-cron/api"
+	"github.com/diagridio/go-etcd-cron/internal/api/stored"
 	"github.com/diagridio/go-etcd-cron/internal/client"
 	"github.com/diagridio/go-etcd-cron/internal/garbage"
 	"github.com/diagridio/go-etcd-cron/internal/grave"
@@ -68,7 +68,7 @@ type Event struct {
 	Key []byte
 
 	// Job is the job that was created or deleted.
-	Job *api.JobStored
+	Job *stored.Job
 }
 
 // New creates a new Informer.
@@ -169,7 +169,7 @@ func (i *Informer) handleEvent(ev *clientv3.Event) (*Event, error) {
 		return nil, errors.New("unexpected event type")
 	}
 
-	var job api.JobStored
+	var job stored.Job
 	if err := proto.Unmarshal(kv.Value, &job); err != nil {
 		return nil, fmt.Errorf("failed to unmarshal job: %w", err)
 	}

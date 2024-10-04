@@ -17,6 +17,7 @@ import (
 	clocktesting "k8s.io/utils/clock/testing"
 
 	"github.com/diagridio/go-etcd-cron/api"
+	"github.com/diagridio/go-etcd-cron/internal/api/stored"
 )
 
 func Test_Scheduler(t *testing.T) {
@@ -29,13 +30,13 @@ func Test_Scheduler(t *testing.T) {
 	require.NoError(t, err)
 
 	tests := map[string]struct {
-		job          *api.JobStored
+		job          *stored.Job
 		expScheduler Interface
 		expErr       bool
 	}{
 		"if no schedule, expect oneshot": {
-			job: &api.JobStored{
-				Begin: &api.JobStored_DueTime{
+			job: &stored.Job{
+				Begin: &stored.Job_DueTime{
 					DueTime: timestamppb.New(now),
 				},
 				Job: &api.Job{Schedule: nil},
@@ -44,8 +45,8 @@ func Test_Scheduler(t *testing.T) {
 			expErr:       false,
 		},
 		"if schedule, expect repeats": {
-			job: &api.JobStored{
-				Begin: &api.JobStored_Start{
+			job: &stored.Job{
+				Begin: &stored.Job_Start{
 					Start: timestamppb.New(now),
 				},
 				Expiration: timestamppb.New(now.Add(2 * time.Hour)),
@@ -62,8 +63,8 @@ func Test_Scheduler(t *testing.T) {
 			expErr: false,
 		},
 		"if schedule, expect repeats with exp nil": {
-			job: &api.JobStored{
-				Begin: &api.JobStored_Start{
+			job: &stored.Job{
+				Begin: &stored.Job_Start{
 					Start: timestamppb.New(now),
 				},
 				Expiration: nil,
@@ -81,8 +82,8 @@ func Test_Scheduler(t *testing.T) {
 			expErr: false,
 		},
 		"if bad schedule string, expect error": {
-			job: &api.JobStored{
-				Begin: &api.JobStored_Start{
+			job: &stored.Job{
+				Begin: &stored.Job_Start{
 					Start: timestamppb.New(now),
 				},
 				Expiration: timestamppb.New(now.Add(2 * time.Hour)),
@@ -116,7 +117,7 @@ func Test_Parse(t *testing.T) {
 
 	tests := map[string]struct {
 		job       *api.Job
-		expStored *api.JobStored
+		expStored *stored.Job
 		expErr    bool
 	}{
 		"if due time and schedule nil, expect error": {
@@ -165,14 +166,14 @@ func Test_Parse(t *testing.T) {
 				Ttl:      nil,
 				Repeats:  nil,
 			},
-			expStored: &api.JobStored{
+			expStored: &stored.Job{
 				Job: &api.Job{
 					DueTime:  ptr.Of("2024-04-24T11:42:22Z"),
 					Schedule: nil,
 					Ttl:      nil,
 					Repeats:  nil,
 				},
-				Begin: &api.JobStored_DueTime{
+				Begin: &stored.Job_DueTime{
 					DueTime: timestamppb.New(time.Date(2024, 4, 24, 11, 42, 22, 0, time.UTC)),
 				},
 				Expiration: nil,
@@ -186,14 +187,14 @@ func Test_Parse(t *testing.T) {
 				Ttl:      nil,
 				Repeats:  nil,
 			},
-			expStored: &api.JobStored{
+			expStored: &stored.Job{
 				Job: &api.Job{
 					DueTime:  ptr.Of("2024-04-24T11:42:22Z"),
 					Schedule: ptr.Of("@every 1h"),
 					Ttl:      nil,
 					Repeats:  nil,
 				},
-				Begin: &api.JobStored_DueTime{
+				Begin: &stored.Job_DueTime{
 					DueTime: timestamppb.New(time.Date(2024, 4, 24, 11, 42, 22, 0, time.UTC)),
 				},
 				Expiration: nil,
@@ -207,14 +208,14 @@ func Test_Parse(t *testing.T) {
 				Ttl:      ptr.Of("2h"),
 				Repeats:  nil,
 			},
-			expStored: &api.JobStored{
+			expStored: &stored.Job{
 				Job: &api.Job{
 					DueTime:  nil,
 					Schedule: ptr.Of("@every 1h"),
 					Ttl:      ptr.Of("2h"),
 					Repeats:  nil,
 				},
-				Begin: &api.JobStored_Start{
+				Begin: &stored.Job_Start{
 					Start: timestamppb.New(now),
 				},
 				Expiration: timestamppb.New(now.Add(2 * time.Hour)),
@@ -228,14 +229,14 @@ func Test_Parse(t *testing.T) {
 				Ttl:      ptr.Of("2h"),
 				Repeats:  ptr.Of(uint32(100)),
 			},
-			expStored: &api.JobStored{
+			expStored: &stored.Job{
 				Job: &api.Job{
 					DueTime:  ptr.Of("2024-04-24T11:42:22Z"),
 					Schedule: ptr.Of("@every 1h"),
 					Ttl:      ptr.Of("2h"),
 					Repeats:  ptr.Of(uint32(100)),
 				},
-				Begin: &api.JobStored_DueTime{
+				Begin: &stored.Job_DueTime{
 					DueTime: timestamppb.New(time.Date(2024, 4, 24, 11, 42, 22, 0, time.UTC)),
 				},
 				Expiration: timestamppb.New(time.Date(2024, 4, 24, 13, 42, 22, 0, time.UTC)),
@@ -259,14 +260,14 @@ func Test_Parse(t *testing.T) {
 				Ttl:      ptr.Of("2024-04-24T11:42:22Z"),
 				Repeats:  nil,
 			},
-			expStored: &api.JobStored{
+			expStored: &stored.Job{
 				Job: &api.Job{
 					DueTime:  ptr.Of("2024-04-24T11:42:22Z"),
 					Schedule: ptr.Of("@every 1h"),
 					Ttl:      ptr.Of("2024-04-24T11:42:22Z"),
 					Repeats:  nil,
 				},
-				Begin: &api.JobStored_DueTime{
+				Begin: &stored.Job_DueTime{
 					DueTime: timestamppb.New(time.Date(2024, 4, 24, 11, 42, 22, 0, time.UTC)),
 				},
 				Expiration: timestamppb.New(time.Date(2024, 4, 24, 11, 42, 22, 0, time.UTC)),
