@@ -134,7 +134,7 @@ func Test_Run(t *testing.T) {
 		ch, err := i.Events()
 		require.NoError(t, err)
 
-		for i := 0; i < 2; i++ {
+		for i := range 2 {
 			select {
 			case ev := <-ch:
 				assert.True(t, ev.IsPut)

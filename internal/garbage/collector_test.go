@@ -103,7 +103,7 @@ func Test_Run(t *testing.T) {
 		cancel()
 		require.NoError(t, c.Run(ctx))
 
-		for i := 0; i < 500000; i++ {
+		for i := range 500000 {
 			c.Push(fmt.Sprintf("test-%d", i))
 		}
 
@@ -128,7 +128,7 @@ func Test_Run(t *testing.T) {
 			errCh <- c.Run(ctx)
 		}()
 
-		for i := 0; i < 100; i++ {
+		for i := range 100 {
 			key := fmt.Sprintf("test-%d", i)
 			_, err := client.Put(context.Background(), key, "value")
 			require.NoError(t, err)
@@ -173,7 +173,7 @@ func Test_Run(t *testing.T) {
 			errCh <- c.Run(ctx)
 		}()
 
-		for i := 0; i < 100-1; i++ {
+		for i := range 100 - 1 {
 			key := fmt.Sprintf("test-%d", i)
 			_, err := client.Put(context.Background(), key, "value")
 			require.NoError(t, err)
@@ -225,7 +225,7 @@ func Test_Run(t *testing.T) {
 			errCh <- c.Run(ctx)
 		}()
 
-		for i := 0; i < 10; i++ {
+		for i := range 10 {
 			key := fmt.Sprintf("test-%d", i)
 			_, err := client.Put(context.Background(), key, "value")
 			require.NoError(t, err)
@@ -274,7 +274,7 @@ func Test_Run(t *testing.T) {
 			errCh <- c.Run(ctx)
 		}()
 
-		for i := 0; i < 10; i++ {
+		for i := range 10 {
 			key := fmt.Sprintf("test-%d", i)
 			_, err := client.Put(context.Background(), key, "value")
 			require.NoError(t, err)
@@ -346,7 +346,7 @@ func Test_Push(t *testing.T) {
 		default:
 		}
 
-		for i := 0; i < 500000-1; i++ {
+		for i := range 500000 - 1 {
 			c.Push(fmt.Sprintf("test-%d", i))
 		}
 
@@ -417,13 +417,13 @@ func Test_collect(t *testing.T) {
 		require.NoError(t, err)
 		c := coll.(*collector)
 
-		for i := 0; i < 10; i++ {
+		for i := range 10 {
 			_, err := client.Put(context.Background(), fmt.Sprintf("/test/%d", i), "value")
 			require.NoError(t, err)
 			c.keys[fmt.Sprintf("/test/%d", i)] = struct{}{}
 		}
 
-		for i := 0; i < 10; i++ {
+		for i := range 10 {
 			resp, err := client.Get(context.Background(), fmt.Sprintf("/test/%d", i))
 			require.NoError(t, err)
 			require.Len(t, resp.Kvs, 1)
@@ -434,7 +434,7 @@ func Test_collect(t *testing.T) {
 		require.NoError(t, c.collect())
 		assert.Empty(t, c.keys)
 
-		for i := 0; i < 10; i++ {
+		for i := range 10 {
 			resp, err := client.Get(context.Background(), fmt.Sprintf("/test/%d", i))
 			require.NoError(t, err)
 			require.Empty(t, resp.Kvs)
@@ -451,7 +451,7 @@ func Test_collect(t *testing.T) {
 		require.NoError(t, err)
 		c := coll.(*collector)
 
-		for i := 0; i < 10; i++ {
+		for i := range 10 {
 			_, err := client.Put(context.Background(), fmt.Sprintf("/test/%d", i), "value")
 			require.NoError(t, err)
 			c.keys[fmt.Sprintf("/test/%d", i)] = struct{}{}
@@ -462,7 +462,7 @@ func Test_collect(t *testing.T) {
 			require.NoError(t, err)
 		}
 
-		for i := 0; i < 20; i++ {
+		for i := range 20 {
 			resp, err := client.Get(context.Background(), fmt.Sprintf("/test/%d", i))
 			require.NoError(t, err)
 			require.Len(t, resp.Kvs, 1)
@@ -473,7 +473,7 @@ func Test_collect(t *testing.T) {
 		require.NoError(t, c.collect())
 		assert.Empty(t, c.keys)
 
-		for i := 0; i < 10; i++ {
+		for i := range 10 {
 			resp, err := client.Get(context.Background(), fmt.Sprintf("/test/%d", i))
 			require.NoError(t, err)
 			require.Empty(t, resp.Kvs)

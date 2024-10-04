@@ -25,4 +25,9 @@ message Counter {
   // last_trigger is the timestamp the job was last triggered. Used to
   // determine the next time the job should be triggered.
   google.protobuf.Timestamp last_trigger = 3;
+
+  // attempts is the number of times the job has been attempted to be triggered
+  // at this count. Used by failure policy to track how many times the Job
+  // trigger should be retried.
+  uint32 attempts = 4;
 }

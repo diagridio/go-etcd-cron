@@ -360,7 +360,7 @@ func Test_Run(t *testing.T) {
 
 		cancel()
 
-		for i := 0; i < 3; i++ {
+		for range 3 {
 			select {
 			case <-errCh:
 			case <-time.After(2 * time.Second):
@@ -480,7 +480,7 @@ func Test_checkLeadershipKeys(t *testing.T) {
 			}),
 		})
 
-		for i := 0; i < 10; i++ {
+		for i := range 10 {
 			_, err := client.Put(context.Background(), "abc/leadership/"+strconv.Itoa(i), "10")
 			require.NoError(t, err)
 		}
@@ -638,7 +638,7 @@ func Test_WaitForLeadership(t *testing.T) {
 		t.Parallel()
 
 		ctx, cancel := context.WithCancel(context.Background())
-		leadership := New(Options{Client: client.New(nil)})
+		leadership := New(Options{Client: client.New(client.Options{})})
 		cancel()
 		assert.Equal(t, context.Canceled, leadership.WaitForLeadership(ctx))
 	})
@@ -648,7 +648,7 @@ func Test_WaitForLeadership(t *testing.T) {
 
 		ctx, cancel := context.WithCancel(context.Background())
 		t.Cleanup(cancel)
-		leadership := New(Options{Client: client.New(nil)})
+		leadership := New(Options{Client: client.New(client.Options{})})
 		close(leadership.readyCh)
 		require.NoError(t, leadership.WaitForLeadership(ctx))
 	})

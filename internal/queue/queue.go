@@ -12,12 +12,12 @@ import (
 	"sync"
 	"sync/atomic"
 
+	"github.com/dapr/kit/concurrency"
+	"github.com/dapr/kit/events/queue"
 	"github.com/go-logr/logr"
 	clientv3 "go.etcd.io/etcd/client/v3"
 	"k8s.io/utils/clock"
 
-	"github.com/dapr/kit/concurrency"
-	"github.com/dapr/kit/events/queue"
 	"github.com/diagridio/go-etcd-cron/api"
 	"github.com/diagridio/go-etcd-cron/internal/api/stored"
 	"github.com/diagridio/go-etcd-cron/internal/client"
@@ -99,7 +99,7 @@ func New(opts Options) *Queue {
 		clock:        cl,
 		lock:         concurrency.NewMutexMap[string](),
 		readyCh:      make(chan struct{}),
-		errCh:        make(chan error),
+		errCh:        make(chan error, 10),
 	}
 }
 
@@ -244,21 +244,24 @@ func (q *Queue) cacheDelete(jobKey string) error {
 // Returns true if the job is being re-enqueued, false otherwise.
 func (q *Queue) handleTrigger(ctx context.Context, counter *counter.Counter) bool {
 	if !q.triggerFn(ctx, counter.TriggerRequest()) {
-		// If the trigger function returns false, i.e. failed client side,
-		// re-enqueue the job immediately.
-		if err := q.queue.Enqueue(counter); err != nil {
-			select {
-			case <-ctx.Done():
-			case q.errCh <- err:
-			}
+		ok, err := counter.TriggerFailed(ctx)
+		if err != nil {
+			q.log.Error(err, "failure failing job for next retry trigger", "name", counter.Key())
 		}
-		return true
+
+		return q.enqueueCounter(ctx, counter, ok)
 	}
 
-	ok, err := counter.Trigger(ctx)
+	ok, err := counter.TriggerSuccess(ctx)
 	if err != nil {
 		q.log.Error(err, "failure marking job for next trigger", "name", counter.Key())
 	}
+
+	return q.enqueueCounter(ctx, counter, ok)
+}
+
+// enqueueCounter enqueues the job to the queue at this count tick.
+func (q *Queue) enqueueCounter(ctx context.Context, counter *counter.Counter, ok bool) bool {
 	if ok && ctx.Err() == nil {
 		if err := q.queue.Enqueue(counter); err != nil {
 			select {
@@ -275,7 +278,7 @@ func (q *Queue) handleTrigger(ctx context.Context, counter *counter.Counter) boo
 
 // schedule schedules a job to it's next scheduled time.
 func (q *Queue) schedule(ctx context.Context, name string, job *stored.Job) error {
-	scheduler, err := q.schedBuilder.Scheduler(job)
+	schedule, err := q.schedBuilder.Schedule(job)
 	if err != nil {
 		return err
 	}
@@ -283,7 +286,7 @@ func (q *Queue) schedule(ctx context.Context, name string, job *stored.Job) erro
 	counter, ok, err := counter.New(ctx, counter.Options{
 		Name:      name,
 		Key:       q.key,
-		Schedule:  scheduler,
+		Schedule:  schedule,
 		Yard:      q.yard,
 		Client:    q.client,
 		Job:       job,

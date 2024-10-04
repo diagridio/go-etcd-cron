@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/go-logr/logr"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	clientv3 "go.etcd.io/etcd/client/v3"
@@ -20,7 +21,10 @@ import (
 
 func EmbeddedETCD(t *testing.T) client.Interface {
 	t.Helper()
-	return client.New(EmbeddedETCDBareClient(t))
+	return client.New(client.Options{
+		Log:    logr.Discard(),
+		Client: EmbeddedETCDBareClient(t),
+	})
 }
 
 func EmbeddedETCDBareClient(t *testing.T) *clientv3.Client {

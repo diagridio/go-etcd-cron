@@ -10,6 +10,7 @@ import (
 	"errors"
 	"time"
 
+	"github.com/go-logr/logr"
 	"go.etcd.io/etcd/api/v3/v3rpc/rpctypes"
 	clientv3 "go.etcd.io/etcd/client/v3"
 	"k8s.io/utils/clock"
@@ -23,45 +24,52 @@ type Interface interface {
 	DeleteMulti(keys ...string) error
 }
 
+type Options struct {
+	Client *clientv3.Client
+	Log    logr.Logger
+}
+
 type client struct {
 	*clientv3.Client
 	kv    clientv3.KV
+	log   logr.Logger
 	clock clock.Clock
 }
 
-func New(cl *clientv3.Client) Interface {
+func New(opts Options) Interface {
 	var kv clientv3.KV
-	if cl != nil {
-		kv = cl.KV
+	if opts.Client != nil {
+		kv = opts.Client.KV
 	}
 	return &client{
-		Client: cl,
+		Client: opts.Client,
 		kv:     kv,
+		log:    opts.Log,
 		clock:  clock.RealClock{},
 	}
 }
 
 func (c *client) Put(ctx context.Context, key, val string, opts ...clientv3.OpOption) (*clientv3.PutResponse, error) {
-	return genericPP[string, string, clientv3.OpOption, clientv3.PutResponse](ctx, c, c.kv.Put, key, val, opts...)
+	return genericPP[string, string, clientv3.OpOption, clientv3.PutResponse](ctx, c.log, c, c.kv.Put, key, val, opts...)
 }
 
 func (c *client) Get(ctx context.Context, key string, opts ...clientv3.OpOption) (*clientv3.GetResponse, error) {
-	return genericP[string, clientv3.OpOption, clientv3.GetResponse](ctx, c, c.kv.Get, key, opts...)
+	return genericP[string, clientv3.OpOption, clientv3.GetResponse](ctx, c.log, c, c.kv.Get, key, opts...)
 }
 
 func (c *client) Delete(ctx context.Context, key string, opts ...clientv3.OpOption) (*clientv3.DeleteResponse, error) {
-	return genericP[string, clientv3.OpOption, clientv3.DeleteResponse](ctx, c, c.kv.Delete, key, opts...)
+	return genericP[string, clientv3.OpOption, clientv3.DeleteResponse](ctx, c.log, c, c.kv.Delete, key, opts...)
 }
 
 func (c *client) DeleteMulti(keys ...string) error {
 	for i := 0; i < len(keys); i += 128 {
 		batchI := min(128, len(keys)-i)
 		ops := make([]clientv3.Op, batchI)
-		for j := 0; j < batchI; j++ {
+		for j := range batchI {
 			ops[j] = clientv3.OpDelete(keys[i+j])
 		}
 
-		err := generic(context.Background(), c, func(ctx context.Context) error {
+		err := generic(context.Background(), c.log, c, func(ctx context.Context) error {
 			_, terr := c.kv.Txn(ctx).Then(ops...).Commit()
 			return terr
 		})
@@ -75,10 +83,10 @@ func (c *client) DeleteMulti(keys ...string) error {
 
 type genericPPFunc[T any, K any, O any, R any] func(context.Context, T, K, ...O) (*R, error)
 
-func genericPP[T any, K any, O any, R any](ctx context.Context, c *client, op genericPPFunc[T, K, O, R], t T, k K, o ...O) (*R, error) {
+func genericPP[T any, K any, O any, R any](ctx context.Context, log logr.Logger, c *client, op genericPPFunc[T, K, O, R], t T, k K, o ...O) (*R, error) {
 	var r *R
 	var err error
-	return r, generic(ctx, c, func(ctx context.Context) error {
+	return r, generic(ctx, log, c, func(ctx context.Context) error {
 		r, err = op(ctx, t, k, o...)
 		return err
 	})
@@ -86,16 +94,16 @@ func genericPP[T any, K any, O any, R any](ctx context.Context, c *client, op ge
 
 type genericPFunc[T any, O any, R any] func(context.Context, T, ...O) (*R, error)
 
-func genericP[T any, O any, R any](ctx context.Context, c *client, op genericPFunc[T, O, R], t T, o ...O) (*R, error) {
+func genericP[T any, O any, R any](ctx context.Context, log logr.Logger, c *client, op genericPFunc[T, O, R], t T, o ...O) (*R, error) {
 	var r *R
 	var err error
-	return r, generic(ctx, c, func(ctx context.Context) error {
+	return r, generic(ctx, log, c, func(ctx context.Context) error {
 		r, err = op(ctx, t, o...)
 		return err
 	})
 }
 
-func generic(ctx context.Context, c *client, op func(context.Context) error) error {
+func generic(ctx context.Context, log logr.Logger, c *client, op func(context.Context) error) error {
 	for {
 		ctx, cancel := context.WithTimeout(ctx, 20*time.Second)
 		defer cancel()
@@ -108,6 +116,8 @@ func generic(ctx context.Context, c *client, op func(context.Context) error) err
 		if !errors.Is(err, rpctypes.ErrTooManyRequests) {
 			return err
 		}
+
+		log.Error(err, "etcd client request rate limited, waiting before retrying")
 
 		select {
 		case <-c.clock.After(time.Second):
