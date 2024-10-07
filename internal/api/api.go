@@ -209,3 +209,28 @@ func (a *api) List(ctx context.Context, prefix string) (*cronapi.ListResponse, e
 		Jobs: jobs,
 	}, nil
 }
+
+// RegisterDeliverablePrefixes registers the given Job name prefixes as being
+// deliverable. Calling the returned CancelFunc will de-register those
+// prefixes as being deliverable.
+func (a *api) DeliverablePrefixes(ctx context.Context, prefixes ...string) (context.CancelFunc, error) {
+	select {
+	case <-a.readyCh:
+	case <-a.closeCh:
+		return nil, errAPIClosed
+	case <-ctx.Done():
+		return nil, context.Cause(ctx)
+	}
+
+	if len(prefixes) == 0 {
+		return nil, errors.New("no prefixes provided")
+	}
+
+	for _, prefix := range prefixes {
+		if err := a.validator.JobName(prefix); err != nil {
+			return nil, err
+		}
+	}
+
+	return a.queue.DeliverablePrefixes(prefixes...), nil
+}

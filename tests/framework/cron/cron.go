@@ -31,12 +31,15 @@ func newCron(t *testing.T, client *clientv3.Client, total, id uint32) *Cron {
 
 	var calls atomic.Int64
 	cron, err := cron.New(cron.Options{
-		Log:                              logr.Discard(),
-		Client:                           client,
-		Namespace:                        "abc",
-		PartitionID:                      id,
-		PartitionTotal:                   total,
-		TriggerFn:                        func(context.Context, *api.TriggerRequest) bool { calls.Add(1); return true },
+		Log:            logr.Discard(),
+		Client:         client,
+		Namespace:      "abc",
+		PartitionID:    id,
+		PartitionTotal: total,
+		TriggerFn: func(context.Context, *api.TriggerRequest) *api.TriggerResponse {
+			calls.Add(1)
+			return &api.TriggerResponse{Result: api.TriggerResponseResult_SUCCESS}
+		},
 		CounterGarbageCollectionInterval: ptr.Of(time.Millisecond * 300),
 	})
 	require.NoError(t, err)

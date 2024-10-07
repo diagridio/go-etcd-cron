@@ -3,7 +3,7 @@ Copyright (c) 2024 Diagrid Inc.
 Licensed under the MIT License.
 */
 
-package tests
+package etcd
 
 import (
 	"net/url"
@@ -19,15 +19,15 @@ import (
 	"github.com/diagridio/go-etcd-cron/internal/client"
 )
 
-func EmbeddedETCD(t *testing.T) client.Interface {
+func Embedded(t *testing.T) client.Interface {
 	t.Helper()
 	return client.New(client.Options{
 		Log:    logr.Discard(),
-		Client: EmbeddedETCDBareClient(t),
+		Client: EmbeddedBareClient(t),
 	})
 }
 
-func EmbeddedETCDBareClient(t *testing.T) *clientv3.Client {
+func EmbeddedBareClient(t *testing.T) *clientv3.Client {
 	t.Helper()
 
 	cfg := embed.NewConfig()
