@@ -24,7 +24,7 @@ import (
 	"github.com/diagridio/go-etcd-cron/internal/grave"
 	"github.com/diagridio/go-etcd-cron/internal/key"
 	"github.com/diagridio/go-etcd-cron/internal/partitioner"
-	"github.com/diagridio/go-etcd-cron/tests"
+	"github.com/diagridio/go-etcd-cron/tests/framework/etcd"
 )
 
 func Test_Run(t *testing.T) {
@@ -39,7 +39,7 @@ func Test_Run(t *testing.T) {
 	t.Run("No keys in the db should return no events after ready", func(t *testing.T) {
 		t.Parallel()
 
-		client := tests.EmbeddedETCD(t)
+		client := etcd.Embedded(t)
 		collector, err := garbage.New(garbage.Options{Client: client})
 		require.NoError(t, err)
 		i := New(Options{
@@ -82,7 +82,7 @@ func Test_Run(t *testing.T) {
 	t.Run("keys in the db should be returned after ready, filtered by partition", func(t *testing.T) {
 		t.Parallel()
 
-		client := tests.EmbeddedETCD(t)
+		client := etcd.Embedded(t)
 		collector, err := garbage.New(garbage.Options{Client: client})
 		require.NoError(t, err)
 
@@ -155,7 +155,7 @@ func Test_Run(t *testing.T) {
 	t.Run("keys added to the db after Ready should be synced, filtering by partition", func(t *testing.T) {
 		t.Parallel()
 
-		client := tests.EmbeddedETCD(t)
+		client := etcd.Embedded(t)
 		collector, err := garbage.New(garbage.Options{Client: client})
 		require.NoError(t, err)
 

@@ -22,3 +22,28 @@ message TriggerRequest {
   // payload is the job payload.
   google.protobuf.Any payload = 3;
 }
+
+// TriggerResponseResult is indicates the state result from triggering the job
+// by the consumer.
+enum TriggerResponseResult {
+  // SUCCESS indicates that the job was successfully triggered and will be
+  // ticked forward according to the schedule.
+  SUCCESS = 0;
+
+  // FAILED indicates that the job failed to trigger and is subject to the
+  // FailurePolicy.
+  FAILED = 1;
+
+  // UNDELIVERABLE indicates that the job should be added to the staging queue
+  // as the Job was undeliverable. Once the Job name prefix is marked as
+  // deliverable, it will be immediately triggered.
+  UNDELIVERABLE = 2;
+}
+
+// TriggerResponse is returned by the caller from a TriggerResponse. Signals
+// whether the Job was successfully triggered, the trigger failed, or instead
+// needs to be added to the staging queue due to impossible delivery.
+message TriggerResponse {
+  // result is the result given by the consumer when trigging the Job.
+  TriggerResponseResult result = 1;
+}

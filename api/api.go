@@ -11,10 +11,10 @@ import (
 
 // TriggerFunction is the type of the function that is called when a job is
 // triggered.
-// Returning true will "tick" the job forward to the next scheduled time.
-// Returning false will cause the job to be re-enqueued and triggered
-// immediately.
-type TriggerFunction func(context.Context, *TriggerRequest) bool
+// The returne TriggerResponse will indicate whether the Job was successfully
+// triggered, the trigger failed, or the Job need to be put into the staging
+// queue.
+type TriggerFunction func(context.Context, *TriggerRequest) *TriggerResponse
 
 // API is the interface for interacting with the cron instance.
 type API interface {
@@ -33,6 +33,17 @@ type API interface {
 
 	// List lists all jobs under a given job name prefix.
 	List(ctx context.Context, prefix string) (*ListResponse, error)
+
+	// DeliverablePrefixes registers the given Job name prefixes as being
+	// deliverable. Any Jobs that reside in the staging queue because they were
+	// undeliverable at the time of trigger but whose names match these prefixes
+	// will be immediately re-triggered.
+	// The returned CancelFunc should be called to unregister the prefixes,
+	// meaning these prefixes are no longer delivable by the caller. Duplicate
+	// Prefixes may be called together and will be pooled together, meaning that
+	// the prefix is still active if there is at least one DeliverablePrefixes
+	// call that has not been unregistered.
+	DeliverablePrefixes(ctx context.Context, prefixes ...string) (context.CancelFunc, error)
 }
 
 // Interface is a cron interface. It schedules and manages job which are stored

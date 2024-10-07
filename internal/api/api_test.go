@@ -3,6 +3,7 @@ Copyright (c) 2024 Diagrid Inc.
 Licensed under the MIT License.
 */
 
+//nolint:dupl
 package api
 
 import (
@@ -22,7 +23,7 @@ import (
 	"github.com/diagridio/go-etcd-cron/internal/key"
 	"github.com/diagridio/go-etcd-cron/internal/queue"
 	"github.com/diagridio/go-etcd-cron/internal/scheduler"
-	"github.com/diagridio/go-etcd-cron/tests"
+	"github.com/diagridio/go-etcd-cron/tests/framework/etcd"
 )
 
 var errCancel = errors.New("custom cancel")
@@ -254,6 +255,39 @@ func Test_List(t *testing.T) {
 	})
 }
 
+func Test_DeliverablePrefixes(t *testing.T) {
+	t.Parallel()
+
+	t.Run("returns context error if cron not ready in time", func(t *testing.T) {
+		t.Parallel()
+
+		ctx, cancel := context.WithCancelCause(context.Background())
+		cancel(errCancel)
+		dcancel, err := newAPINotReady(t).DeliverablePrefixes(ctx, "helloworld")
+		assert.Equal(t, errCancel, err)
+		assert.Nil(t, dcancel)
+	})
+
+	t.Run("returns closed error if cron is closed", func(t *testing.T) {
+		t.Parallel()
+
+		api := newAPINotReady(t)
+		close(api.closeCh)
+		cancel, err := api.DeliverablePrefixes(context.Background(), "hello world")
+		assert.Equal(t, errors.New("api is closed"), err)
+		assert.Nil(t, cancel)
+	})
+
+	t.Run("invalid name should error", func(t *testing.T) {
+		t.Parallel()
+
+		api := newAPI(t)
+		cancel, err := api.DeliverablePrefixes(context.Background(), "./.")
+		require.Error(t, err)
+		assert.Nil(t, cancel)
+	})
+}
+
 func newAPI(t *testing.T) *api {
 	t.Helper()
 	api := newAPINotReady(t)
@@ -264,7 +298,7 @@ func newAPI(t *testing.T) *api {
 func newAPINotReady(t *testing.T) *api {
 	t.Helper()
 
-	client := tests.EmbeddedETCD(t)
+	client := etcd.Embedded(t)
 
 	collector, err := garbage.New(garbage.Options{
 		Log:                logr.Discard(),
@@ -280,8 +314,10 @@ func newAPINotReady(t *testing.T) *api {
 		Client:           client,
 		Key:              key,
 		SchedulerBuilder: schedulerBuilder,
-		TriggerFn:        func(context.Context, *cronapi.TriggerRequest) bool { return true },
-		Collector:        collector,
+		TriggerFn: func(context.Context, *cronapi.TriggerRequest) *cronapi.TriggerResponse {
+			return &cronapi.TriggerResponse{Result: cronapi.TriggerResponseResult_SUCCESS}
+		},
+		Collector: collector,
 	})
 
 	ctx, cancel := context.WithCancel(context.Background())

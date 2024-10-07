@@ -16,7 +16,7 @@ import (
 	clientv3 "go.etcd.io/etcd/client/v3"
 
 	"github.com/diagridio/go-etcd-cron/api"
-	"github.com/diagridio/go-etcd-cron/tests/cron"
+	"github.com/diagridio/go-etcd-cron/tests/framework/cron"
 )
 
 func Test_Add(t *testing.T) {
