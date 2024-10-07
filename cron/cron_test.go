@@ -7,197 +7,16 @@ package cron
 
 import (
 	"context"
-	"strconv"
-	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
 
-	"github.com/dapr/kit/ptr"
 	"github.com/go-logr/logr"
-	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	clientv3 "go.etcd.io/etcd/client/v3"
-	"google.golang.org/protobuf/proto"
-	"google.golang.org/protobuf/types/known/anypb"
-	"google.golang.org/protobuf/types/known/durationpb"
-	"google.golang.org/protobuf/types/known/timestamppb"
-	"google.golang.org/protobuf/types/known/wrapperspb"
 
 	"github.com/diagridio/go-etcd-cron/api"
-	"github.com/diagridio/go-etcd-cron/internal/api/stored"
-	"github.com/diagridio/go-etcd-cron/internal/client"
-	"github.com/diagridio/go-etcd-cron/tests"
+	"github.com/diagridio/go-etcd-cron/tests/framework/etcd"
 )
-
-func Test_retry(t *testing.T) {
-	t.Parallel()
-
-	var ok bool
-	var lock sync.Mutex
-	helper := testCronWithOptions(t, testCronOptions{
-		total: 1,
-		triggerFn: func(*api.TriggerRequest) bool {
-			lock.Lock()
-			defer lock.Unlock()
-			return ok
-		},
-	})
-
-	job := &api.Job{
-		DueTime: ptr.Of(time.Now().Format(time.RFC3339)),
-	}
-	require.NoError(t, helper.api.Add(helper.ctx, "yoyo", job))
-
-	assert.EventuallyWithT(t, func(c *assert.CollectT) {
-		assert.Greater(c, helper.triggered.Load(), int64(1))
-	}, 5*time.Second, 10*time.Millisecond)
-	lock.Lock()
-	triggered := helper.triggered.Load()
-	triggered++
-	ok = true
-	lock.Unlock()
-	assert.EventuallyWithT(t, func(c *assert.CollectT) {
-		assert.Equal(c, triggered, helper.triggered.Load())
-	}, time.Second*10, time.Millisecond*10)
-	<-time.After(3 * time.Second)
-	assert.Equal(t, triggered, helper.triggered.Load())
-}
-
-func Test_payload(t *testing.T) {
-	t.Parallel()
-
-	gotCh := make(chan *api.TriggerRequest, 1)
-	helper := testCronWithOptions(t, testCronOptions{
-		total: 1,
-		gotCh: gotCh,
-	})
-
-	payload, err := anypb.New(wrapperspb.String("hello"))
-	require.NoError(t, err)
-	meta, err := anypb.New(wrapperspb.String("world"))
-	require.NoError(t, err)
-	job := &api.Job{
-		DueTime:  ptr.Of(time.Now().Format(time.RFC3339)),
-		Payload:  payload,
-		Metadata: meta,
-	}
-	require.NoError(t, helper.api.Add(helper.ctx, "yoyo", job))
-
-	select {
-	case got := <-gotCh:
-		assert.Equal(t, "yoyo", got.GetName())
-		var gotPayload wrapperspb.StringValue
-		require.NoError(t, got.GetPayload().UnmarshalTo(&gotPayload))
-		assert.Equal(t, "hello", gotPayload.GetValue())
-		var gotMeta wrapperspb.StringValue
-		require.NoError(t, got.GetMetadata().UnmarshalTo(&gotMeta))
-		assert.Equal(t, "world", gotMeta.GetValue())
-	case <-time.After(5 * time.Second):
-		t.Fatal("timeout waiting for trigger")
-	}
-}
-
-func Test_remove(t *testing.T) {
-	t.Parallel()
-
-	helper := testCron(t, 1)
-
-	job := &api.Job{
-		DueTime: ptr.Of(time.Now().Add(time.Second * 2).Format(time.RFC3339)),
-	}
-	require.NoError(t, helper.api.Add(helper.ctx, "def", job))
-	require.NoError(t, helper.api.Delete(helper.ctx, "def"))
-
-	<-time.After(3 * time.Second)
-
-	assert.Equal(t, int64(0), helper.triggered.Load())
-}
-
-func Test_upsert(t *testing.T) {
-	t.Parallel()
-
-	helper := testCron(t, 1)
-
-	job := &api.Job{
-		DueTime: ptr.Of(time.Now().Add(time.Hour).Format(time.RFC3339)),
-	}
-	require.NoError(t, helper.api.Add(helper.ctx, "def", job))
-	job = &api.Job{
-		DueTime: ptr.Of(time.Now().Add(time.Second).Format(time.RFC3339)),
-	}
-	require.NoError(t, helper.api.Add(helper.ctx, "def", job))
-
-	assert.Eventually(t, func() bool {
-		return helper.triggered.Load() == 1
-	}, 5*time.Second, 1*time.Second)
-
-	resp, err := helper.client.Get(context.Background(), "abc/jobs/def")
-	require.NoError(t, err)
-	assert.Empty(t, resp.Kvs)
-}
-
-func Test_patition(t *testing.T) {
-	t.Parallel()
-
-	helper := testCron(t, 100)
-
-	for i := range 100 {
-		job := &api.Job{
-			DueTime: ptr.Of(time.Now().Add(time.Second).Format(time.RFC3339)),
-		}
-		require.NoError(t, helper.allCrons[i].Add(helper.ctx, "test-"+strconv.Itoa(i), job))
-	}
-
-	assert.Eventually(t, func() bool {
-		return helper.triggered.Load() == 100
-	}, 5*time.Second, 1*time.Second)
-
-	resp, err := helper.client.Get(context.Background(), "abc/jobs", clientv3.WithPrefix())
-	require.NoError(t, err)
-	assert.Empty(t, resp.Kvs)
-}
-
-func Test_oneshot(t *testing.T) {
-	t.Parallel()
-
-	helper := testCron(t, 1)
-
-	job := &api.Job{
-		DueTime: ptr.Of(time.Now().Add(time.Second).Format(time.RFC3339)),
-	}
-
-	require.NoError(t, helper.api.Add(helper.ctx, "def", job))
-
-	assert.Eventually(t, func() bool {
-		return helper.triggered.Load() == 1
-	}, 5*time.Second, 1*time.Second)
-
-	resp, err := helper.client.Get(context.Background(), "abc/jobs/def")
-	require.NoError(t, err)
-	assert.Empty(t, resp.Kvs)
-}
-
-func Test_repeat(t *testing.T) {
-	t.Parallel()
-
-	helper := testCron(t, 1)
-
-	job := &api.Job{
-		Schedule: ptr.Of("@every 10ms"),
-		Repeats:  ptr.Of(uint32(3)),
-	}
-
-	require.NoError(t, helper.api.Add(helper.ctx, "def", job))
-
-	assert.EventuallyWithT(t, func(c *assert.CollectT) {
-		assert.Equal(c, int64(3), helper.triggered.Load())
-	}, 5*time.Second, 1*time.Second)
-
-	resp, err := helper.client.Get(context.Background(), "abc/jobs/def")
-	require.NoError(t, err)
-	assert.Empty(t, resp.Kvs)
-}
 
 func Test_Run(t *testing.T) {
 	t.Parallel()
@@ -205,7 +24,7 @@ func Test_Run(t *testing.T) {
 	t.Run("Running multiple times should error", func(t *testing.T) {
 		t.Parallel()
 
-		client := tests.EmbeddedETCDBareClient(t)
+		client := etcd.EmbeddedBareClient(t)
 		var triggered atomic.Int64
 		cronI, err := New(Options{
 			Log:            logr.Discard(),
@@ -213,9 +32,9 @@ func Test_Run(t *testing.T) {
 			Namespace:      "abc",
 			PartitionID:    0,
 			PartitionTotal: 1,
-			TriggerFn: func(context.Context, *api.TriggerRequest) bool {
+			TriggerFn: func(context.Context, *api.TriggerRequest) *api.TriggerResponse {
 				triggered.Add(1)
-				return true
+				return &api.TriggerResponse{Result: api.TriggerResponseResult_SUCCESS}
 			},
 		})
 		require.NoError(t, err)

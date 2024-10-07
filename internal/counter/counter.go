@@ -47,11 +47,22 @@ type Options struct {
 	Collector garbage.Interface
 }
 
-// Counter is a counter, tracking state of a scheduled job as it is triggered
+// Interface is a counter, tracking state of a scheduled job as it is triggered
 // over time. Returns, if necessary, the time the job should be triggered next.
 // Counter handles the deletion of the associated job if it has expired and
 // adding the counter object to the garbage collector.
-type Counter struct {
+type Interface interface {
+	ScheduledTime() time.Time
+	Key() string
+	JobName() string
+	TriggerRequest() *api.TriggerRequest
+	TriggerSuccess(ctx context.Context) (bool, error)
+	TriggerFailed(ctx context.Context) (bool, error)
+}
+
+// counter is the implementation of the counter interface.
+type counter struct {
+	name           string
 	jobKey         string
 	counterKey     string
 	client         client.Interface
@@ -64,7 +75,7 @@ type Counter struct {
 	triggerRequest *api.TriggerRequest
 }
 
-func New(ctx context.Context, opts Options) (*Counter, bool, error) {
+func New(ctx context.Context, opts Options) (Interface, bool, error) {
 	counterKey := opts.Key.CounterKey(opts.Name)
 	jobKey := opts.Key.JobKey(opts.Name)
 
@@ -78,7 +89,8 @@ func New(ctx context.Context, opts Options) (*Counter, bool, error) {
 	}
 
 	if res.Count == 0 {
-		c := &Counter{
+		c := &counter{
+			name:       opts.Name,
 			jobKey:     jobKey,
 			counterKey: counterKey,
 			client:     opts.Client,
@@ -119,7 +131,7 @@ func New(ctx context.Context, opts Options) (*Counter, bool, error) {
 		}
 	}
 
-	c := &Counter{
+	c := &counter{
 		counterKey: counterKey,
 		jobKey:     jobKey,
 		client:     opts.Client,
@@ -144,23 +156,29 @@ func New(ctx context.Context, opts Options) (*Counter, bool, error) {
 
 // ScheduledTime is the time at which the job is scheduled to be triggered
 // next. Implements the kit events queueable item.
-func (c *Counter) ScheduledTime() time.Time {
+func (c *counter) ScheduledTime() time.Time {
 	return c.next
 }
 
-// Key returns the name of the job. Implements the kit events queueable item.
-func (c *Counter) Key() string {
+// Key returns the Etcd key of the job. Implements the kit events queueable
+// item.
+func (c *counter) Key() string {
 	return c.jobKey
 }
 
+// JobName returns the consumer name of the job.
+func (c *counter) JobName() string {
+	return c.name
+}
+
 // TriggerRequest is the trigger request representation for the job.
-func (c *Counter) TriggerRequest() *api.TriggerRequest {
+func (c *counter) TriggerRequest() *api.TriggerRequest {
 	return c.triggerRequest
 }
 
 // TriggerSuccess updates the counter state given what the next trigger time
 // was. Returns true if the job will be triggered again.
-func (c *Counter) TriggerSuccess(ctx context.Context) (bool, error) {
+func (c *counter) TriggerSuccess(ctx context.Context) (bool, error) {
 	// Update the last trigger time as the next trigger time, and increment the
 	// counter.
 	// Set attempts to 0 as this trigger was successful.
@@ -191,7 +209,7 @@ func (c *Counter) TriggerSuccess(ctx context.Context) (bool, error) {
 // Returns true if the job failure policy indicates that the job should be
 // tried again. Returns false if the job should not be attempted again and was
 // deleted.
-func (c *Counter) TriggerFailed(ctx context.Context) (bool, error) {
+func (c *counter) TriggerFailed(ctx context.Context) (bool, error) {
 	// Increment the attempts counter as this count tick failed.
 	c.count.Attempts++
 
@@ -217,7 +235,7 @@ func (c *Counter) TriggerFailed(ctx context.Context) (bool, error) {
 
 // policyTryAgain returns true if the failure policy indicates this job should
 // be tried again at this tick.
-func (c *Counter) policyTryAgain() bool {
+func (c *counter) policyTryAgain() bool {
 	fp := c.job.GetJob().GetFailurePolicy()
 	if fp == nil {
 		c.count.LastTrigger = timestamppb.New(c.next)
@@ -253,7 +271,7 @@ func (c *Counter) policyTryAgain() bool {
 
 // tickNext updates the next trigger time, and deletes the counter record if
 // needed.
-func (c *Counter) tickNext() (bool, error) {
+func (c *counter) tickNext() (bool, error) {
 	if c.updateNext() {
 		return true, nil
 	}
@@ -271,7 +289,7 @@ func (c *Counter) tickNext() (bool, error) {
 // updateNext updates the counter's next trigger time.
 // Returns false if the job and counter should be deleted because it has
 // expired.
-func (c *Counter) updateNext() bool {
+func (c *counter) updateNext() bool {
 	// If job completed repeats, delete the counter.
 	if c.job.GetJob().Repeats != nil && (c.count.GetCount() >= c.job.GetJob().GetRepeats()) {
 		return false

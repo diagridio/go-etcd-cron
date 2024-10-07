@@ -66,19 +66,38 @@ type Queue struct {
 
 	key          *key.Key
 	schedBuilder *scheduler.Builder
-	collector    garbage.Interface
-	cache        concurrency.Map[string, struct{}]
 	yard         *grave.Yard
+	collector    garbage.Interface
+
+	// counter cache tracks counters which are active. Used to ensure there is no
+	// race condition whereby a Delete operation on a job which was mid execution
+	// on the same scheduler instance, would not see that job as not deleted from
+	// the in-memory. Used to back out of an execution if it is no longer in that
+	// cache (deleted).
+	cache concurrency.Map[string, struct{}]
 
 	// lock prevents an informed schedule from overwriting a job as it is being
 	// triggered, i.e. prevent a PUT and mid-trigger race condition.
 	lock  concurrency.MutexMap[string]
 	wg    sync.WaitGroup
-	queue *queue.Processor[string, *counter.Counter]
+	queue *queue.Processor[string, counter.Interface]
+
+	// staged are the counters that have been staged for later triggering as the
+	// consumer has signalled that the job is current undeliverable. When the
+	// consumer signals a prefix has become deliverable, counters in that prefix
+	// will be enqueued.
+	// TODO: @joshvanl: investigate better indexing for prefixing.
+	staged     []counter.Interface
+	stagedLock sync.Mutex
+
+	// activeConsumerPrefixes tracks the job name prefixes which are currently
+	// deliverable. Since consumer may indicate the same prefix is deliverable
+	// multiple times due to pooling, we track the length, and remove the prefix
+	// when the length is 0.
+	deliverablePrefixes map[string]*atomic.Int32
 
 	running atomic.Bool
 	readyCh chan struct{}
-	errCh   chan error
 }
 
 func New(opts Options) *Queue {
@@ -88,18 +107,18 @@ func New(opts Options) *Queue {
 	}
 
 	return &Queue{
-		log:          opts.Log.WithName("queue"),
-		client:       opts.Client,
-		key:          opts.Key,
-		triggerFn:    opts.TriggerFn,
-		collector:    opts.Collector,
-		schedBuilder: opts.SchedulerBuilder,
-		cache:        concurrency.NewMap[string, struct{}](),
-		yard:         opts.Yard,
-		clock:        cl,
-		lock:         concurrency.NewMutexMap[string](),
-		readyCh:      make(chan struct{}),
-		errCh:        make(chan error, 10),
+		log:                 opts.Log.WithName("queue"),
+		client:              opts.Client,
+		key:                 opts.Key,
+		triggerFn:           opts.TriggerFn,
+		collector:           opts.Collector,
+		schedBuilder:        opts.SchedulerBuilder,
+		cache:               concurrency.NewMap[string, struct{}](),
+		yard:                opts.Yard,
+		clock:               cl,
+		deliverablePrefixes: make(map[string]*atomic.Int32),
+		lock:                concurrency.NewMutexMap[string](),
+		readyCh:             make(chan struct{}),
 	}
 }
 
@@ -110,8 +129,8 @@ func (q *Queue) Run(ctx context.Context) error {
 		return errors.New("queue is already running")
 	}
 
-	q.queue = queue.NewProcessor[string, *counter.Counter](
-		func(counter *counter.Counter) {
+	q.queue = queue.NewProcessor[string, counter.Interface](
+		func(counter counter.Interface) {
 			q.lock.RLock(counter.Key())
 			_, ok := q.cache.Load(counter.Key())
 			if !ok || ctx.Err() != nil {
@@ -122,52 +141,53 @@ func (q *Queue) Run(ctx context.Context) error {
 			q.wg.Add(1)
 			go func() {
 				defer q.wg.Done()
-				if q.handleTrigger(ctx, counter) {
-					q.lock.RUnlock(counter.Key())
-				} else {
+				if !q.handleTrigger(ctx, counter) {
 					q.cache.Delete(counter.Key())
 					q.lock.DeleteRUnlock(counter.Key())
+					return
 				}
+
+				q.lock.RUnlock(counter.Key())
 			}()
 		},
 	).WithClock(q.clock)
 
 	close(q.readyCh)
 
-	var err error
-	select {
-	case <-ctx.Done():
-	case err = <-q.errCh:
-		if errors.Is(err, queue.ErrProcessorStopped) {
-			err = nil
-		}
-	}
+	<-ctx.Done()
 
-	return errors.Join(q.queue.Close(), err)
+	return q.queue.Close()
 }
 
-func (q *Queue) Delete(ctx context.Context, name string) error {
+func (q *Queue) Delete(ctx context.Context, jobName string) error {
 	select {
 	case <-ctx.Done():
 		return ctx.Err()
 	case <-q.readyCh:
 	}
 
-	key := q.key.JobKey(name)
+	key := q.key.JobKey(jobName)
 
 	q.lock.Lock(key)
+	q.stagedLock.Lock()
 	defer q.lock.DeleteUnlock(key)
+	defer q.stagedLock.Unlock()
 
 	if _, err := q.client.Delete(ctx, key); err != nil {
 		return err
 	}
 
-	if _, ok := q.cache.Load(key); !ok {
-		return nil
+	if _, ok := q.cache.LoadAndDelete(key); ok {
+		for i, counter := range q.staged {
+			if counter.JobName() == jobName {
+				q.staged = append(q.staged[:i], q.staged[i+1:]...)
+				break
+			}
+		}
+		q.queue.Dequeue(key)
 	}
 
-	q.cache.Delete(key)
-	return q.queue.Dequeue(key)
+	return nil
 }
 
 func (q *Queue) DeletePrefixes(ctx context.Context, prefixes ...string) error {
@@ -208,7 +228,7 @@ func (q *Queue) HandleInformerEvent(ctx context.Context, e *informer.Event) erro
 		return ctx.Err()
 	}
 
-	if err := q.scheduleEvent(ctx, e); !errors.Is(err, queue.ErrProcessorStopped) {
+	if err := q.scheduleEvent(ctx, e); err != nil {
 		return err
 	}
 
@@ -225,55 +245,75 @@ func (q *Queue) scheduleEvent(ctx context.Context, e *informer.Event) error {
 	defer q.lock.DeleteUnlock(string(e.Key))
 	q.cache.Delete(string(e.Key))
 	q.collector.Push(q.key.CounterKey(q.key.JobName(e.Key)))
-	return q.queue.Dequeue(string(e.Key))
+	q.queue.Dequeue(string(e.Key))
+	return nil
 }
 
 func (q *Queue) cacheDelete(jobKey string) error {
 	q.lock.Lock(jobKey)
 	defer q.lock.DeleteUnlock(jobKey)
 
-	if _, ok := q.cache.Load(jobKey); ok {
+	if _, ok := q.cache.Load(jobKey); !ok {
 		return nil
 	}
 
 	q.cache.Delete(jobKey)
-	return q.queue.Dequeue(jobKey)
+	q.queue.Dequeue(jobKey)
+
+	return nil
 }
 
 // handleTrigger handles triggering a schedule job.
 // Returns true if the job is being re-enqueued, false otherwise.
-func (q *Queue) handleTrigger(ctx context.Context, counter *counter.Counter) bool {
-	if !q.triggerFn(ctx, counter.TriggerRequest()) {
+func (q *Queue) handleTrigger(ctx context.Context, counter counter.Interface) bool {
+	result := q.triggerFn(ctx, counter.TriggerRequest()).GetResult()
+	if ctx.Err() != nil {
+		return false
+	}
+
+	switch result {
+	// Job was successfully triggered. Re-enqueue if the Job has more triggers
+	// according to the schedule.
+	case api.TriggerResponseResult_SUCCESS:
+		ok, err := counter.TriggerSuccess(ctx)
+		if err != nil {
+			q.log.Error(err, "failure marking job for next trigger", "name", counter.Key())
+		}
+
+		if ok {
+			q.queue.Enqueue(counter)
+		}
+
+		return ok
+
+		// The Job failed to trigger. Re-enqueue if the Job has more trigger
+		// attempts according to FailurePolicy, or the Job has more triggers
+		// according to the schedule.
+	case api.TriggerResponseResult_FAILED:
 		ok, err := counter.TriggerFailed(ctx)
 		if err != nil {
 			q.log.Error(err, "failure failing job for next retry trigger", "name", counter.Key())
 		}
 
-		return q.enqueueCounter(ctx, counter, ok)
-	}
-
-	ok, err := counter.TriggerSuccess(ctx)
-	if err != nil {
-		q.log.Error(err, "failure marking job for next trigger", "name", counter.Key())
-	}
-
-	return q.enqueueCounter(ctx, counter, ok)
-}
-
-// enqueueCounter enqueues the job to the queue at this count tick.
-func (q *Queue) enqueueCounter(ctx context.Context, counter *counter.Counter, ok bool) bool {
-	if ok && ctx.Err() == nil {
-		if err := q.queue.Enqueue(counter); err != nil {
-			select {
-			case <-ctx.Done():
-			case q.errCh <- err:
-			}
+		if ok {
+			q.queue.Enqueue(counter)
 		}
+		return ok
 
+		// The Job was undeliverable so will be moved to the staging queue where it
+		// will stay until it become deliverable. Due to a race, if the job is in
+		// fact now deliverable, we need to re-enqueue immediately, else simply
+		// keep it in staging until the prefix is deliverable.
+	case api.TriggerResponseResult_UNDELIVERABLE:
+		if !q.stage(counter) {
+			q.queue.Enqueue(counter)
+		}
 		return true
-	}
 
-	return false
+	default:
+		q.log.Error(errors.New("unknown trigger response result"), "unknown trigger response result", "name", counter.Key(), "result", result)
+		return false
+	}
 }
 
 // schedule schedules a job to it's next scheduled time.
@@ -303,5 +343,6 @@ func (q *Queue) schedule(ctx context.Context, name string, job *stored.Job) erro
 	}
 
 	q.cache.Store(counter.Key(), struct{}{})
-	return q.queue.Enqueue(counter)
+	q.queue.Enqueue(counter)
+	return nil
 }

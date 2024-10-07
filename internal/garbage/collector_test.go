@@ -17,7 +17,7 @@ import (
 	clientv3 "go.etcd.io/etcd/client/v3"
 	clocktesting "k8s.io/utils/clock/testing"
 
-	"github.com/diagridio/go-etcd-cron/tests"
+	"github.com/diagridio/go-etcd-cron/tests/framework/etcd"
 )
 
 func Test_New(t *testing.T) {
@@ -113,7 +113,7 @@ func Test_Run(t *testing.T) {
 	t.Run("closing the collector should result in the remaining keys to be deleted", func(t *testing.T) {
 		t.Parallel()
 
-		client := tests.EmbeddedETCD(t)
+		client := etcd.Embedded(t)
 		coll, err := New(Options{
 			Client: client,
 		})
@@ -157,7 +157,7 @@ func Test_Run(t *testing.T) {
 	t.Run("reaching max garbage limit (500k) should cause all keys to be deleted", func(t *testing.T) {
 		t.Parallel()
 
-		client := tests.EmbeddedETCD(t)
+		client := etcd.Embedded(t)
 		coll, err := New(Options{
 			Client: client,
 		})
@@ -209,7 +209,7 @@ func Test_Run(t *testing.T) {
 	t.Run("if ticks past 180 seconds, then should delete all garbage keys", func(t *testing.T) {
 		t.Parallel()
 
-		client := tests.EmbeddedETCD(t)
+		client := etcd.Embedded(t)
 		clock := clocktesting.NewFakeClock(time.Now())
 		coll, err := New(Options{
 			Client: client,
@@ -257,7 +257,7 @@ func Test_Run(t *testing.T) {
 	t.Run("if ticks past custom 60s, then should delete all garbage keys", func(t *testing.T) {
 		t.Parallel()
 
-		client := tests.EmbeddedETCD(t)
+		client := etcd.Embedded(t)
 		clock := clocktesting.NewFakeClock(time.Now())
 		coll, err := New(Options{
 			Client:             client,
@@ -410,7 +410,7 @@ func Test_collect(t *testing.T) {
 	t.Run("if there are keys to delete, expect them to be deleted", func(t *testing.T) {
 		t.Parallel()
 
-		client := tests.EmbeddedETCD(t)
+		client := etcd.Embedded(t)
 		coll, err := New(Options{
 			Client: client,
 		})
@@ -444,7 +444,7 @@ func Test_collect(t *testing.T) {
 	t.Run("should not delete other keys which are not marked for deletion", func(t *testing.T) {
 		t.Parallel()
 
-		client := tests.EmbeddedETCD(t)
+		client := etcd.Embedded(t)
 		coll, err := New(Options{
 			Client: client,
 		})

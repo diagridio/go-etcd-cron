@@ -8,7 +8,7 @@ package cron
 import (
 	"testing"
 
-	"github.com/diagridio/go-etcd-cron/tests"
+	"github.com/diagridio/go-etcd-cron/tests/framework/etcd"
 )
 
 type Cluster struct {
@@ -18,7 +18,7 @@ type Cluster struct {
 
 func TripplePartition(t *testing.T) *Cluster {
 	t.Helper()
-	client := tests.EmbeddedETCDBareClient(t)
+	client := etcd.EmbeddedBareClient(t)
 	cr1 := newCron(t, client, 3, 0)
 	cr2 := newCron(t, client, 3, 1)
 	cr3 := newCron(t, client, 3, 2)

@@ -26,7 +26,7 @@ import (
 	"github.com/diagridio/go-etcd-cron/internal/grave"
 	"github.com/diagridio/go-etcd-cron/internal/key"
 	"github.com/diagridio/go-etcd-cron/internal/scheduler"
-	"github.com/diagridio/go-etcd-cron/tests"
+	"github.com/diagridio/go-etcd-cron/tests/framework/etcd"
 )
 
 func Test_New(t *testing.T) {
@@ -35,7 +35,7 @@ func Test_New(t *testing.T) {
 	t.Run("New pops the job key on the collector", func(t *testing.T) {
 		t.Parallel()
 
-		client := tests.EmbeddedETCD(t)
+		client := etcd.Embedded(t)
 
 		now := time.Now().UTC()
 
@@ -107,7 +107,7 @@ func Test_New(t *testing.T) {
 	t.Run("if the counter already exists and partition ID matches, expect counter be kept the same", func(t *testing.T) {
 		t.Parallel()
 
-		client := tests.EmbeddedETCD(t)
+		client := etcd.Embedded(t)
 
 		now := time.Now().UTC()
 
@@ -191,7 +191,7 @@ func Test_New(t *testing.T) {
 	t.Run("if the counter already exists but partition ID doesn't match, expect counter to be written with new value", func(t *testing.T) {
 		t.Parallel()
 
-		client := tests.EmbeddedETCD(t)
+		client := etcd.Embedded(t)
 
 		now := time.Now().UTC()
 
@@ -282,7 +282,7 @@ func Test_New(t *testing.T) {
 	t.Run("if the counter already exists and partition ID matches but is expired, expect both job and counter to be deleted", func(t *testing.T) {
 		t.Parallel()
 
-		client := tests.EmbeddedETCD(t)
+		client := etcd.Embedded(t)
 
 		now := time.Now().UTC()
 
@@ -363,7 +363,7 @@ func Test_New(t *testing.T) {
 	t.Run("if the counter doesn't exist, create new counter and update next but don't write, return true", func(t *testing.T) {
 		t.Parallel()
 
-		client := tests.EmbeddedETCD(t)
+		client := etcd.Embedded(t)
 
 		now := time.Now().UTC()
 
@@ -441,7 +441,7 @@ func Test_TriggerSuccess(t *testing.T) {
 	t.Run("if tick next is true, expect job be kept and counter to incremented", func(t *testing.T) {
 		t.Parallel()
 
-		client := tests.EmbeddedETCD(t)
+		client := etcd.Embedded(t)
 
 		now := time.Now().UTC()
 
@@ -454,14 +454,14 @@ func Test_TriggerSuccess(t *testing.T) {
 				Schedule: ptr.Of("@every 1s"),
 			},
 		}
-		counter := &stored.Counter{LastTrigger: nil, JobPartitionId: 123}
+		scounter := &stored.Counter{LastTrigger: nil, JobPartitionId: 123}
 
 		sched, err := scheduler.NewBuilder().Schedule(job)
 		require.NoError(t, err)
 
 		jobBytes, err := proto.Marshal(job)
 		require.NoError(t, err)
-		counterBytes, err := proto.Marshal(counter)
+		counterBytes, err := proto.Marshal(scounter)
 		require.NoError(t, err)
 
 		_, err = client.Put(context.Background(), "abc/jobs/1", string(jobBytes))
@@ -479,12 +479,12 @@ func Test_TriggerSuccess(t *testing.T) {
 		}()
 
 		yard := grave.New()
-		c := &Counter{
+		c := &counter{
 			yard:       yard,
 			client:     client,
 			collector:  collector,
 			job:        job,
-			count:      counter,
+			count:      scounter,
 			schedule:   sched,
 			jobKey:     "abc/jobs/1",
 			counterKey: "abc/counters/1",
@@ -526,7 +526,7 @@ func Test_TriggerSuccess(t *testing.T) {
 	t.Run("if tick next is false, expect job and counter to be deleted", func(t *testing.T) {
 		t.Parallel()
 
-		client := tests.EmbeddedETCD(t)
+		client := etcd.Embedded(t)
 
 		now := time.Now().UTC()
 
@@ -538,7 +538,7 @@ func Test_TriggerSuccess(t *testing.T) {
 				DueTime: ptr.Of(now.Format(time.RFC3339)),
 			},
 		}
-		counter := &stored.Counter{
+		scounter := &stored.Counter{
 			LastTrigger:    nil,
 			JobPartitionId: 123,
 			Count:          0,
@@ -549,7 +549,7 @@ func Test_TriggerSuccess(t *testing.T) {
 
 		jobBytes, err := proto.Marshal(job)
 		require.NoError(t, err)
-		counterBytes, err := proto.Marshal(counter)
+		counterBytes, err := proto.Marshal(scounter)
 		require.NoError(t, err)
 
 		_, err = client.Put(context.Background(), "abc/jobs/1", string(jobBytes))
@@ -567,13 +567,13 @@ func Test_TriggerSuccess(t *testing.T) {
 		}()
 
 		yard := grave.New()
-		c := &Counter{
+		c := &counter{
 			yard:       yard,
 			client:     client,
 			collector:  collector,
 			job:        job,
 			next:       now,
-			count:      counter,
+			count:      scounter,
 			schedule:   sched,
 			jobKey:     "abc/jobs/1",
 			counterKey: "abc/counters/1",
@@ -605,7 +605,7 @@ func Test_TriggerSuccess(t *testing.T) {
 	t.Run("The number of attempts on the counter should always be reset to 0 when Trigger is called", func(t *testing.T) {
 		t.Parallel()
 
-		client := tests.EmbeddedETCD(t)
+		client := etcd.Embedded(t)
 
 		now := time.Now().UTC()
 
@@ -618,14 +618,14 @@ func Test_TriggerSuccess(t *testing.T) {
 				Schedule: ptr.Of("@every 1s"),
 			},
 		}
-		counter := &stored.Counter{LastTrigger: nil, JobPartitionId: 123, Attempts: 456}
+		scounter := &stored.Counter{LastTrigger: nil, JobPartitionId: 123, Attempts: 456}
 
 		sched, err := scheduler.NewBuilder().Schedule(job)
 		require.NoError(t, err)
 
 		jobBytes, err := proto.Marshal(job)
 		require.NoError(t, err)
-		counterBytes, err := proto.Marshal(counter)
+		counterBytes, err := proto.Marshal(scounter)
 		require.NoError(t, err)
 
 		_, err = client.Put(context.Background(), "abc/jobs/1", string(jobBytes))
@@ -643,12 +643,12 @@ func Test_TriggerSuccess(t *testing.T) {
 		}()
 
 		yard := grave.New()
-		c := &Counter{
+		c := &counter{
 			yard:       yard,
 			client:     client,
 			collector:  collector,
 			job:        job,
-			count:      counter,
+			count:      scounter,
 			schedule:   sched,
 			jobKey:     "abc/jobs/1",
 			counterKey: "abc/counters/1",
@@ -695,7 +695,7 @@ func Test_tickNext(t *testing.T) {
 	t.Run("if the updateNext returns true, expect no delete", func(t *testing.T) {
 		t.Parallel()
 
-		client := tests.EmbeddedETCD(t)
+		client := etcd.Embedded(t)
 
 		now := time.Now().UTC()
 
@@ -707,14 +707,14 @@ func Test_tickNext(t *testing.T) {
 				DueTime: ptr.Of(now.Format(time.RFC3339)),
 			},
 		}
-		counter := &stored.Counter{LastTrigger: nil, JobPartitionId: 123}
+		scounter := &stored.Counter{LastTrigger: nil, JobPartitionId: 123}
 
 		sched, err := scheduler.NewBuilder().Schedule(job)
 		require.NoError(t, err)
 
 		jobBytes, err := proto.Marshal(job)
 		require.NoError(t, err)
-		counterBytes, err := proto.Marshal(counter)
+		counterBytes, err := proto.Marshal(scounter)
 		require.NoError(t, err)
 
 		_, err = client.Put(context.Background(), "abc/jobs/1", string(jobBytes))
@@ -732,12 +732,12 @@ func Test_tickNext(t *testing.T) {
 		}()
 
 		yard := grave.New()
-		c := &Counter{
+		c := &counter{
 			yard:       yard,
 			client:     client,
 			collector:  collector,
 			job:        job,
-			count:      counter,
+			count:      scounter,
 			schedule:   sched,
 			jobKey:     "abc/jobs/1",
 			counterKey: "abc/counters/1",
@@ -771,7 +771,7 @@ func Test_tickNext(t *testing.T) {
 	t.Run("if the updateNext returns false, expect delete", func(t *testing.T) {
 		t.Parallel()
 
-		client := tests.EmbeddedETCD(t)
+		client := etcd.Embedded(t)
 
 		now := time.Now().UTC()
 
@@ -783,7 +783,7 @@ func Test_tickNext(t *testing.T) {
 				DueTime: ptr.Of(now.Format(time.RFC3339)),
 			},
 		}
-		counter := &stored.Counter{
+		scounter := &stored.Counter{
 			LastTrigger:    timestamppb.New(now),
 			JobPartitionId: 123,
 			Count:          1,
@@ -794,7 +794,7 @@ func Test_tickNext(t *testing.T) {
 
 		jobBytes, err := proto.Marshal(job)
 		require.NoError(t, err)
-		counterBytes, err := proto.Marshal(counter)
+		counterBytes, err := proto.Marshal(scounter)
 		require.NoError(t, err)
 
 		_, err = client.Put(context.Background(), "abc/jobs/1", string(jobBytes))
@@ -812,12 +812,12 @@ func Test_tickNext(t *testing.T) {
 		}()
 
 		yard := grave.New()
-		c := &Counter{
+		c := &counter{
 			yard:       yard,
 			client:     client,
 			collector:  collector,
 			job:        job,
-			count:      counter,
+			count:      scounter,
 			schedule:   sched,
 			jobKey:     "abc/jobs/1",
 			counterKey: "abc/counters/1",
@@ -888,12 +888,12 @@ func Test_updateNext(t *testing.T) {
 	require.NoError(t, err)
 
 	tests := map[string]struct {
-		counter *Counter
+		counter *counter
 		exp     bool
 		expNext time.Time
 	}{
 		"if the number of counts is the same as repeats return false": {
-			counter: &Counter{
+			counter: &counter{
 				schedule: repeats,
 				job: &stored.Job{Job: &api.Job{
 					Repeats: ptr.Of(uint32(4)),
@@ -905,7 +905,7 @@ func Test_updateNext(t *testing.T) {
 			exp: false,
 		},
 		"if the number of counts is more than repeats return false (should never happen)": {
-			counter: &Counter{
+			counter: &counter{
 				schedule: repeats,
 				job: &stored.Job{Job: &api.Job{
 					Repeats: ptr.Of(uint32(4)),
@@ -915,7 +915,7 @@ func Test_updateNext(t *testing.T) {
 			exp: false,
 		},
 		"if the last trigger time if the same as the expiry, expect false": {
-			counter: &Counter{
+			counter: &counter{
 				schedule: expires,
 				job: &stored.Job{Job: &api.Job{
 					Repeats: ptr.Of(uint32(4)),
@@ -928,7 +928,7 @@ func Test_updateNext(t *testing.T) {
 			exp: false,
 		},
 		"if the count is equal to total, return false": {
-			counter: &Counter{
+			counter: &counter{
 				schedule: expires,
 				job: &stored.Job{Job: &api.Job{
 					Repeats: ptr.Of(uint32(4)),
@@ -941,7 +941,7 @@ func Test_updateNext(t *testing.T) {
 			exp: false,
 		},
 		"if under the number of counts, but job is past expiry time, return false": {
-			counter: &Counter{
+			counter: &counter{
 				schedule: expires,
 				job: &stored.Job{
 					Expiration: timestamppb.New(now.Add(-5 * time.Second)),
@@ -955,7 +955,7 @@ func Test_updateNext(t *testing.T) {
 			exp: false,
 		},
 		"if time is past the trigger time but no triggered yet for one shot, return true and set trigger time": {
-			counter: &Counter{
+			counter: &counter{
 				schedule: oneshot,
 				job:      &stored.Job{Job: new(api.Job)},
 				count: &stored.Counter{
@@ -967,7 +967,7 @@ func Test_updateNext(t *testing.T) {
 			expNext: now,
 		},
 		"if oneshot trigger but has already been triggered, expect false": {
-			counter: &Counter{
+			counter: &counter{
 				schedule: oneshot,
 				job:      &stored.Job{Job: new(api.Job)},
 				count: &stored.Counter{
@@ -1640,7 +1640,7 @@ func Test_TriggerFailed(t *testing.T) {
 			sched, err := scheduler.NewBuilder().Schedule(job)
 			require.NoError(t, err)
 
-			counter := &Counter{
+			counter := &counter{
 				jobKey:     "abc/jobs/1",
 				counterKey: "abc/counters/1",
 				client:     client,
@@ -1709,7 +1709,7 @@ func Test_TriggerFailureSuccess(t *testing.T) {
 	sched, err := scheduler.NewBuilder().Schedule(job)
 	require.NoError(t, err)
 
-	counter := &Counter{
+	counter := &counter{
 		jobKey:     "abc/jobs/1",
 		counterKey: "abc/counters/1",
 		client:     client,

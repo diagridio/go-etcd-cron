@@ -24,12 +24,18 @@ func main() {
     Namespace:      "abc",
     PartitionID:    0,
     PartitionTotal: 1,
-    TriggerFn: func(context.Context, *api.TriggerRequest) bool {
+    TriggerFn: func(context.Context, *api.TriggerRequest) *api.TriggerResponse {
       // Do something with your trigger here.
-      // Return true if the trigger was successful, false otherwise.
-      // Note, returning false will cause the job to be retried according to
-      // the Jobs configurable FailurePolicy.
-      return true
+      // Return SUCCESS if the trigger was successful, FAILED if the trigger
+      // failed and should be subject to the FailurePolicy, or UNDELIVERABLE if
+      // the job is currently undeliverable and should be moved to the staging
+      // queue. Use `cron.DeliverablePrefixes` elsewhere to mark jobs with the
+      // given prefixes as now deliverable.
+	  return &api.TriggerResponse{
+        Result: api.TriggerResponseResult_SUCCESS,
+        // Result: api.TriggerResponseResult_FAILED,
+        // Result: api.TriggerResponseResult_UNDELIVERABLE,
+      }
     },
   })
   if err != nil {
@@ -43,11 +49,14 @@ func main() {
   meta, _ := anypb.New(wrapperspb.String("world"))
   tt := time.Now().Add(time.Second).Format(time.RFC3339)
 
-  cron.Add(context.TODO(), "my-job", &api.Job{
+  err = cron.Add(context.TODO(), "my-job", &api.Job{
     DueTime:  &tt,
     Payload:  payload,
     Metadata: meta,
   })
+  if err != nil {
+    panic(err)
+  }
 }
 ```
 
@@ -78,6 +87,13 @@ A Job itself is made up of the following fields:
   `Constant` policy, with a 1s interval and 3 maximum retries.
 
 A job must have *at least* either a `Schedule` or a `DueTime` set.
+
+### Undeliverable Jobs
+
+It can be the case that a job trigger hasn't actually _failed_, but instead is simply undeliverable at the current time.
+In such cases, the trigger function can return `UNDELIVERABLE` to indicate that the job should be moved to the "staging queue" to be held until it can be delivered.
+Staged jobs can be marked as deliverable again by calling `cron.DeliverablePrefixes` with the prefixes of those job names.
+Jobs whose name match these prefixes will be re-enqueued for delivery.
 
 ## Leadership
 

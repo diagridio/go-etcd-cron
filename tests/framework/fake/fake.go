@@ -19,6 +19,8 @@ type Fake struct {
 	delFn  func(ctx context.Context, name string) error
 	delPFn func(ctx context.Context, prefixes ...string) error
 	listFn func(ctx context.Context, prefix string) (*api.ListResponse, error)
+
+	deliverablePrefixesFn func(ctx context.Context, prefixes ...string) (context.CancelFunc, error)
 }
 
 func New() *Fake {
@@ -41,6 +43,9 @@ func New() *Fake {
 		},
 		listFn: func(context.Context, string) (*api.ListResponse, error) {
 			return nil, nil
+		},
+		deliverablePrefixesFn: func(context.Context, ...string) (context.CancelFunc, error) {
+			return func() {}, nil
 		},
 	}
 }
@@ -75,6 +80,11 @@ func (f *Fake) WithList(fn func(context.Context, string) (*api.ListResponse, err
 	return f
 }
 
+func (f *Fake) WithDeliverablePrefixes(fn func(context.Context, ...string) (context.CancelFunc, error)) *Fake {
+	f.deliverablePrefixesFn = fn
+	return f
+}
+
 func (f *Fake) Run(ctx context.Context) error {
 	return f.runFn(ctx)
 }
@@ -97,4 +107,8 @@ func (f *Fake) DeletePrefixes(ctx context.Context, prefixes ...string) error {
 
 func (f *Fake) List(ctx context.Context, prefix string) (*api.ListResponse, error) {
 	return f.listFn(ctx, prefix)
+}
+
+func (f *Fake) DeliverablePrefixes(ctx context.Context, prefixes ...string) (context.CancelFunc, error) {
+	return f.deliverablePrefixesFn(ctx, prefixes...)
 }

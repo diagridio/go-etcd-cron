@@ -17,7 +17,7 @@ import (
 
 	"github.com/diagridio/go-etcd-cron/internal/client"
 	"github.com/diagridio/go-etcd-cron/internal/key"
-	"github.com/diagridio/go-etcd-cron/tests"
+	"github.com/diagridio/go-etcd-cron/tests/framework/etcd"
 )
 
 //nolint:gocyclo
@@ -27,7 +27,7 @@ func Test_Run(t *testing.T) {
 	t.Run("Leadership should become leader and become ready", func(t *testing.T) {
 		t.Parallel()
 
-		client := tests.EmbeddedETCD(t)
+		client := etcd.Embedded(t)
 		l := New(Options{
 			Client:         client,
 			PartitionTotal: 10,
@@ -56,7 +56,7 @@ func Test_Run(t *testing.T) {
 	t.Run("Running leadership multiple times should error", func(t *testing.T) {
 		t.Parallel()
 
-		client := tests.EmbeddedETCD(t)
+		client := etcd.Embedded(t)
 		l := New(Options{
 			Client:         client,
 			PartitionTotal: 10,
@@ -86,7 +86,7 @@ func Test_Run(t *testing.T) {
 	t.Run("Closing the leadership should delete the accosted partition leader key", func(t *testing.T) {
 		t.Parallel()
 
-		client := tests.EmbeddedETCD(t)
+		client := etcd.Embedded(t)
 		l := New(Options{
 			Client:         client,
 			PartitionTotal: 10,
@@ -134,7 +134,7 @@ func Test_Run(t *testing.T) {
 	t.Run("Closing the leadership should not delete the other partition keys", func(t *testing.T) {
 		t.Parallel()
 
-		client := tests.EmbeddedETCD(t)
+		client := etcd.Embedded(t)
 		l := New(Options{
 			Client:         client,
 			PartitionTotal: 10,
@@ -196,7 +196,7 @@ func Test_Run(t *testing.T) {
 	t.Run("An existing key will gate becoming ready until deleted", func(t *testing.T) {
 		t.Parallel()
 
-		client := tests.EmbeddedETCD(t)
+		client := etcd.Embedded(t)
 		l := New(Options{
 			Client:         client,
 			PartitionTotal: 10,
@@ -248,7 +248,7 @@ func Test_Run(t *testing.T) {
 	t.Run("Leadership will gate until all partition keys have the same total", func(t *testing.T) {
 		t.Parallel()
 
-		client := tests.EmbeddedETCD(t)
+		client := etcd.Embedded(t)
 		l := New(Options{
 			Client:         client,
 			PartitionTotal: 10,
@@ -314,7 +314,7 @@ func Test_Run(t *testing.T) {
 	t.Run("Leadership of different partition IDs should all become leader", func(t *testing.T) {
 		t.Parallel()
 
-		client := tests.EmbeddedETCD(t)
+		client := etcd.Embedded(t)
 		l1 := New(Options{
 			Client:         client,
 			PartitionTotal: 3,
@@ -376,7 +376,7 @@ func Test_Run(t *testing.T) {
 	t.Run("Two leaders of the same partition should make one passive unil the other is closed", func(t *testing.T) {
 		t.Parallel()
 
-		client := tests.EmbeddedETCD(t)
+		client := etcd.Embedded(t)
 		l1 := New(Options{
 			Client:         client,
 			PartitionTotal: 1,
@@ -452,7 +452,7 @@ func Test_checkLeadershipKeys(t *testing.T) {
 	t.Run("if no leadership keys, return error", func(t *testing.T) {
 		t.Parallel()
 
-		client := tests.EmbeddedETCD(t)
+		client := etcd.Embedded(t)
 		l := New(Options{
 			Client:         client,
 			PartitionTotal: 10,
@@ -470,7 +470,7 @@ func Test_checkLeadershipKeys(t *testing.T) {
 	t.Run("if all keys have the same partition total, return true", func(t *testing.T) {
 		t.Parallel()
 
-		client := tests.EmbeddedETCD(t)
+		client := etcd.Embedded(t)
 		l := New(Options{
 			Client:         client,
 			PartitionTotal: 10,
@@ -493,7 +493,7 @@ func Test_checkLeadershipKeys(t *testing.T) {
 	t.Run("if some keys have the same partition total, return true", func(t *testing.T) {
 		t.Parallel()
 
-		client := tests.EmbeddedETCD(t)
+		client := etcd.Embedded(t)
 		l := New(Options{
 			Client:         client,
 			PartitionTotal: 10,
@@ -518,7 +518,7 @@ func Test_checkLeadershipKeys(t *testing.T) {
 	t.Run("if some keys have the same partition total but this partition doesn't exist, return error", func(t *testing.T) {
 		t.Parallel()
 
-		client := tests.EmbeddedETCD(t)
+		client := etcd.Embedded(t)
 		l := New(Options{
 			Client:         client,
 			PartitionTotal: 10,
@@ -541,7 +541,7 @@ func Test_checkLeadershipKeys(t *testing.T) {
 	t.Run("if some keys have the same partition total but some don't, return error", func(t *testing.T) {
 		t.Parallel()
 
-		client := tests.EmbeddedETCD(t)
+		client := etcd.Embedded(t)
 		l := New(Options{
 			Client:         client,
 			PartitionTotal: 10,
@@ -572,7 +572,7 @@ func Test_attemptPartitionLeadership(t *testing.T) {
 	t.Run("no previous leader, expect to become leader", func(t *testing.T) {
 		t.Parallel()
 
-		client := tests.EmbeddedETCD(t)
+		client := etcd.Embedded(t)
 		l := New(Options{
 			Client:         client,
 			PartitionTotal: 10,
@@ -599,7 +599,7 @@ func Test_attemptPartitionLeadership(t *testing.T) {
 	t.Run("previous leader, expect not to become leader", func(t *testing.T) {
 		t.Parallel()
 
-		client := tests.EmbeddedETCD(t)
+		client := etcd.Embedded(t)
 		l := New(Options{
 			Client:         client,
 			PartitionTotal: 10,

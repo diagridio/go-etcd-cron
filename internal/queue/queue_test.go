@@ -26,18 +26,18 @@ import (
 	"github.com/diagridio/go-etcd-cron/internal/informer"
 	"github.com/diagridio/go-etcd-cron/internal/key"
 	"github.com/diagridio/go-etcd-cron/internal/scheduler"
-	"github.com/diagridio/go-etcd-cron/tests"
+	"github.com/diagridio/go-etcd-cron/tests/framework/etcd"
 )
 
 func Test_delete_race(t *testing.T) {
 	t.Parallel()
 
 	triggered := make([]atomic.Int64, 20)
-	queue := newQueue(t, func(_ context.Context, req *api.TriggerRequest) bool {
+	queue := newQueue(t, func(_ context.Context, req *api.TriggerRequest) *api.TriggerResponse {
 		i, err := strconv.Atoi(req.GetName())
 		require.NoError(t, err)
 		triggered[i].Add(1)
-		return true
+		return &api.TriggerResponse{Result: api.TriggerResponseResult_SUCCESS}
 	})
 
 	jobKeys := make([]string, 20)
@@ -87,7 +87,7 @@ func Test_delete_race(t *testing.T) {
 func newQueue(t *testing.T, triggerFn api.TriggerFunction) *Queue {
 	t.Helper()
 
-	client := tests.EmbeddedETCD(t)
+	client := etcd.Embedded(t)
 
 	collector, err := garbage.New(garbage.Options{Client: client})
 	require.NoError(t, err)

@@ -9,7 +9,7 @@ import (
 	"testing"
 
 	"github.com/diagridio/go-etcd-cron/api"
-	"github.com/diagridio/go-etcd-cron/tests/fake"
+	"github.com/diagridio/go-etcd-cron/tests/framework/fake"
 )
 
 func Test_Fake(t *testing.T) {
