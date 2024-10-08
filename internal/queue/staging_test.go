@@ -94,6 +94,7 @@ func Test_DeliverablePrefixes(t *testing.T) {
 		var triggered []string
 		q := &Queue{
 			deliverablePrefixes: make(map[string]*atomic.Int32),
+			staged:              make(map[string]counter.Interface),
 			queue: queue.NewProcessor[string, counter.Interface](
 				func(counter counter.Interface) {
 					lock.Lock()
@@ -109,15 +110,15 @@ func Test_DeliverablePrefixes(t *testing.T) {
 		counter4 := fake.New().WithJobName("def234").WithKey("def234")
 		counter5 := fake.New().WithJobName("xyz123").WithKey("xyz123")
 		counter6 := fake.New().WithJobName("xyz234").WithKey("xyz234")
-		q.staged = []counter.Interface{
-			counter1, counter2,
-			counter3, counter4,
-			counter5, counter6,
+		q.staged = map[string]counter.Interface{
+			"abc123": counter1, "abc234": counter2,
+			"def123": counter3, "def234": counter4,
+			"xyz123": counter5, "xyz234": counter6,
 		}
 
 		cancel := q.DeliverablePrefixes("abc", "xyz")
 		t.Cleanup(cancel)
-		assert.ElementsMatch(t, []counter.Interface{counter3, counter4}, q.staged)
+		assert.Equal(t, map[string]counter.Interface{"def123": counter3, "def234": counter4}, q.staged)
 		assert.EventuallyWithT(t, func(c *assert.CollectT) {
 			lock.Lock()
 			defer lock.Unlock()
@@ -181,6 +182,7 @@ func Test_stage(t *testing.T) {
 
 			q := &Queue{
 				deliverablePrefixes: make(map[string]*atomic.Int32),
+				staged:              make(map[string]counter.Interface),
 			}
 
 			for _, prefix := range test.deliverablePrefixes {
