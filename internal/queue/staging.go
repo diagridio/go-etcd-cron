@@ -28,11 +28,10 @@ func (q *Queue) DeliverablePrefixes(prefixes ...string) context.CancelFunc {
 		if _, ok := q.deliverablePrefixes[prefix]; !ok {
 			q.deliverablePrefixes[prefix] = new(atomic.Int32)
 
-			for i := 0; i < len(q.staged); i++ {
-				if strings.HasPrefix(q.staged[i].JobName(), prefix) {
-					toEnqueue = append(toEnqueue, q.staged[i])
-					q.staged = append(q.staged[:i], q.staged[i+1:]...)
-					i--
+			for jobName, stage := range q.staged {
+				if strings.HasPrefix(jobName, prefix) {
+					toEnqueue = append(toEnqueue, stage)
+					delete(q.staged, jobName)
 				}
 			}
 		}
@@ -75,7 +74,7 @@ func (q *Queue) stage(counter counter.Interface) bool {
 		}
 	}
 
-	q.staged = append(q.staged, counter)
+	q.staged[jobName] = counter
 
 	return true
 }

@@ -130,7 +130,7 @@ func Test_FailurePolicy(t *testing.T) {
 			FailurePolicy: &api.FailurePolicy{
 				Policy: &api.FailurePolicy_Constant{
 					Constant: &api.FailurePolicyConstant{
-						Delay: durationpb.New(time.Millisecond), MaxRetries: ptr.Of(uint32(1)),
+						Interval: durationpb.New(time.Millisecond), MaxRetries: ptr.Of(uint32(1)),
 					},
 				},
 			},
@@ -177,7 +177,7 @@ func Test_FailurePolicy(t *testing.T) {
 			FailurePolicy: &api.FailurePolicy{
 				Policy: &api.FailurePolicy_Constant{
 					Constant: &api.FailurePolicyConstant{
-						Delay: durationpb.New(time.Millisecond),
+						Interval: durationpb.New(time.Millisecond),
 					},
 				},
 			},

@@ -9,6 +9,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"sync"
 	"sync/atomic"
 
@@ -85,9 +86,8 @@ type Queue struct {
 	// staged are the counters that have been staged for later triggering as the
 	// consumer has signalled that the job is current undeliverable. When the
 	// consumer signals a prefix has become deliverable, counters in that prefix
-	// will be enqueued.
-	// TODO: @joshvanl: investigate better indexing for prefixing.
-	staged     []counter.Interface
+	// will be enqueued. Indexed by the counters Job Name.
+	staged     map[string]counter.Interface
 	stagedLock sync.Mutex
 
 	// activeConsumerPrefixes tracks the job name prefixes which are currently
@@ -117,6 +117,7 @@ func New(opts Options) *Queue {
 		yard:                opts.Yard,
 		clock:               cl,
 		deliverablePrefixes: make(map[string]*atomic.Int32),
+		staged:              make(map[string]counter.Interface),
 		lock:                concurrency.NewMutexMap[string](),
 		readyCh:             make(chan struct{}),
 	}
@@ -169,21 +170,17 @@ func (q *Queue) Delete(ctx context.Context, jobName string) error {
 	key := q.key.JobKey(jobName)
 
 	q.lock.Lock(key)
-	q.stagedLock.Lock()
 	defer q.lock.DeleteUnlock(key)
-	defer q.stagedLock.Unlock()
+
+	q.stagedLock.Lock()
+	delete(q.staged, jobName)
+	q.stagedLock.Unlock()
 
 	if _, err := q.client.Delete(ctx, key); err != nil {
 		return err
 	}
 
 	if _, ok := q.cache.LoadAndDelete(key); ok {
-		for i, counter := range q.staged {
-			if counter.JobName() == jobName {
-				q.staged = append(q.staged[:i], q.staged[i+1:]...)
-				break
-			}
-		}
 		q.queue.Dequeue(key)
 	}
 
@@ -209,8 +206,16 @@ func (q *Queue) DeletePrefixes(ctx context.Context, prefixes ...string) error {
 		}
 
 		for _, kv := range resp.PrevKvs {
-			errs = append(errs, q.cacheDelete(string(kv.Key)))
+			q.cacheDelete(string(kv.Key))
 		}
+
+		q.stagedLock.Lock()
+		for jobName := range q.staged {
+			if strings.HasPrefix(jobName, prefix) {
+				delete(q.staged, jobName)
+			}
+		}
+		q.stagedLock.Unlock()
 	}
 
 	return errors.Join(errs...)
@@ -237,30 +242,36 @@ func (q *Queue) HandleInformerEvent(ctx context.Context, e *informer.Event) erro
 
 func (q *Queue) scheduleEvent(ctx context.Context, e *informer.Event) error {
 	q.lock.Lock(string(e.Key))
+
+	jobName := q.key.JobName(e.Key)
+
+	q.stagedLock.Lock()
+	delete(q.staged, jobName)
+	q.stagedLock.Unlock()
+
 	if e.IsPut {
 		defer q.lock.Unlock(string(e.Key))
-		return q.schedule(ctx, q.key.JobName(e.Key), e.Job)
+		return q.schedule(ctx, jobName, e.Job)
 	}
 
 	defer q.lock.DeleteUnlock(string(e.Key))
 	q.cache.Delete(string(e.Key))
-	q.collector.Push(q.key.CounterKey(q.key.JobName(e.Key)))
+	q.collector.Push(q.key.CounterKey(jobName))
 	q.queue.Dequeue(string(e.Key))
+
 	return nil
 }
 
-func (q *Queue) cacheDelete(jobKey string) error {
+func (q *Queue) cacheDelete(jobKey string) {
 	q.lock.Lock(jobKey)
 	defer q.lock.DeleteUnlock(jobKey)
 
 	if _, ok := q.cache.Load(jobKey); !ok {
-		return nil
+		return
 	}
 
 	q.cache.Delete(jobKey)
 	q.queue.Dequeue(jobKey)
-
-	return nil
 }
 
 // handleTrigger handles triggering a schedule job.
