@@ -146,7 +146,12 @@ func (a *api) Delete(ctx context.Context, name string) error {
 		return err
 	}
 
-	return a.queue.Delete(ctx, name)
+	_, err := a.client.Delete(ctx, a.key.JobKey(name))
+	if err != nil {
+		return err
+	}
+
+	return nil
 }
 
 // DeletePrefixes deletes cron jobs with the given prefixes from the cron
@@ -170,7 +175,15 @@ func (a *api) DeletePrefixes(ctx context.Context, prefixes ...string) error {
 		}
 	}
 
-	return a.queue.DeletePrefixes(ctx, prefixes...)
+	var errs []error
+	for _, prefix := range prefixes {
+		_, err := a.client.Delete(ctx, a.key.JobKey(prefix), clientv3.WithPrefix())
+		if err != nil {
+			errs = append(errs, fmt.Errorf("failed to delete jobs with prefix %q: %w", prefix, err))
+		}
+	}
+
+	return errors.Join(errs...)
 }
 
 // List lists all cron jobs with the given job name prefix.

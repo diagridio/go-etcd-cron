@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/dapr/kit/concurrency/fifo"
 	"github.com/dapr/kit/events/queue"
 	"github.com/stretchr/testify/assert"
 
@@ -24,7 +25,10 @@ func Test_DeliverablePrefixes(t *testing.T) {
 	t.Run("registering empty prefixes should add nothing", func(t *testing.T) {
 		t.Parallel()
 
-		q := &Queue{deliverablePrefixes: make(map[string]*atomic.Int32)}
+		q := &Queue{
+			deliverablePrefixes: make(map[string]*atomic.Int32),
+			eventsLock:          fifo.New(),
+		}
 		assert.Empty(t, q.deliverablePrefixes)
 
 		cancel := q.DeliverablePrefixes()
@@ -36,7 +40,10 @@ func Test_DeliverablePrefixes(t *testing.T) {
 	t.Run("registering and cancelling should add then remove the prefix", func(t *testing.T) {
 		t.Parallel()
 
-		q := &Queue{deliverablePrefixes: make(map[string]*atomic.Int32)}
+		q := &Queue{
+			deliverablePrefixes: make(map[string]*atomic.Int32),
+			eventsLock:          fifo.New(),
+		}
 		assert.Empty(t, q.deliverablePrefixes)
 
 		cancel := q.DeliverablePrefixes("abc")
@@ -48,7 +55,10 @@ func Test_DeliverablePrefixes(t *testing.T) {
 	t.Run("multiple: registering and cancelling should add then remove the prefix", func(t *testing.T) {
 		t.Parallel()
 
-		q := &Queue{deliverablePrefixes: make(map[string]*atomic.Int32)}
+		q := &Queue{
+			deliverablePrefixes: make(map[string]*atomic.Int32),
+			eventsLock:          fifo.New(),
+		}
 		assert.Empty(t, q.deliverablePrefixes)
 
 		cancel1 := q.DeliverablePrefixes("abc")
@@ -65,7 +75,10 @@ func Test_DeliverablePrefixes(t *testing.T) {
 	t.Run("multiple with diff prefixes: registering and cancelling should add then remove the prefix", func(t *testing.T) {
 		t.Parallel()
 
-		q := &Queue{deliverablePrefixes: make(map[string]*atomic.Int32)}
+		q := &Queue{
+			deliverablePrefixes: make(map[string]*atomic.Int32),
+			eventsLock:          fifo.New(),
+		}
 		assert.Empty(t, q.deliverablePrefixes)
 
 		cancel1 := q.DeliverablePrefixes("abc")
@@ -94,6 +107,7 @@ func Test_DeliverablePrefixes(t *testing.T) {
 		var triggered []string
 		q := &Queue{
 			deliverablePrefixes: make(map[string]*atomic.Int32),
+			eventsLock:          fifo.New(),
 			staged:              make(map[string]counter.Interface),
 			queue: queue.NewProcessor[string, counter.Interface](
 				func(counter counter.Interface) {
@@ -182,6 +196,7 @@ func Test_stage(t *testing.T) {
 
 			q := &Queue{
 				deliverablePrefixes: make(map[string]*atomic.Int32),
+				eventsLock:          fifo.New(),
 				staged:              make(map[string]counter.Interface),
 			}
 

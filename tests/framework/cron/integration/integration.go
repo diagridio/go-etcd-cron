@@ -95,7 +95,7 @@ func New(t *testing.T, opts Options) *Integration {
 			case err := <-errCh:
 				require.NoError(t, err)
 			case <-time.After(10 * time.Second):
-				t.Fatal("timeout waiting for cron to stop")
+				t.Error("timeout waiting for cron to stop")
 			}
 		}
 	})
