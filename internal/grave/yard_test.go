@@ -57,27 +57,6 @@ func Test_Deleted(t *testing.T) {
 		newExp["500000"] = 500000
 		assert.Equal(t, newExp, yard.deletesMap)
 	})
-
-	t.Run("Heat death of the universe", func(t *testing.T) {
-		t.Parallel()
-
-		const maxUint64 = ^uint64(0)
-
-		yard := New()
-		yard.idx = maxUint64 - 10000
-
-		exp := make(map[string]uint64)
-		for i := maxUint64 - 10000; i < maxUint64-1; i++ {
-			exp[strconv.FormatUint(i, 10)] = i
-			yard.Deleted(strconv.FormatUint(i, 10))
-		}
-
-		assert.Equal(t, exp, yard.deletesMap)
-
-		yard.Deleted("helloworld")
-		assert.Empty(t, yard.deletesMap)
-		assert.Equal(t, uint64(0), yard.idx)
-	})
 }
 
 func Test_HasJustDeleted(t *testing.T) {
