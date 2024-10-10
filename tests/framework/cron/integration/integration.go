@@ -11,7 +11,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/dapr/kit/concurrency"
+	"github.com/dapr/kit/concurrency/slice"
 	"github.com/dapr/kit/ptr"
 	"github.com/go-logr/logr"
 	"github.com/stretchr/testify/require"
@@ -36,7 +36,7 @@ type Integration struct {
 	client    client.Interface
 	api       api.Interface
 	allCrons  []api.Interface
-	triggered concurrency.Slice[string]
+	triggered slice.Slice[string]
 }
 
 func NewBase(t *testing.T, partitionTotal uint32) *Integration {
@@ -55,7 +55,7 @@ func New(t *testing.T, opts Options) *Integration {
 		cl = etcd.EmbeddedBareClient(t)
 	}
 
-	triggered := concurrency.NewSlice[string]()
+	triggered := slice.String()
 	var a api.Interface
 	allCrns := make([]api.Interface, opts.PartitionTotal)
 	for i := range opts.PartitionTotal {
@@ -66,7 +66,7 @@ func New(t *testing.T, opts Options) *Integration {
 			PartitionID:    i,
 			PartitionTotal: opts.PartitionTotal,
 			TriggerFn: func(_ context.Context, req *api.TriggerRequest) *api.TriggerResponse {
-				defer triggered.Add(req.GetName())
+				defer triggered.Append(req.GetName())
 
 				if opts.GotCh != nil {
 					opts.GotCh <- req
