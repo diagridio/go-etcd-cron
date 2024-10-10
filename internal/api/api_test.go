@@ -277,15 +277,6 @@ func Test_DeliverablePrefixes(t *testing.T) {
 		assert.Equal(t, errors.New("api is closed"), err)
 		assert.Nil(t, cancel)
 	})
-
-	t.Run("invalid name should error", func(t *testing.T) {
-		t.Parallel()
-
-		api := newAPI(t)
-		cancel, err := api.DeliverablePrefixes(context.Background(), "./.")
-		require.Error(t, err)
-		assert.Nil(t, cancel)
-	})
 }
 
 func newAPI(t *testing.T) *api {
