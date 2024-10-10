@@ -80,4 +80,4 @@ require (
 	sigs.k8s.io/yaml v1.4.0 // indirect
 )
 
-replace github.com/dapr/kit => github.com/joshvanl/kit v0.0.0-20241009222632-45e23e402b9d
+replace github.com/dapr/kit => github.com/joshvanl/kit v0.0.0-20241010213959-65c331083149

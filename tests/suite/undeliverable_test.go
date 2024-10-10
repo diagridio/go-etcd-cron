@@ -13,7 +13,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/dapr/kit/concurrency"
+	"github.com/dapr/kit/concurrency/slice"
 	"github.com/dapr/kit/ptr"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -461,11 +461,11 @@ func Test_undeliverable(t *testing.T) {
 	t.Run("Deleting a staged job should not be triggered once it has been marked as deliverable", func(t *testing.T) {
 		t.Parallel()
 
-		triggered := concurrency.NewSlice[string]()
+		triggered := slice.String()
 		cron := integration.New(t, integration.Options{
 			PartitionTotal: 1,
 			TriggerFn: func(req *api.TriggerRequest) *api.TriggerResponse {
-				if triggered.Add(req.GetName()) <= 2 {
+				if triggered.Append(req.GetName()) <= 2 {
 					return &api.TriggerResponse{Result: api.TriggerResponseResult_UNDELIVERABLE}
 				}
 				return &api.TriggerResponse{Result: api.TriggerResponseResult_SUCCESS}
@@ -495,11 +495,11 @@ func Test_undeliverable(t *testing.T) {
 	t.Run("Deleting prefixed staged jobs should not be triggered once it has been marked as deliverable", func(t *testing.T) {
 		t.Parallel()
 
-		triggered := concurrency.NewSlice[string]()
+		triggered := slice.String()
 		cron := integration.New(t, integration.Options{
 			PartitionTotal: 1,
 			TriggerFn: func(req *api.TriggerRequest) *api.TriggerResponse {
-				triggered.Add(req.GetName())
+				triggered.Append(req.GetName())
 				if req.GetName() == "abc1" || req.GetName() == "def1" {
 					return &api.TriggerResponse{Result: api.TriggerResponseResult_UNDELIVERABLE}
 				}
