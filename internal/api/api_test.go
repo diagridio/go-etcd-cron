@@ -3,7 +3,6 @@ Copyright (c) 2024 Diagrid Inc.
 Licensed under the MIT License.
 */
 
-//nolint:dupl
 package api
 
 import (

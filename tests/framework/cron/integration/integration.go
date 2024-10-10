@@ -8,10 +8,10 @@ package integration
 import (
 	"context"
 	"sync"
-	"sync/atomic"
 	"testing"
 	"time"
 
+	"github.com/dapr/kit/concurrency"
 	"github.com/dapr/kit/ptr"
 	"github.com/go-logr/logr"
 	"github.com/stretchr/testify/require"
@@ -36,7 +36,7 @@ type Integration struct {
 	client    client.Interface
 	api       api.Interface
 	allCrons  []api.Interface
-	triggered *atomic.Int64
+	triggered concurrency.Slice[string]
 }
 
 func NewBase(t *testing.T, partitionTotal uint32) *Integration {
@@ -55,7 +55,7 @@ func New(t *testing.T, opts Options) *Integration {
 		cl = etcd.EmbeddedBareClient(t)
 	}
 
-	var triggered atomic.Int64
+	triggered := concurrency.NewSlice[string]()
 	var a api.Interface
 	allCrns := make([]api.Interface, opts.PartitionTotal)
 	for i := range opts.PartitionTotal {
@@ -66,7 +66,8 @@ func New(t *testing.T, opts Options) *Integration {
 			PartitionID:    i,
 			PartitionTotal: opts.PartitionTotal,
 			TriggerFn: func(_ context.Context, req *api.TriggerRequest) *api.TriggerResponse {
-				defer triggered.Add(1)
+				defer triggered.Add(req.GetName())
+
 				if opts.GotCh != nil {
 					opts.GotCh <- req
 				}
@@ -111,7 +112,7 @@ func New(t *testing.T, opts Options) *Integration {
 		client:    client.New(client.Options{Client: cl, Log: logr.Discard()}),
 		api:       a,
 		allCrons:  allCrns,
-		triggered: &triggered,
+		triggered: triggered,
 		closeCron: closeOnce,
 	}
 }
@@ -133,7 +134,11 @@ func (i *Integration) AllCrons() []api.Interface {
 }
 
 func (i *Integration) Triggered() int {
-	return int(i.triggered.Load())
+	return i.triggered.Len()
+}
+
+func (i *Integration) TriggeredNames() []string {
+	return i.triggered.Slice()
 }
 
 func (i *Integration) Close() {
