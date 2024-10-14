@@ -19,6 +19,9 @@ linters:
  - funlen
  - maintidx
  - containedctx
+ - mnd
+ - contextcheck
+ - err113
 linters-settings:
   goimports:
     local-prefixes: github.com/diagridio

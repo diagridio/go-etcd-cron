@@ -14,6 +14,11 @@ import (
 	"time"
 
 	"github.com/dapr/kit/ptr"
+	"github.com/go-logr/logr"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+	"google.golang.org/protobuf/types/known/timestamppb"
+
 	"github.com/diagridio/go-etcd-cron/api"
 	"github.com/diagridio/go-etcd-cron/internal/api/stored"
 	"github.com/diagridio/go-etcd-cron/internal/garbage"
@@ -22,10 +27,6 @@ import (
 	"github.com/diagridio/go-etcd-cron/internal/key"
 	"github.com/diagridio/go-etcd-cron/internal/scheduler"
 	"github.com/diagridio/go-etcd-cron/tests"
-	"github.com/go-logr/logr"
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
-	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
 func Test_delete_race(t *testing.T) {
@@ -33,7 +34,7 @@ func Test_delete_race(t *testing.T) {
 
 	triggered := make([]atomic.Int64, 20)
 	queue := newQueue(t, func(_ context.Context, req *api.TriggerRequest) bool {
-		i, err := strconv.Atoi(req.Name)
+		i, err := strconv.Atoi(req.GetName())
 		require.NoError(t, err)
 		triggered[i].Add(1)
 		return true

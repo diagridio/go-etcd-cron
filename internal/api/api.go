@@ -23,9 +23,7 @@ import (
 	"github.com/diagridio/go-etcd-cron/internal/scheduler"
 )
 
-var (
-	errAPIClosed = errors.New("api is closed")
-)
+var errAPIClosed = errors.New("api is closed")
 
 type Options struct {
 	Client           client.Interface

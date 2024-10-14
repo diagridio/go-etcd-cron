@@ -18,7 +18,7 @@ func Test_zero(t *testing.T) {
 	t.Run("always return true", func(t *testing.T) {
 		t.Parallel()
 		z := new(zero)
-		for i := 0; i < 100; i++ {
+		for range 100 {
 			//nolint:gosec
 			assert.True(t, z.IsJobManaged(rand.Uint32()))
 		}

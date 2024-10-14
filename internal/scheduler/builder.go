@@ -13,10 +13,12 @@ import (
 	"github.com/dapr/kit/cron"
 	"github.com/dapr/kit/ptr"
 	kittime "github.com/dapr/kit/time"
-	"github.com/diagridio/go-etcd-cron/api"
-	"github.com/diagridio/go-etcd-cron/internal/api/stored"
+	"google.golang.org/protobuf/types/known/durationpb"
 	"google.golang.org/protobuf/types/known/timestamppb"
 	"k8s.io/utils/clock"
+
+	"github.com/diagridio/go-etcd-cron/api"
+	"github.com/diagridio/go-etcd-cron/internal/api/stored"
 )
 
 // Builder is a builder for creating a new scheduler.
@@ -33,8 +35,8 @@ func NewBuilder() *Builder {
 	}
 }
 
-// Scheduler returns the scheduler based on the given stored job.
-func (b *Builder) Scheduler(job *stored.Job) (Interface, error) {
+// Schedule returns the schedule based on the given stored job.
+func (b *Builder) Schedule(job *stored.Job) (Interface, error) {
 	if job.GetJob().Schedule == nil {
 		return &oneshot{
 			dueTime: job.GetDueTime().AsTime(),
@@ -88,8 +90,21 @@ func (b *Builder) Parse(job *api.Job) (*stored.Job, error) {
 		}
 	}
 
-	//nolint:gosec
+	//nolint:protogetter
+	if job.FailurePolicy == nil {
+		job.FailurePolicy = &api.FailurePolicy{
+			Policy: &api.FailurePolicy_Constant{
+				Constant: &api.FailurePolicyConstant{
+					Interval:   durationpb.New(time.Second),
+					MaxRetries: ptr.Of(uint32(3)),
+				},
+			},
+		}
+	}
+
 	storedJob := &stored.Job{
+		// PartionId has no need to be crypto random.
+		//nolint:gosec
 		PartitionId: rand.Uint32(),
 		Job:         job,
 	}

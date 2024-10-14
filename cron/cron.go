@@ -109,7 +109,10 @@ func New(opts Options) (api.Interface, error) {
 		log = log.WithName("diagrid-cron")
 	}
 
-	client := client.New(opts.Client)
+	client := client.New(client.Options{
+		Log:    log,
+		Client: opts.Client,
+	})
 
 	collector, err := garbage.New(garbage.Options{
 		Log:                log,

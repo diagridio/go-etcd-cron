@@ -20,6 +20,7 @@ import (
 	clientv3 "go.etcd.io/etcd/client/v3"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/anypb"
+	"google.golang.org/protobuf/types/known/durationpb"
 	"google.golang.org/protobuf/types/known/timestamppb"
 	"google.golang.org/protobuf/types/known/wrapperspb"
 
@@ -53,7 +54,7 @@ func Test_retry(t *testing.T) {
 	}, 5*time.Second, 10*time.Millisecond)
 	lock.Lock()
 	triggered := helper.triggered.Load()
-	triggered += 1
+	triggered++
 	ok = true
 	lock.Unlock()
 	assert.EventuallyWithT(t, func(c *assert.CollectT) {
@@ -141,7 +142,7 @@ func Test_patition(t *testing.T) {
 
 	helper := testCron(t, 100)
 
-	for i := 0; i < 100; i++ {
+	for i := range 100 {
 		job := &api.Job{
 			DueTime: ptr.Of(time.Now().Add(time.Second).Format(time.RFC3339)),
 		}
@@ -310,7 +311,7 @@ func Test_parallel(t *testing.T) {
 				},
 			})
 
-			for i := 0; i < 100; i++ {
+			for i := range 100 {
 				require.NoError(t, helper.api.Add(helper.ctx, strconv.Itoa(i), &api.Job{
 					DueTime: ptr.Of("0s"),
 				}))
@@ -506,7 +507,7 @@ func Test_jobWithSpace(t *testing.T) {
 		DueTime: ptr.Of(time.Now().Add(2).Format(time.RFC3339)),
 	}))
 	resp, err := cron.api.Get(context.Background(), "hello world")
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	assert.NotNil(t, resp)
 
 	assert.EventuallyWithT(t, func(c *assert.CollectT) {
@@ -520,18 +521,193 @@ func Test_jobWithSpace(t *testing.T) {
 		Schedule: ptr.Of("@every 1s"),
 	}))
 	resp, err = cron.api.Get(context.Background(), "another hello world")
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	assert.NotNil(t, resp)
 	listresp, err := cron.api.List(context.Background(), "")
-	assert.NoError(t, err)
-	assert.Len(t, listresp.Jobs, 1)
+	require.NoError(t, err)
+	assert.Len(t, listresp.GetJobs(), 1)
 	require.NoError(t, cron.api.Delete(context.Background(), "another hello world"))
 	resp, err = cron.api.Get(context.Background(), "another hello world")
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	assert.Nil(t, resp)
 	listresp, err = cron.api.List(context.Background(), "")
-	assert.NoError(t, err)
-	assert.Empty(t, listresp.Jobs)
+	require.NoError(t, err)
+	assert.Empty(t, listresp.GetJobs())
+}
+
+func Test_FailurePolicy(t *testing.T) {
+	t.Parallel()
+
+	t.Run("default policy should retry 3 times with a 1sec interval", func(t *testing.T) {
+		t.Parallel()
+
+		gotCh := make(chan *api.TriggerRequest, 1)
+		var got atomic.Uint32
+		cron := testCronWithOptions(t, testCronOptions{
+			total:  1,
+			client: tests.EmbeddedETCDBareClient(t),
+			triggerFn: func(*api.TriggerRequest) bool {
+				assert.GreaterOrEqual(t, uint32(8), got.Add(1))
+				return false
+			},
+			gotCh: gotCh,
+		})
+
+		require.NoError(t, cron.api.Add(context.Background(), "test", &api.Job{
+			DueTime:  ptr.Of(time.Now().Format(time.RFC3339)),
+			Schedule: ptr.Of("@every 1s"),
+			Repeats:  ptr.Of(uint32(2)),
+		}))
+
+		for range 8 {
+			resp, err := cron.api.Get(context.Background(), "test")
+			require.NoError(t, err)
+			assert.NotNil(t, resp)
+			select {
+			case <-gotCh:
+			case <-time.After(time.Second * 3):
+				assert.Fail(t, "timeout waiting for trigger")
+			}
+		}
+
+		assert.EventuallyWithT(t, func(c *assert.CollectT) {
+			resp, err := cron.api.Get(context.Background(), "test")
+			assert.NoError(c, err)
+			assert.Nil(c, resp)
+		}, time.Second*5, time.Millisecond*10)
+	})
+
+	t.Run("drop policy should not retry triggering", func(t *testing.T) {
+		t.Parallel()
+
+		gotCh := make(chan *api.TriggerRequest, 1)
+		var got atomic.Uint32
+		cron := testCronWithOptions(t, testCronOptions{
+			total:  1,
+			client: tests.EmbeddedETCDBareClient(t),
+			triggerFn: func(*api.TriggerRequest) bool {
+				assert.GreaterOrEqual(t, uint32(2), got.Add(1))
+				return false
+			},
+			gotCh: gotCh,
+		})
+
+		require.NoError(t, cron.api.Add(context.Background(), "test", &api.Job{
+			DueTime:  ptr.Of(time.Now().Format(time.RFC3339)),
+			Schedule: ptr.Of("@every 1s"),
+			Repeats:  ptr.Of(uint32(2)),
+			FailurePolicy: &api.FailurePolicy{
+				Policy: new(api.FailurePolicy_Drop),
+			},
+		}))
+
+		for range 2 {
+			resp, err := cron.api.Get(context.Background(), "test")
+			require.NoError(t, err)
+			assert.NotNil(t, resp)
+			select {
+			case <-gotCh:
+			case <-time.After(time.Second * 3):
+				assert.Fail(t, "timeout waiting for trigger")
+			}
+		}
+
+		assert.EventuallyWithT(t, func(c *assert.CollectT) {
+			resp, err := cron.api.Get(context.Background(), "test")
+			assert.NoError(c, err)
+			assert.Nil(c, resp)
+		}, time.Second*5, time.Millisecond*10)
+	})
+
+	t.Run("constant policy should only retry when it fails ", func(t *testing.T) {
+		t.Parallel()
+
+		gotCh := make(chan *api.TriggerRequest, 1)
+		var got atomic.Uint32
+		cron := testCronWithOptions(t, testCronOptions{
+			total:  1,
+			client: tests.EmbeddedETCDBareClient(t),
+			triggerFn: func(*api.TriggerRequest) bool {
+				assert.GreaterOrEqual(t, uint32(5), got.Add(1))
+				return got.Load() == 3
+			},
+			gotCh: gotCh,
+		})
+
+		require.NoError(t, cron.api.Add(context.Background(), "test", &api.Job{
+			DueTime:  ptr.Of(time.Now().Format(time.RFC3339)),
+			Schedule: ptr.Of("@every 1s"),
+			Repeats:  ptr.Of(uint32(3)),
+			FailurePolicy: &api.FailurePolicy{
+				Policy: &api.FailurePolicy_Constant{
+					Constant: &api.FailurePolicyConstant{
+						Interval: durationpb.New(time.Millisecond), MaxRetries: ptr.Of(uint32(1)),
+					},
+				},
+			},
+		}))
+
+		for range 5 {
+			resp, err := cron.api.Get(context.Background(), "test")
+			require.NoError(t, err)
+			assert.NotNil(t, resp)
+			select {
+			case <-gotCh:
+			case <-time.After(time.Second * 3):
+				assert.Fail(t, "timeout waiting for trigger")
+			}
+		}
+
+		assert.EventuallyWithT(t, func(c *assert.CollectT) {
+			resp, err := cron.api.Get(context.Background(), "test")
+			assert.NoError(c, err)
+			assert.Nil(c, resp)
+		}, time.Second*5, time.Millisecond*10)
+	})
+
+	t.Run("constant policy can retry forever until it succeeds", func(t *testing.T) {
+		t.Parallel()
+
+		gotCh := make(chan *api.TriggerRequest, 1)
+		var got atomic.Uint32
+		cron := testCronWithOptions(t, testCronOptions{
+			total:  1,
+			client: tests.EmbeddedETCDBareClient(t),
+			triggerFn: func(*api.TriggerRequest) bool {
+				assert.GreaterOrEqual(t, uint32(100), got.Add(1))
+				return got.Load() == 100
+			},
+			gotCh: gotCh,
+		})
+
+		require.NoError(t, cron.api.Add(context.Background(), "test", &api.Job{
+			DueTime: ptr.Of(time.Now().Format(time.RFC3339)),
+			FailurePolicy: &api.FailurePolicy{
+				Policy: &api.FailurePolicy_Constant{
+					Constant: &api.FailurePolicyConstant{
+						Interval: durationpb.New(time.Millisecond),
+					},
+				},
+			},
+		}))
+
+		for range 100 {
+			resp, err := cron.api.Get(context.Background(), "test")
+			require.NoError(t, err)
+			assert.NotNil(t, resp)
+			select {
+			case <-gotCh:
+			case <-time.After(time.Second * 3):
+				assert.Fail(t, "timeout waiting for trigger")
+			}
+		}
+
+		assert.EventuallyWithT(t, func(c *assert.CollectT) {
+			resp, err := cron.api.Get(context.Background(), "test")
+			assert.NoError(c, err)
+			assert.Nil(c, resp)
+		}, time.Second*5, time.Millisecond*10)
+	})
 }
 
 type testCronOptions struct {
@@ -560,7 +736,7 @@ func testCron(t *testing.T, total uint32) *helper {
 func testCronWithOptions(t *testing.T, opts testCronOptions) *helper {
 	t.Helper()
 
-	require.Greater(t, opts.total, uint32(0))
+	require.Positive(t, opts.total)
 	cl := opts.client
 	if cl == nil {
 		cl = tests.EmbeddedETCDBareClient(t)
@@ -569,12 +745,12 @@ func testCronWithOptions(t *testing.T, opts testCronOptions) *helper {
 	var triggered atomic.Int64
 	var a api.Interface
 	allCrns := make([]api.Interface, opts.total)
-	for i := 0; i < int(opts.total); i++ {
+	for i := range opts.total {
 		c, err := New(Options{
 			Log:            logr.Discard(),
 			Client:         cl,
 			Namespace:      "abc",
-			PartitionID:    uint32(i),
+			PartitionID:    i,
 			PartitionTotal: opts.total,
 			TriggerFn: func(_ context.Context, req *api.TriggerRequest) bool {
 				defer func() { triggered.Add(1) }()
@@ -601,7 +777,7 @@ func testCronWithOptions(t *testing.T, opts testCronOptions) *helper {
 
 	closeOnce := sync.OnceFunc(func() {
 		cancel()
-		for i := 0; i < int(opts.total); i++ {
+		for range opts.total {
 			select {
 			case err := <-errCh:
 				require.NoError(t, err)
@@ -611,7 +787,7 @@ func testCronWithOptions(t *testing.T, opts testCronOptions) *helper {
 		}
 	})
 	t.Cleanup(closeOnce)
-	for i := uint32(0); i < opts.total; i++ {
+	for i := range opts.total {
 		go func(i uint32) {
 			errCh <- allCrns[i].Run(ctx)
 		}(i)
@@ -619,7 +795,7 @@ func testCronWithOptions(t *testing.T, opts testCronOptions) *helper {
 
 	return &helper{
 		ctx:       ctx,
-		client:    client.New(cl),
+		client:    client.New(client.Options{Client: cl, Log: logr.Discard()}),
 		api:       a,
 		allCrons:  allCrns,
 		triggered: &triggered,

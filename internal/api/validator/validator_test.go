@@ -101,11 +101,10 @@ func Test_JobName(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		name := test.name
-		expErr := test.expErr
 		t.Run(test.name, func(t *testing.T) {
-			err := New(Options{}).JobName(name)
-			assert.Equal(t, expErr, err != nil, "%v", err)
+			t.Parallel()
+			err := New(Options{}).JobName(test.name)
+			assert.Equal(t, test.expErr, err != nil, "%v", err)
 		})
 	}
 }

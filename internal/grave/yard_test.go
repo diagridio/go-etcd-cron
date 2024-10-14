@@ -36,7 +36,8 @@ func Test_Deleted(t *testing.T) {
 		yard := New()
 		exp := make(map[string]uint64)
 
-		for i := 0; i < 500000-1; i++ {
+		for i := range 500000 - 1 {
+			//nolint:gosec
 			exp[strconv.Itoa(i)] = uint64(i)
 			yard.Deleted(strconv.Itoa(i))
 		}
@@ -47,6 +48,7 @@ func Test_Deleted(t *testing.T) {
 		assert.Len(t, yard.deletesMap, (500000 - 10000))
 		newExp := make(map[string]uint64)
 		for i := 10000; i < 500000; i++ {
+			//nolint:gosec
 			newExp[strconv.Itoa(i)] = uint64(i)
 		}
 		assert.Equal(t, newExp, yard.deletesMap)

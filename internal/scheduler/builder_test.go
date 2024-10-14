@@ -13,6 +13,7 @@ import (
 	"github.com/dapr/kit/ptr"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"google.golang.org/protobuf/types/known/durationpb"
 	"google.golang.org/protobuf/types/known/timestamppb"
 	clocktesting "k8s.io/utils/clock/testing"
 
@@ -20,7 +21,7 @@ import (
 	"github.com/diagridio/go-etcd-cron/internal/api/stored"
 )
 
-func Test_Scheduler(t *testing.T) {
+func Test_Schedule(t *testing.T) {
 	t.Parallel()
 
 	now := time.Now().UTC().Truncate(time.Second)
@@ -102,7 +103,7 @@ func Test_Scheduler(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 			builder := &Builder{clock: clock}
-			gotScheduler, gotErr := builder.Scheduler(testInLoop.job)
+			gotScheduler, gotErr := builder.Schedule(testInLoop.job)
 			assert.Equal(t, testInLoop.expScheduler, gotScheduler)
 			assert.Equal(t, testInLoop.expErr, gotErr != nil, "%v", gotErr)
 		})
@@ -172,6 +173,11 @@ func Test_Parse(t *testing.T) {
 					Schedule: nil,
 					Ttl:      nil,
 					Repeats:  nil,
+					FailurePolicy: &api.FailurePolicy{
+						Policy: &api.FailurePolicy_Constant{Constant: &api.FailurePolicyConstant{
+							Interval: durationpb.New(time.Second), MaxRetries: ptr.Of(uint32(3)),
+						}},
+					},
 				},
 				Begin: &stored.Job_DueTime{
 					DueTime: timestamppb.New(time.Date(2024, 4, 24, 11, 42, 22, 0, time.UTC)),
@@ -193,6 +199,11 @@ func Test_Parse(t *testing.T) {
 					Schedule: ptr.Of("@every 1h"),
 					Ttl:      nil,
 					Repeats:  nil,
+					FailurePolicy: &api.FailurePolicy{
+						Policy: &api.FailurePolicy_Constant{Constant: &api.FailurePolicyConstant{
+							Interval: durationpb.New(time.Second), MaxRetries: ptr.Of(uint32(3)),
+						}},
+					},
 				},
 				Begin: &stored.Job_DueTime{
 					DueTime: timestamppb.New(time.Date(2024, 4, 24, 11, 42, 22, 0, time.UTC)),
@@ -214,6 +225,11 @@ func Test_Parse(t *testing.T) {
 					Schedule: ptr.Of("@every 1h"),
 					Ttl:      ptr.Of("2h"),
 					Repeats:  nil,
+					FailurePolicy: &api.FailurePolicy{
+						Policy: &api.FailurePolicy_Constant{Constant: &api.FailurePolicyConstant{
+							Interval: durationpb.New(time.Second), MaxRetries: ptr.Of(uint32(3)),
+						}},
+					},
 				},
 				Begin: &stored.Job_Start{
 					Start: timestamppb.New(now),
@@ -235,6 +251,11 @@ func Test_Parse(t *testing.T) {
 					Schedule: ptr.Of("@every 1h"),
 					Ttl:      ptr.Of("2h"),
 					Repeats:  ptr.Of(uint32(100)),
+					FailurePolicy: &api.FailurePolicy{
+						Policy: &api.FailurePolicy_Constant{Constant: &api.FailurePolicyConstant{
+							Interval: durationpb.New(time.Second), MaxRetries: ptr.Of(uint32(3)),
+						}},
+					},
 				},
 				Begin: &stored.Job_DueTime{
 					DueTime: timestamppb.New(time.Date(2024, 4, 24, 11, 42, 22, 0, time.UTC)),
@@ -266,6 +287,11 @@ func Test_Parse(t *testing.T) {
 					Schedule: ptr.Of("@every 1h"),
 					Ttl:      ptr.Of("2024-04-24T11:42:22Z"),
 					Repeats:  nil,
+					FailurePolicy: &api.FailurePolicy{
+						Policy: &api.FailurePolicy_Constant{Constant: &api.FailurePolicyConstant{
+							Interval: durationpb.New(time.Second), MaxRetries: ptr.Of(uint32(3)),
+						}},
+					},
 				},
 				Begin: &stored.Job_DueTime{
 					DueTime: timestamppb.New(time.Date(2024, 4, 24, 11, 42, 22, 0, time.UTC)),
@@ -291,6 +317,64 @@ func Test_Parse(t *testing.T) {
 				Repeats:  nil,
 			},
 			expErr: true,
+		},
+		"don't overwrite failure policy constant": {
+			job: &api.Job{
+				DueTime:  ptr.Of("2024-04-24T11:42:22Z"),
+				Schedule: nil,
+				Ttl:      nil,
+				Repeats:  nil,
+				FailurePolicy: &api.FailurePolicy{
+					Policy: &api.FailurePolicy_Constant{Constant: &api.FailurePolicyConstant{
+						Interval: durationpb.New(time.Second * 3), MaxRetries: ptr.Of(uint32(5)),
+					}},
+				},
+			},
+			expStored: &stored.Job{
+				Job: &api.Job{
+					DueTime:  ptr.Of("2024-04-24T11:42:22Z"),
+					Schedule: nil,
+					Ttl:      nil,
+					Repeats:  nil,
+					FailurePolicy: &api.FailurePolicy{
+						Policy: &api.FailurePolicy_Constant{Constant: &api.FailurePolicyConstant{
+							Interval: durationpb.New(time.Second * 3), MaxRetries: ptr.Of(uint32(5)),
+						}},
+					},
+				},
+				Begin: &stored.Job_DueTime{
+					DueTime: timestamppb.New(time.Date(2024, 4, 24, 11, 42, 22, 0, time.UTC)),
+				},
+				Expiration: nil,
+			},
+			expErr: false,
+		},
+		"don't overwrite failure policy drop": {
+			job: &api.Job{
+				DueTime:  ptr.Of("2024-04-24T11:42:22Z"),
+				Schedule: nil,
+				Ttl:      nil,
+				Repeats:  nil,
+				FailurePolicy: &api.FailurePolicy{
+					Policy: &api.FailurePolicy_Drop{Drop: new(api.FailurePolicyDrop)},
+				},
+			},
+			expStored: &stored.Job{
+				Job: &api.Job{
+					DueTime:  ptr.Of("2024-04-24T11:42:22Z"),
+					Schedule: nil,
+					Ttl:      nil,
+					Repeats:  nil,
+					FailurePolicy: &api.FailurePolicy{
+						Policy: &api.FailurePolicy_Drop{Drop: new(api.FailurePolicyDrop)},
+					},
+				},
+				Begin: &stored.Job_DueTime{
+					DueTime: timestamppb.New(time.Date(2024, 4, 24, 11, 42, 22, 0, time.UTC)),
+				},
+				Expiration: nil,
+			},
+			expErr: false,
 		},
 	}
 

@@ -8,7 +8,7 @@ syntax = "proto3";
 package api;
 
 import "google/protobuf/any.proto";
-import "google/protobuf/timestamp.proto";
+import "proto/api/failurepolicy.proto";
 
 option go_package = "github.com/diagridio/go-etcd-cron/api";
 
@@ -59,4 +59,11 @@ message Job {
   // payload is the serialized job payload that will be sent to the recipient
   // when the job is triggered.
   google.protobuf.Any payload = 6;
+
+  // failure_policy is the optional policy to apply when a job fails to
+  // trigger.
+  // By default, the failure policy is FailurePolicyConstant with a 1s interval
+  // and 3 maximum retries.
+  // See `failurepolicy.proto` for more information.
+  optional FailurePolicy failure_policy = 7;
 }
