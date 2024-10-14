@@ -234,7 +234,7 @@ func (c *Counter) policyTryAgain() bool {
 		//nolint:protogetter
 		tryAgain := p.Constant.MaxRetries == nil || *p.Constant.MaxRetries >= c.count.Attempts
 		if tryAgain {
-			c.next = c.next.Add(p.Constant.GetDelay().AsDuration())
+			c.next = c.next.Add(p.Constant.GetInterval().AsDuration())
 		} else {
 			// We set the LastTrigger to the first attempt to ensure consistency of
 			// the Job schedule, regardless of the failure policy cadence and

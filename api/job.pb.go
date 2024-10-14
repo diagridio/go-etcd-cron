@@ -73,7 +73,7 @@ type Job struct {
 	Payload *anypb.Any `protobuf:"bytes,6,opt,name=payload,proto3" json:"payload,omitempty"`
 	// failure_policy is the optional policy to apply when a job fails to
 	// trigger.
-	// By default, the failure policy is FailurePolicyConstant with a 1s delay
+	// By default, the failure policy is FailurePolicyConstant with a 1s interval
 	// and 3 maximum retries.
 	// See `failurepolicy.proto` for more information.
 	FailurePolicy *FailurePolicy `protobuf:"bytes,7,opt,name=failure_policy,json=failurePolicy,proto3,oneof" json:"failure_policy,omitempty"`

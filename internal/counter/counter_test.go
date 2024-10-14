@@ -1150,13 +1150,13 @@ func Test_TriggerFailed(t *testing.T) {
 			expPut:   nil,
 			expDel:   ptr.Of("abc/jobs/1"),
 		},
-		"failure policy Constant default, nil delay and nil max retries, one shot, expect true with Put and next now": {
+		"failure policy Constant default, nil interval and nil max retries, one shot, expect true with Put and next now": {
 			job: &api.Job{
 				DueTime: ptr.Of(now.Format(time.RFC3339)),
 				FailurePolicy: &api.FailurePolicy{
 					Policy: &api.FailurePolicy_Constant{
 						Constant: &api.FailurePolicyConstant{
-							Delay: nil, MaxRetries: nil,
+							Interval: nil, MaxRetries: nil,
 						},
 					},
 				},
@@ -1175,13 +1175,13 @@ func Test_TriggerFailed(t *testing.T) {
 			},
 			expDel: nil,
 		},
-		"failure policy Constant default, nil delay and 0 max retries, one shot, expect false with del": {
+		"failure policy Constant default, nil interval and 0 max retries, one shot, expect false with del": {
 			job: &api.Job{
 				DueTime: ptr.Of(now.Format(time.RFC3339)),
 				FailurePolicy: &api.FailurePolicy{
 					Policy: &api.FailurePolicy_Constant{
 						Constant: &api.FailurePolicyConstant{
-							Delay: nil, MaxRetries: ptr.Of(uint32(0)),
+							Interval: nil, MaxRetries: ptr.Of(uint32(0)),
 						},
 					},
 				},
@@ -1194,14 +1194,14 @@ func Test_TriggerFailed(t *testing.T) {
 			expPut:   nil,
 			expDel:   ptr.Of("abc/jobs/1"),
 		},
-		"failure policy Constant default, nil delay and 0 max retries, schedule, expect true with count forward": {
+		"failure policy Constant default, nil interval and 0 max retries, schedule, expect true with count forward": {
 			job: &api.Job{
 				DueTime:  ptr.Of(now.Format(time.RFC3339)),
 				Schedule: ptr.Of("@every 1s"),
 				FailurePolicy: &api.FailurePolicy{
 					Policy: &api.FailurePolicy_Constant{
 						Constant: &api.FailurePolicyConstant{
-							Delay: nil, MaxRetries: ptr.Of(uint32(0)),
+							Interval: nil, MaxRetries: ptr.Of(uint32(0)),
 						},
 					},
 				},
@@ -1221,7 +1221,7 @@ func Test_TriggerFailed(t *testing.T) {
 			},
 			expDel: nil,
 		},
-		"failure policy Constant default, nil delay and 0 max retries, schedule but at expiration, expect false with job delete": {
+		"failure policy Constant default, nil interval and 0 max retries, schedule but at expiration, expect false with job delete": {
 			job: &api.Job{
 				DueTime:  ptr.Of(now.Format(time.RFC3339)),
 				Schedule: ptr.Of("@every 1s"),
@@ -1229,7 +1229,7 @@ func Test_TriggerFailed(t *testing.T) {
 				FailurePolicy: &api.FailurePolicy{
 					Policy: &api.FailurePolicy_Constant{
 						Constant: &api.FailurePolicyConstant{
-							Delay: nil, MaxRetries: ptr.Of(uint32(0)),
+							Interval: nil, MaxRetries: ptr.Of(uint32(0)),
 						},
 					},
 				},
@@ -1242,13 +1242,13 @@ func Test_TriggerFailed(t *testing.T) {
 			expPut:   nil,
 			expDel:   ptr.Of("abc/jobs/1"),
 		},
-		"failure policy Constant default, 3s delay and nil max retries, one shot, expect true with Put and next now+3s": {
+		"failure policy Constant default, 3s interval and nil max retries, one shot, expect true with Put and next now+3s": {
 			job: &api.Job{
 				DueTime: ptr.Of(now.Format(time.RFC3339)),
 				FailurePolicy: &api.FailurePolicy{
 					Policy: &api.FailurePolicy_Constant{
 						Constant: &api.FailurePolicyConstant{
-							Delay: durationpb.New(time.Second * 3), MaxRetries: nil,
+							Interval: durationpb.New(time.Second * 3), MaxRetries: nil,
 						},
 					},
 				},
@@ -1267,14 +1267,14 @@ func Test_TriggerFailed(t *testing.T) {
 			},
 			expDel: nil,
 		},
-		"failure policy Constant default, 3s delay and nil max retries, schedule, expect true with Put and next now+3s": {
+		"failure policy Constant default, 3s interval and nil max retries, schedule, expect true with Put and next now+3s": {
 			job: &api.Job{
 				DueTime:  ptr.Of(now.Format(time.RFC3339)),
 				Schedule: ptr.Of("@every 1s"),
 				FailurePolicy: &api.FailurePolicy{
 					Policy: &api.FailurePolicy_Constant{
 						Constant: &api.FailurePolicyConstant{
-							Delay: durationpb.New(time.Second * 3), MaxRetries: nil,
+							Interval: durationpb.New(time.Second * 3), MaxRetries: nil,
 						},
 					},
 				},
@@ -1293,7 +1293,7 @@ func Test_TriggerFailed(t *testing.T) {
 			},
 			expDel: nil,
 		},
-		"failure policy Constant default, 3s delay and nil max retries, schedule but at expiration, expect true with Put and next now+9": {
+		"failure policy Constant default, 3s interval and nil max retries, schedule but at expiration, expect true with Put and next now+9": {
 			job: &api.Job{
 				DueTime:  ptr.Of(now.Format(time.RFC3339)),
 				Schedule: ptr.Of("@every 1s"),
@@ -1301,7 +1301,7 @@ func Test_TriggerFailed(t *testing.T) {
 				FailurePolicy: &api.FailurePolicy{
 					Policy: &api.FailurePolicy_Constant{
 						Constant: &api.FailurePolicyConstant{
-							Delay: durationpb.New(time.Second * 3), MaxRetries: nil,
+							Interval: durationpb.New(time.Second * 3), MaxRetries: nil,
 						},
 					},
 				},
@@ -1320,14 +1320,14 @@ func Test_TriggerFailed(t *testing.T) {
 			},
 			expDel: nil,
 		},
-		"failure policy Constant default, 3s delay and nil max retries, schedule attempt 5, expect true with Put and next now+3*5": {
+		"failure policy Constant default, 3s interval and nil max retries, schedule attempt 5, expect true with Put and next now+3*5": {
 			job: &api.Job{
 				DueTime:  ptr.Of(now.Format(time.RFC3339)),
 				Schedule: ptr.Of("@every 1s"),
 				FailurePolicy: &api.FailurePolicy{
 					Policy: &api.FailurePolicy_Constant{
 						Constant: &api.FailurePolicyConstant{
-							Delay: durationpb.New(time.Second * 3), MaxRetries: nil,
+							Interval: durationpb.New(time.Second * 3), MaxRetries: nil,
 						},
 					},
 				},
@@ -1346,14 +1346,14 @@ func Test_TriggerFailed(t *testing.T) {
 			},
 			expDel: nil,
 		},
-		"failure policy Constant default, 0s delay and nil max retries, schedule attempt 5, expect true with Put and next now": {
+		"failure policy Constant default, 0s interval and nil max retries, schedule attempt 5, expect true with Put and next now": {
 			job: &api.Job{
 				DueTime:  ptr.Of(now.Format(time.RFC3339)),
 				Schedule: ptr.Of("@every 1s"),
 				FailurePolicy: &api.FailurePolicy{
 					Policy: &api.FailurePolicy_Constant{
 						Constant: &api.FailurePolicyConstant{
-							Delay: durationpb.New(0), MaxRetries: nil,
+							Interval: durationpb.New(0), MaxRetries: nil,
 						},
 					},
 				},
@@ -1372,14 +1372,14 @@ func Test_TriggerFailed(t *testing.T) {
 			},
 			expDel: nil,
 		},
-		"if failure policy is constant with 5s delay and 0 max retries with 0 attempts, schedule, expect true with Put and next now+5s": {
+		"if failure policy is constant with 5s interval and 0 max retries with 0 attempts, schedule, expect true with Put and next now+5s": {
 			job: &api.Job{
 				DueTime:  ptr.Of(now.Format(time.RFC3339)),
 				Schedule: ptr.Of("@every 1s"),
 				FailurePolicy: &api.FailurePolicy{
 					Policy: &api.FailurePolicy_Constant{
 						Constant: &api.FailurePolicyConstant{
-							Delay: durationpb.New(time.Second * 5), MaxRetries: ptr.Of(uint32(0)),
+							Interval: durationpb.New(time.Second * 5), MaxRetries: ptr.Of(uint32(0)),
 						},
 					},
 				},
@@ -1399,13 +1399,13 @@ func Test_TriggerFailed(t *testing.T) {
 			},
 			expDel: nil,
 		},
-		"if failure policy is constant with 5s delay and 0 max retries with 0 attempts, one shot, expect false with del job:": {
+		"if failure policy is constant with 5s interval and 0 max retries with 0 attempts, one shot, expect false with del job:": {
 			job: &api.Job{
 				DueTime: ptr.Of(now.Format(time.RFC3339)),
 				FailurePolicy: &api.FailurePolicy{
 					Policy: &api.FailurePolicy_Constant{
 						Constant: &api.FailurePolicyConstant{
-							Delay: durationpb.New(time.Second * 5), MaxRetries: ptr.Of(uint32(0)),
+							Interval: durationpb.New(time.Second * 5), MaxRetries: ptr.Of(uint32(0)),
 						},
 					},
 				},
@@ -1418,14 +1418,14 @@ func Test_TriggerFailed(t *testing.T) {
 			expPut:   nil,
 			expDel:   ptr.Of("abc/jobs/1"),
 		},
-		"if failure policy is constant with 5s delay and 1 max retries with 0 attempts, schedule, expect true with Put and next now+5s": {
+		"if failure policy is constant with 5s interval and 1 max retries with 0 attempts, schedule, expect true with Put and next now+5s": {
 			job: &api.Job{
 				DueTime:  ptr.Of(now.Format(time.RFC3339)),
 				Schedule: ptr.Of("@every 1s"),
 				FailurePolicy: &api.FailurePolicy{
 					Policy: &api.FailurePolicy_Constant{
 						Constant: &api.FailurePolicyConstant{
-							Delay: durationpb.New(time.Second * 5), MaxRetries: ptr.Of(uint32(1)),
+							Interval: durationpb.New(time.Second * 5), MaxRetries: ptr.Of(uint32(1)),
 						},
 					},
 				},
@@ -1444,13 +1444,13 @@ func Test_TriggerFailed(t *testing.T) {
 			},
 			expDel: nil,
 		},
-		"if failure policy is constant with 5s delay and 1 max retries with 0 attempts, oneshot, expect true with Put and next now+5s": {
+		"if failure policy is constant with 5s interval and 1 max retries with 0 attempts, oneshot, expect true with Put and next now+5s": {
 			job: &api.Job{
 				DueTime: ptr.Of(now.Format(time.RFC3339)),
 				FailurePolicy: &api.FailurePolicy{
 					Policy: &api.FailurePolicy_Constant{
 						Constant: &api.FailurePolicyConstant{
-							Delay: durationpb.New(time.Second * 5), MaxRetries: ptr.Of(uint32(1)),
+							Interval: durationpb.New(time.Second * 5), MaxRetries: ptr.Of(uint32(1)),
 						},
 					},
 				},
@@ -1470,14 +1470,14 @@ func Test_TriggerFailed(t *testing.T) {
 			expDel: nil,
 		},
 
-		"if failure policy is constant with 5s delay and 1 max retries with 1 attempts, schedule, expect true with count forward and next now+1s": {
+		"if failure policy is constant with 5s interval and 1 max retries with 1 attempts, schedule, expect true with count forward and next now+1s": {
 			job: &api.Job{
 				DueTime:  ptr.Of(now.Format(time.RFC3339)),
 				Schedule: ptr.Of("@every 1s"),
 				FailurePolicy: &api.FailurePolicy{
 					Policy: &api.FailurePolicy_Constant{
 						Constant: &api.FailurePolicyConstant{
-							Delay: durationpb.New(time.Second * 5), MaxRetries: ptr.Of(uint32(1)),
+							Interval: durationpb.New(time.Second * 5), MaxRetries: ptr.Of(uint32(1)),
 						},
 					},
 				},
@@ -1497,13 +1497,13 @@ func Test_TriggerFailed(t *testing.T) {
 			},
 			expDel: nil,
 		},
-		"if failure policy is constant with 5s delay and 1 max retries with 1 attempts, oneshot, expect false with del job": {
+		"if failure policy is constant with 5s interval and 1 max retries with 1 attempts, oneshot, expect false with del job": {
 			job: &api.Job{
 				DueTime: ptr.Of(now.Format(time.RFC3339)),
 				FailurePolicy: &api.FailurePolicy{
 					Policy: &api.FailurePolicy_Constant{
 						Constant: &api.FailurePolicyConstant{
-							Delay: durationpb.New(time.Second * 5), MaxRetries: ptr.Of(uint32(1)),
+							Interval: durationpb.New(time.Second * 5), MaxRetries: ptr.Of(uint32(1)),
 						},
 					},
 				},
@@ -1517,14 +1517,14 @@ func Test_TriggerFailed(t *testing.T) {
 			expDel:   ptr.Of("abc/jobs/1"),
 		},
 
-		"if failure policy is constant with 5s delay and 2 max retries with 2 attempts, schedule, expect true with count forward and next now+1s": {
+		"if failure policy is constant with 5s interval and 2 max retries with 2 attempts, schedule, expect true with count forward and next now+1s": {
 			job: &api.Job{
 				DueTime:  ptr.Of(now.Format(time.RFC3339)),
 				Schedule: ptr.Of("@every 1s"),
 				FailurePolicy: &api.FailurePolicy{
 					Policy: &api.FailurePolicy_Constant{
 						Constant: &api.FailurePolicyConstant{
-							Delay: durationpb.New(time.Second * 5), MaxRetries: ptr.Of(uint32(2)),
+							Interval: durationpb.New(time.Second * 5), MaxRetries: ptr.Of(uint32(2)),
 						},
 					},
 				},
@@ -1544,14 +1544,14 @@ func Test_TriggerFailed(t *testing.T) {
 			},
 			expDel: nil,
 		},
-		"if failure policy is constant with 5s delay and 3 max retries with 2 attempts, schedule, expect true with retry": {
+		"if failure policy is constant with 5s interval and 3 max retries with 2 attempts, schedule, expect true with retry": {
 			job: &api.Job{
 				DueTime:  ptr.Of(now.Format(time.RFC3339)),
 				Schedule: ptr.Of("@every 1s"),
 				FailurePolicy: &api.FailurePolicy{
 					Policy: &api.FailurePolicy_Constant{
 						Constant: &api.FailurePolicyConstant{
-							Delay: durationpb.New(time.Second * 5), MaxRetries: ptr.Of(uint32(3)),
+							Interval: durationpb.New(time.Second * 5), MaxRetries: ptr.Of(uint32(3)),
 						},
 					},
 				},
@@ -1570,14 +1570,14 @@ func Test_TriggerFailed(t *testing.T) {
 			},
 			expDel: nil,
 		},
-		"if failure policy is constant with 5s delay and 2 max retries with 2 attempts, count 3, schedule, expect true with counter forward": {
+		"if failure policy is constant with 5s interval and 2 max retries with 2 attempts, count 3, schedule, expect true with counter forward": {
 			job: &api.Job{
 				DueTime:  ptr.Of(now.Format(time.RFC3339)),
 				Schedule: ptr.Of("@every 1s"),
 				FailurePolicy: &api.FailurePolicy{
 					Policy: &api.FailurePolicy_Constant{
 						Constant: &api.FailurePolicyConstant{
-							Delay: durationpb.New(time.Second * 5), MaxRetries: ptr.Of(uint32(2)),
+							Interval: durationpb.New(time.Second * 5), MaxRetries: ptr.Of(uint32(2)),
 						},
 					},
 				},
@@ -1699,7 +1699,7 @@ func Test_TriggerFailureSuccess(t *testing.T) {
 			FailurePolicy: &api.FailurePolicy{
 				Policy: &api.FailurePolicy_Constant{
 					Constant: &api.FailurePolicyConstant{
-						Delay: durationpb.New(time.Second * 5), MaxRetries: ptr.Of(uint32(2)),
+						Interval: durationpb.New(time.Second * 5), MaxRetries: ptr.Of(uint32(2)),
 					},
 				},
 			},

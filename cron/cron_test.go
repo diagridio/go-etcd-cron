@@ -538,7 +538,7 @@ func Test_jobWithSpace(t *testing.T) {
 func Test_FailurePolicy(t *testing.T) {
 	t.Parallel()
 
-	t.Run("default policy should retry 3 times with a 1sec delay", func(t *testing.T) {
+	t.Run("default policy should retry 3 times with a 1sec interval", func(t *testing.T) {
 		t.Parallel()
 
 		gotCh := make(chan *api.TriggerRequest, 1)
@@ -641,7 +641,7 @@ func Test_FailurePolicy(t *testing.T) {
 			FailurePolicy: &api.FailurePolicy{
 				Policy: &api.FailurePolicy_Constant{
 					Constant: &api.FailurePolicyConstant{
-						Delay: durationpb.New(time.Millisecond), MaxRetries: ptr.Of(uint32(1)),
+						Interval: durationpb.New(time.Millisecond), MaxRetries: ptr.Of(uint32(1)),
 					},
 				},
 			},
@@ -685,7 +685,7 @@ func Test_FailurePolicy(t *testing.T) {
 			FailurePolicy: &api.FailurePolicy{
 				Policy: &api.FailurePolicy_Constant{
 					Constant: &api.FailurePolicyConstant{
-						Delay: durationpb.New(time.Millisecond),
+						Interval: durationpb.New(time.Millisecond),
 					},
 				},
 			},

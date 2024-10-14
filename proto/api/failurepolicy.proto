@@ -25,10 +25,10 @@ message FailurePolicy {
 message FailurePolicyDrop {}
 
 // FailurePolicyRetry is a policy which retries the job at a consistent
-// delay when the job fails to trigger.
+// interval when the job fails to trigger.
 message FailurePolicyConstant {
-  // delay is the constant delay to wait before retrying the job.
-  google.protobuf.Duration delay = 1;
+  // interval is the constant delay to wait before retrying the job.
+  google.protobuf.Duration interval = 1;
 
   // max_retries is the optional maximum number of retries to attempt before
   // giving up.

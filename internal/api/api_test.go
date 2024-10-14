@@ -48,7 +48,7 @@ func Test_CRUD(t *testing.T) {
 		DueTime: ptr.Of(now.Add(time.Hour).Format(time.RFC3339)),
 		FailurePolicy: &cronapi.FailurePolicy{Policy: &cronapi.FailurePolicy_Constant{
 			Constant: &cronapi.FailurePolicyConstant{
-				Delay: durationpb.New(time.Second), MaxRetries: ptr.Of(uint32(3)),
+				Interval: durationpb.New(time.Second), MaxRetries: ptr.Of(uint32(3)),
 			},
 		}},
 	}, resp)
@@ -58,7 +58,7 @@ func Test_CRUD(t *testing.T) {
 		DueTime: ptr.Of(newNow.Add(time.Hour).Format(time.RFC3339)),
 		FailurePolicy: &cronapi.FailurePolicy{Policy: &cronapi.FailurePolicy_Constant{
 			Constant: &cronapi.FailurePolicyConstant{
-				Delay: durationpb.New(time.Second), MaxRetries: ptr.Of(uint32(3)),
+				Interval: durationpb.New(time.Second), MaxRetries: ptr.Of(uint32(3)),
 			},
 		}},
 	}))
@@ -68,7 +68,7 @@ func Test_CRUD(t *testing.T) {
 		DueTime: ptr.Of(newNow.Add(time.Hour).Format(time.RFC3339)),
 		FailurePolicy: &cronapi.FailurePolicy{Policy: &cronapi.FailurePolicy_Constant{
 			Constant: &cronapi.FailurePolicyConstant{
-				Delay: durationpb.New(time.Second), MaxRetries: ptr.Of(uint32(3)),
+				Interval: durationpb.New(time.Second), MaxRetries: ptr.Of(uint32(3)),
 			},
 		}},
 	}, resp)
@@ -83,7 +83,7 @@ func Test_CRUD(t *testing.T) {
 		DueTime: ptr.Of(now.Add(time.Hour).Format(time.RFC3339)),
 		FailurePolicy: &cronapi.FailurePolicy{Policy: &cronapi.FailurePolicy_Constant{
 			Constant: &cronapi.FailurePolicyConstant{
-				Delay: durationpb.New(time.Second), MaxRetries: ptr.Of(uint32(3)),
+				Interval: durationpb.New(time.Second), MaxRetries: ptr.Of(uint32(3)),
 			},
 		}},
 	}))
@@ -94,7 +94,7 @@ func Test_CRUD(t *testing.T) {
 		DueTime: ptr.Of(now.Add(time.Hour).Format(time.RFC3339)),
 		FailurePolicy: &cronapi.FailurePolicy{Policy: &cronapi.FailurePolicy_Constant{
 			Constant: &cronapi.FailurePolicyConstant{
-				Delay: durationpb.New(time.Second), MaxRetries: ptr.Of(uint32(3)),
+				Interval: durationpb.New(time.Second), MaxRetries: ptr.Of(uint32(3)),
 			},
 		}},
 	}, resp)

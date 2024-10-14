@@ -95,7 +95,7 @@ func (b *Builder) Parse(job *api.Job) (*stored.Job, error) {
 		job.FailurePolicy = &api.FailurePolicy{
 			Policy: &api.FailurePolicy_Constant{
 				Constant: &api.FailurePolicyConstant{
-					Delay:      durationpb.New(time.Second),
+					Interval:   durationpb.New(time.Second),
 					MaxRetries: ptr.Of(uint32(3)),
 				},
 			},

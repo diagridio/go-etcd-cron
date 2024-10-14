@@ -175,7 +175,7 @@ func Test_Parse(t *testing.T) {
 					Repeats:  nil,
 					FailurePolicy: &api.FailurePolicy{
 						Policy: &api.FailurePolicy_Constant{Constant: &api.FailurePolicyConstant{
-							Delay: durationpb.New(time.Second), MaxRetries: ptr.Of(uint32(3)),
+							Interval: durationpb.New(time.Second), MaxRetries: ptr.Of(uint32(3)),
 						}},
 					},
 				},
@@ -201,7 +201,7 @@ func Test_Parse(t *testing.T) {
 					Repeats:  nil,
 					FailurePolicy: &api.FailurePolicy{
 						Policy: &api.FailurePolicy_Constant{Constant: &api.FailurePolicyConstant{
-							Delay: durationpb.New(time.Second), MaxRetries: ptr.Of(uint32(3)),
+							Interval: durationpb.New(time.Second), MaxRetries: ptr.Of(uint32(3)),
 						}},
 					},
 				},
@@ -227,7 +227,7 @@ func Test_Parse(t *testing.T) {
 					Repeats:  nil,
 					FailurePolicy: &api.FailurePolicy{
 						Policy: &api.FailurePolicy_Constant{Constant: &api.FailurePolicyConstant{
-							Delay: durationpb.New(time.Second), MaxRetries: ptr.Of(uint32(3)),
+							Interval: durationpb.New(time.Second), MaxRetries: ptr.Of(uint32(3)),
 						}},
 					},
 				},
@@ -253,7 +253,7 @@ func Test_Parse(t *testing.T) {
 					Repeats:  ptr.Of(uint32(100)),
 					FailurePolicy: &api.FailurePolicy{
 						Policy: &api.FailurePolicy_Constant{Constant: &api.FailurePolicyConstant{
-							Delay: durationpb.New(time.Second), MaxRetries: ptr.Of(uint32(3)),
+							Interval: durationpb.New(time.Second), MaxRetries: ptr.Of(uint32(3)),
 						}},
 					},
 				},
@@ -289,7 +289,7 @@ func Test_Parse(t *testing.T) {
 					Repeats:  nil,
 					FailurePolicy: &api.FailurePolicy{
 						Policy: &api.FailurePolicy_Constant{Constant: &api.FailurePolicyConstant{
-							Delay: durationpb.New(time.Second), MaxRetries: ptr.Of(uint32(3)),
+							Interval: durationpb.New(time.Second), MaxRetries: ptr.Of(uint32(3)),
 						}},
 					},
 				},
@@ -326,7 +326,7 @@ func Test_Parse(t *testing.T) {
 				Repeats:  nil,
 				FailurePolicy: &api.FailurePolicy{
 					Policy: &api.FailurePolicy_Constant{Constant: &api.FailurePolicyConstant{
-						Delay: durationpb.New(time.Second * 3), MaxRetries: ptr.Of(uint32(5)),
+						Interval: durationpb.New(time.Second * 3), MaxRetries: ptr.Of(uint32(5)),
 					}},
 				},
 			},
@@ -338,7 +338,7 @@ func Test_Parse(t *testing.T) {
 					Repeats:  nil,
 					FailurePolicy: &api.FailurePolicy{
 						Policy: &api.FailurePolicy_Constant{Constant: &api.FailurePolicyConstant{
-							Delay: durationpb.New(time.Second * 3), MaxRetries: ptr.Of(uint32(5)),
+							Interval: durationpb.New(time.Second * 3), MaxRetries: ptr.Of(uint32(5)),
 						}},
 					},
 				},

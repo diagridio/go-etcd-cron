@@ -62,7 +62,7 @@ message Job {
 
   // failure_policy is the optional policy to apply when a job fails to
   // trigger.
-  // By default, the failure policy is FailurePolicyConstant with a 1s delay
+  // By default, the failure policy is FailurePolicyConstant with a 1s interval
   // and 3 maximum retries.
   // See `failurepolicy.proto` for more information.
   optional FailurePolicy failure_policy = 7;
