@@ -507,7 +507,7 @@ func Test_jobWithSpace(t *testing.T) {
 		DueTime: ptr.Of(time.Now().Add(2).Format(time.RFC3339)),
 	}))
 	resp, err := cron.api.Get(context.Background(), "hello world")
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	assert.NotNil(t, resp)
 
 	assert.EventuallyWithT(t, func(c *assert.CollectT) {
@@ -521,18 +521,18 @@ func Test_jobWithSpace(t *testing.T) {
 		Schedule: ptr.Of("@every 1s"),
 	}))
 	resp, err = cron.api.Get(context.Background(), "another hello world")
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	assert.NotNil(t, resp)
 	listresp, err := cron.api.List(context.Background(), "")
-	assert.NoError(t, err)
-	assert.Len(t, listresp.Jobs, 1)
+	require.NoError(t, err)
+	assert.Len(t, listresp.GetJobs(), 1)
 	require.NoError(t, cron.api.Delete(context.Background(), "another hello world"))
 	resp, err = cron.api.Get(context.Background(), "another hello world")
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	assert.Nil(t, resp)
 	listresp, err = cron.api.List(context.Background(), "")
-	assert.NoError(t, err)
-	assert.Empty(t, listresp.Jobs)
+	require.NoError(t, err)
+	assert.Empty(t, listresp.GetJobs())
 }
 
 func Test_FailurePolicy(t *testing.T) {
