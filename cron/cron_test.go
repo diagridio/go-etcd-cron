@@ -24,6 +24,7 @@ import (
 	"google.golang.org/protobuf/types/known/wrapperspb"
 
 	"github.com/diagridio/go-etcd-cron/api"
+	"github.com/diagridio/go-etcd-cron/internal/api/stored"
 	"github.com/diagridio/go-etcd-cron/internal/client"
 	"github.com/diagridio/go-etcd-cron/tests"
 )
@@ -335,8 +336,8 @@ func Test_schedule(t *testing.T) {
 		client := tests.EmbeddedETCDBareClient(t)
 
 		now := time.Now().UTC()
-		jobBytes1, err := proto.Marshal(&api.JobStored{
-			Begin:       &api.JobStored_DueTime{DueTime: timestamppb.New(now.Add(time.Hour))},
+		jobBytes1, err := proto.Marshal(&stored.Job{
+			Begin:       &stored.Job_DueTime{DueTime: timestamppb.New(now.Add(time.Hour))},
 			PartitionId: 123,
 			Job:         &api.Job{DueTime: ptr.Of(now.Add(time.Hour).Format(time.RFC3339))},
 		})
@@ -344,8 +345,8 @@ func Test_schedule(t *testing.T) {
 		_, err = client.Put(context.Background(), "abc/jobs/1", string(jobBytes1))
 		require.NoError(t, err)
 
-		jobBytes2, err := proto.Marshal(&api.JobStored{
-			Begin:       &api.JobStored_DueTime{DueTime: timestamppb.New(now)},
+		jobBytes2, err := proto.Marshal(&stored.Job{
+			Begin:       &stored.Job_DueTime{DueTime: timestamppb.New(now)},
 			PartitionId: 123,
 			Job:         &api.Job{DueTime: ptr.Of(now.Format(time.RFC3339))},
 		})
@@ -392,8 +393,8 @@ func Test_schedule(t *testing.T) {
 		client := tests.EmbeddedETCDBareClient(t)
 
 		future := time.Now().UTC().Add(time.Hour)
-		jobBytes, err := proto.Marshal(&api.JobStored{
-			Begin: &api.JobStored_DueTime{
+		jobBytes, err := proto.Marshal(&stored.Job{
+			Begin: &stored.Job_DueTime{
 				DueTime: timestamppb.New(future),
 			},
 			PartitionId: 123,
@@ -402,7 +403,7 @@ func Test_schedule(t *testing.T) {
 			},
 		})
 		require.NoError(t, err)
-		counterBytes, err := proto.Marshal(&api.Counter{
+		counterBytes, err := proto.Marshal(&stored.Counter{
 			LastTrigger:    nil,
 			Count:          0,
 			JobPartitionId: 123,
@@ -415,8 +416,8 @@ func Test_schedule(t *testing.T) {
 		require.NoError(t, err)
 
 		now := time.Now().UTC()
-		jobBytes2, err := proto.Marshal(&api.JobStored{
-			Begin: &api.JobStored_DueTime{DueTime: timestamppb.New(now)},
+		jobBytes2, err := proto.Marshal(&stored.Job{
+			Begin: &stored.Job_DueTime{DueTime: timestamppb.New(now)},
 			Job:   &api.Job{DueTime: ptr.Of(now.Format(time.RFC3339))},
 		})
 		require.NoError(t, err)
@@ -453,8 +454,8 @@ func Test_schedule(t *testing.T) {
 		client := tests.EmbeddedETCDBareClient(t)
 
 		now := time.Now().UTC()
-		jobBytes, err := proto.Marshal(&api.JobStored{
-			Begin: &api.JobStored_DueTime{
+		jobBytes, err := proto.Marshal(&stored.Job{
+			Begin: &stored.Job_DueTime{
 				DueTime: timestamppb.New(now),
 			},
 			PartitionId: 123,
@@ -463,7 +464,7 @@ func Test_schedule(t *testing.T) {
 			},
 		})
 		require.NoError(t, err)
-		counterBytes, err := proto.Marshal(&api.Counter{
+		counterBytes, err := proto.Marshal(&stored.Counter{
 			LastTrigger:    timestamppb.New(now),
 			Count:          1,
 			JobPartitionId: 123,

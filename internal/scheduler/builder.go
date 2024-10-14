@@ -14,6 +14,7 @@ import (
 	"github.com/dapr/kit/ptr"
 	kittime "github.com/dapr/kit/time"
 	"github.com/diagridio/go-etcd-cron/api"
+	"github.com/diagridio/go-etcd-cron/internal/api/stored"
 	"google.golang.org/protobuf/types/known/timestamppb"
 	"k8s.io/utils/clock"
 )
@@ -33,7 +34,7 @@ func NewBuilder() *Builder {
 }
 
 // Scheduler returns the scheduler based on the given stored job.
-func (b *Builder) Scheduler(job *api.JobStored) (Interface, error) {
+func (b *Builder) Scheduler(job *stored.Job) (Interface, error) {
 	if job.GetJob().Schedule == nil {
 		return &oneshot{
 			dueTime: job.GetDueTime().AsTime(),
@@ -53,9 +54,9 @@ func (b *Builder) Scheduler(job *api.JobStored) (Interface, error) {
 	}
 
 	switch t := job.GetBegin().(type) {
-	case *api.JobStored_Start:
+	case *stored.Job_Start:
 		r.start = ptr.Of(t.Start.AsTime())
-	case *api.JobStored_DueTime:
+	case *stored.Job_DueTime:
 		r.dueTime = ptr.Of(t.DueTime.AsTime())
 	}
 
@@ -63,7 +64,7 @@ func (b *Builder) Scheduler(job *api.JobStored) (Interface, error) {
 }
 
 // Parse parses a job into a stored job which contains a random partition ID.
-func (b *Builder) Parse(job *api.Job) (*api.JobStored, error) {
+func (b *Builder) Parse(job *api.Job) (*stored.Job, error) {
 	if job.DueTime == nil && job.Schedule == nil {
 		return nil, errors.New("job must have either a due time or a schedule")
 	}
@@ -88,7 +89,7 @@ func (b *Builder) Parse(job *api.Job) (*api.JobStored, error) {
 	}
 
 	//nolint:gosec
-	stored := &api.JobStored{
+	storedJob := &stored.Job{
 		PartitionId: rand.Uint32(),
 		Job:         job,
 	}
@@ -102,11 +103,11 @@ func (b *Builder) Parse(job *api.Job) (*api.JobStored, error) {
 		if err != nil {
 			return nil, err
 		}
-		stored.Begin = &api.JobStored_DueTime{
+		storedJob.Begin = &stored.Job_DueTime{
 			DueTime: timestamppb.New(begin),
 		}
 	} else {
-		stored.Begin = &api.JobStored_Start{
+		storedJob.Begin = &stored.Job_Start{
 			Start: timestamppb.New(now),
 		}
 	}
@@ -114,7 +115,7 @@ func (b *Builder) Parse(job *api.Job) (*api.JobStored, error) {
 	if job.Ttl != nil {
 		start := now
 		if job.DueTime != nil {
-			start = stored.GetDueTime().AsTime()
+			start = storedJob.GetDueTime().AsTime()
 		}
 		expiration, err := parsePointInTime(job.GetTtl(), start)
 		if err != nil {
@@ -125,10 +126,10 @@ func (b *Builder) Parse(job *api.Job) (*api.JobStored, error) {
 			return nil, errors.New("ttl must be greater than due time")
 		}
 
-		stored.Expiration = timestamppb.New(expiration)
+		storedJob.Expiration = timestamppb.New(expiration)
 	}
 
-	return stored, nil
+	return storedJob, nil
 }
 
 func parsePointInTime(str string, now time.Time) (time.Time, error) {

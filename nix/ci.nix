@@ -14,11 +14,13 @@ let
       echo ">> updating gomod2nix.toml"
       gomod2nix
       echo ">> updating proto files"
-      protoc --go_out=. \
-        --go_opt=module=github.com/diagridio/go-etcd-cron \
-        --go-grpc_out=. \
-        --go-grpc_opt=require_unimplemented_servers=false,module=github.com/diagridio/go-etcd-cron \
-        ./proto/*.proto
+      PROTOS=$(find ./proto/ -name "*.proto")
+      for proto in $PROTOS; do
+        protoc --go_out=. \
+          --go_opt=module=github.com/diagridio/go-etcd-cron \
+          --go-grpc_out=. \
+          --go-grpc_opt=require_unimplemented_servers=false,module=github.com/diagridio/go-etcd-cron "$proto"
+      done
       echo ">> Updated. Please commit the changes."
     '';
   };

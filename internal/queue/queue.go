@@ -19,6 +19,7 @@ import (
 	"github.com/dapr/kit/concurrency"
 	"github.com/dapr/kit/events/queue"
 	"github.com/diagridio/go-etcd-cron/api"
+	"github.com/diagridio/go-etcd-cron/internal/api/stored"
 	"github.com/diagridio/go-etcd-cron/internal/client"
 	"github.com/diagridio/go-etcd-cron/internal/counter"
 	"github.com/diagridio/go-etcd-cron/internal/garbage"
@@ -273,7 +274,7 @@ func (q *Queue) handleTrigger(ctx context.Context, counter *counter.Counter) boo
 }
 
 // schedule schedules a job to it's next scheduled time.
-func (q *Queue) schedule(ctx context.Context, name string, job *api.JobStored) error {
+func (q *Queue) schedule(ctx context.Context, name string, job *stored.Job) error {
 	scheduler, err := q.schedBuilder.Scheduler(job)
 	if err != nil {
 		return err
