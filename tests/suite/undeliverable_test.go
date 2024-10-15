@@ -13,6 +13,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/dapr/kit/concurrency/slice"
 	"github.com/dapr/kit/ptr"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -285,9 +286,11 @@ func Test_undeliverable(t *testing.T) {
 			assert.Equal(c, 2, cron.Triggered())
 		}, time.Second*10, time.Millisecond*10)
 
-		resp, err := cron.API().Get(cron.Context(), "def1")
-		require.NoError(t, err)
-		assert.Nil(t, resp)
+		assert.EventuallyWithT(t, func(c *assert.CollectT) {
+			resp, err := cron.API().Get(cron.Context(), "def1")
+			require.NoError(t, err)
+			assert.Nil(c, resp)
+		}, time.Second*10, time.Millisecond*10)
 	})
 
 	t.Run("ignore prefix if return FAILURE", func(t *testing.T) {
@@ -458,17 +461,11 @@ func Test_undeliverable(t *testing.T) {
 	t.Run("Deleting a staged job should not be triggered once it has been marked as deliverable", func(t *testing.T) {
 		t.Parallel()
 
-		var triggered []string
-		var lock sync.Mutex
-		var i int
+		triggered := slice.String()
 		cron := integration.New(t, integration.Options{
 			PartitionTotal: 1,
 			TriggerFn: func(req *api.TriggerRequest) *api.TriggerResponse {
-				lock.Lock()
-				defer lock.Unlock()
-				i++
-				triggered = append(triggered, req.GetName())
-				if len(triggered) <= 2 {
+				if triggered.Append(req.GetName()) <= 2 {
 					return &api.TriggerResponse{Result: api.TriggerResponseResult_UNDELIVERABLE}
 				}
 				return &api.TriggerResponse{Result: api.TriggerResponseResult_SUCCESS}
@@ -483,66 +480,58 @@ func Test_undeliverable(t *testing.T) {
 			Schedule: ptr.Of("@every 1s"),
 			DueTime:  ptr.Of(time.Now().Format(time.RFC3339)),
 		}))
-
-		assert.EventuallyWithT(t, func(c *assert.CollectT) {
-			lock.Lock()
-			defer lock.Unlock()
-			assert.Equal(c, []string{"abc1", "xyz1"}, triggered)
-		}, time.Second*10, time.Millisecond*10)
-
 		require.NoError(t, cron.API().Delete(cron.Context(), "abc1"))
+		assert.EventuallyWithT(t, func(c *assert.CollectT) {
+			assert.Equal(c, []string{"abc1", "xyz1"}, triggered.Slice())
+		}, time.Second*10, time.Millisecond*10)
 
 		cancel, err := cron.API().DeliverablePrefixes(cron.Context(), "abc")
 		require.NoError(t, err)
 		t.Cleanup(cancel)
 		time.Sleep(time.Second * 2)
-		assert.Equal(t, []string{"abc1", "xyz1"}, triggered)
+		assert.Equal(t, []string{"abc1", "xyz1"}, triggered.Slice())
 	})
 
-	t.Run("Deleting prefixes staged jobs should not be triggered once it has been marked as deliverable", func(t *testing.T) {
+	t.Run("Deleting prefixed staged jobs should not be triggered once it has been marked as deliverable", func(t *testing.T) {
 		t.Parallel()
 
-		var triggered []string
-		var lock sync.Mutex
+		triggered := slice.String()
 		cron := integration.New(t, integration.Options{
 			PartitionTotal: 1,
 			TriggerFn: func(req *api.TriggerRequest) *api.TriggerResponse {
-				lock.Lock()
-				defer lock.Unlock()
-				triggered = append(triggered, req.GetName())
-				if len(triggered) < 4 {
+				triggered.Append(req.GetName())
+				if req.GetName() == "abc1" || req.GetName() == "def1" {
 					return &api.TriggerResponse{Result: api.TriggerResponseResult_UNDELIVERABLE}
 				}
 				return &api.TriggerResponse{Result: api.TriggerResponseResult_SUCCESS}
 			},
 		})
 
-		require.NoError(t, cron.API().Add(cron.Context(), "abc1", &api.Job{
-			Schedule: ptr.Of("@every 1s"),
-			DueTime:  ptr.Of(time.Now().Format(time.RFC3339)),
-		}))
-		require.NoError(t, cron.API().Add(cron.Context(), "def1", &api.Job{
-			Schedule: ptr.Of("@every 1s"),
-			DueTime:  ptr.Of(time.Now().Format(time.RFC3339)),
-		}))
-		require.NoError(t, cron.API().Add(cron.Context(), "xyz1", &api.Job{
-			Schedule: ptr.Of("@every 1s"),
-			DueTime:  ptr.Of(time.Now().Format(time.RFC3339)),
-		}))
+		jobTmpl := func() *api.Job {
+			return &api.Job{
+				Schedule: ptr.Of("@every 2s"),
+				DueTime:  ptr.Of(time.Now().Format(time.RFC3339)),
+			}
+		}
+		require.NoError(t, cron.API().Add(cron.Context(), "abc1", jobTmpl()))
+		require.NoError(t, cron.API().Add(cron.Context(), "def1", jobTmpl()))
+		require.NoError(t, cron.API().Add(cron.Context(), "xyz1", jobTmpl()))
 
 		assert.EventuallyWithT(t, func(c *assert.CollectT) {
-			lock.Lock()
-			defer lock.Unlock()
-			assert.Equal(c, []string{"abc1", "def1", "xyz1"}, triggered)
+			assert.Equal(c, []string{"abc1", "def1", "xyz1"}, triggered.Slice())
 		}, time.Second*10, time.Millisecond*10)
 
 		require.NoError(t, cron.API().DeletePrefixes(cron.Context(), "abc", "def"))
+		assert.EventuallyWithT(t, func(c *assert.CollectT) {
+			assert.Equal(c, []string{"abc1", "def1", "xyz1", "xyz1"}, triggered.Slice())
+		}, time.Second*10, time.Millisecond*10)
 
 		cancel, err := cron.API().DeliverablePrefixes(cron.Context(), "abc", "def")
 		require.NoError(t, err)
 		t.Cleanup(cancel)
-		time.Sleep(time.Second * 2)
-		assert.Equal(t, []string{"abc1", "def1", "xyz1"}, triggered)
+		assert.EventuallyWithT(t, func(c *assert.CollectT) {
+			assert.Equal(c, []string{"abc1", "def1", "xyz1", "xyz1", "xyz1"}, triggered.Slice())
+		}, time.Second*10, time.Millisecond*10)
 	})
 
 	t.Run("Re-scheduling the job should not trigger the old staged job when prefix is added", func(t *testing.T) {

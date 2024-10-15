@@ -20,8 +20,8 @@ import (
 // tracked as a pool, meaning the prefix is still active if at least one
 // instance is still registered.
 func (q *Queue) DeliverablePrefixes(prefixes ...string) context.CancelFunc {
-	q.stagedLock.Lock()
-	defer q.stagedLock.Unlock()
+	q.eventsLock.Lock()
+	defer q.eventsLock.Unlock()
 
 	var toEnqueue []counter.Interface
 	for _, prefix := range prefixes {
@@ -44,8 +44,8 @@ func (q *Queue) DeliverablePrefixes(prefixes ...string) context.CancelFunc {
 	}
 
 	return func() {
-		q.stagedLock.Lock()
-		defer q.stagedLock.Unlock()
+		q.eventsLock.Lock()
+		defer q.eventsLock.Unlock()
 
 		for _, prefix := range prefixes {
 			if i, ok := q.deliverablePrefixes[prefix]; ok {
@@ -62,8 +62,8 @@ func (q *Queue) DeliverablePrefixes(prefixes ...string) context.CancelFunc {
 // on the current deliverable prefixes and should be immediately re-queued at
 // the current count.
 func (q *Queue) stage(counter counter.Interface) bool {
-	q.stagedLock.Lock()
-	defer q.stagedLock.Unlock()
+	q.eventsLock.Lock()
+	defer q.eventsLock.Unlock()
 
 	jobName := counter.JobName()
 

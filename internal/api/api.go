@@ -23,8 +23,6 @@ import (
 	"github.com/diagridio/go-etcd-cron/internal/scheduler"
 )
 
-var errAPIClosed = errors.New("api is closed")
-
 type Options struct {
 	Client           client.Interface
 	Key              *key.Key
@@ -70,12 +68,8 @@ func New(opts Options) cronapi.API {
 
 // Add adds a new cron job to the cron instance.
 func (a *api) Add(ctx context.Context, name string, job *cronapi.Job) error {
-	select {
-	case <-a.readyCh:
-	case <-a.closeCh:
-		return errAPIClosed
-	case <-ctx.Done():
-		return context.Cause(ctx)
+	if err := a.waitReady(ctx); err != nil {
+		return err
 	}
 
 	if err := a.validator.JobName(name); err != nil {
@@ -102,12 +96,8 @@ func (a *api) Add(ctx context.Context, name string, job *cronapi.Job) error {
 
 // Get gets a cron job from the cron instance.
 func (a *api) Get(ctx context.Context, name string) (*cronapi.Job, error) {
-	select {
-	case <-a.readyCh:
-	case <-a.closeCh:
-		return nil, errAPIClosed
-	case <-ctx.Done():
-		return nil, context.Cause(ctx)
+	if err := a.waitReady(ctx); err != nil {
+		return nil, err
 	}
 
 	if err := a.validator.JobName(name); err != nil {
@@ -134,30 +124,27 @@ func (a *api) Get(ctx context.Context, name string) (*cronapi.Job, error) {
 
 // Delete deletes a cron job from the cron instance.
 func (a *api) Delete(ctx context.Context, name string) error {
-	select {
-	case <-a.readyCh:
-	case <-a.closeCh:
-		return errAPIClosed
-	case <-ctx.Done():
-		return context.Cause(ctx)
+	if err := a.waitReady(ctx); err != nil {
+		return err
 	}
 
 	if err := a.validator.JobName(name); err != nil {
 		return err
 	}
 
-	return a.queue.Delete(ctx, name)
+	_, err := a.client.Delete(ctx, a.key.JobKey(name))
+	if err != nil {
+		return err
+	}
+
+	return nil
 }
 
 // DeletePrefixes deletes cron jobs with the given prefixes from the cron
 // instance.
 func (a *api) DeletePrefixes(ctx context.Context, prefixes ...string) error {
-	select {
-	case <-a.readyCh:
-	case <-a.closeCh:
-		return errAPIClosed
-	case <-ctx.Done():
-		return context.Cause(ctx)
+	if err := a.waitReady(ctx); err != nil {
+		return err
 	}
 
 	for _, prefix := range prefixes {
@@ -170,17 +157,21 @@ func (a *api) DeletePrefixes(ctx context.Context, prefixes ...string) error {
 		}
 	}
 
-	return a.queue.DeletePrefixes(ctx, prefixes...)
+	var errs []error
+	for _, prefix := range prefixes {
+		_, err := a.client.Delete(ctx, a.key.JobKey(prefix), clientv3.WithPrefix())
+		if err != nil {
+			errs = append(errs, fmt.Errorf("failed to delete jobs with prefix %q: %w", prefix, err))
+		}
+	}
+
+	return errors.Join(errs...)
 }
 
 // List lists all cron jobs with the given job name prefix.
 func (a *api) List(ctx context.Context, prefix string) (*cronapi.ListResponse, error) {
-	select {
-	case <-a.readyCh:
-	case <-a.closeCh:
-		return nil, errAPIClosed
-	case <-ctx.Done():
-		return nil, context.Cause(ctx)
+	if err := a.waitReady(ctx); err != nil {
+		return nil, err
 	}
 
 	resp, err := a.client.Get(ctx,
@@ -214,23 +205,24 @@ func (a *api) List(ctx context.Context, prefix string) (*cronapi.ListResponse, e
 // deliverable. Calling the returned CancelFunc will de-register those
 // prefixes as being deliverable.
 func (a *api) DeliverablePrefixes(ctx context.Context, prefixes ...string) (context.CancelFunc, error) {
-	select {
-	case <-a.readyCh:
-	case <-a.closeCh:
-		return nil, errAPIClosed
-	case <-ctx.Done():
-		return nil, context.Cause(ctx)
+	if err := a.waitReady(ctx); err != nil {
+		return nil, err
 	}
 
 	if len(prefixes) == 0 {
 		return nil, errors.New("no prefixes provided")
 	}
 
-	for _, prefix := range prefixes {
-		if err := a.validator.JobName(prefix); err != nil {
-			return nil, err
-		}
-	}
-
 	return a.queue.DeliverablePrefixes(prefixes...), nil
+}
+
+func (a *api) waitReady(ctx context.Context) error {
+	select {
+	case <-a.readyCh:
+		return nil
+	case <-a.closeCh:
+		return errors.New("api is closed")
+	case <-ctx.Done():
+		return context.Cause(ctx)
+	}
 }

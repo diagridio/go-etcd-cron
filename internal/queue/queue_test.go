@@ -57,14 +57,14 @@ func Test_delete_race(t *testing.T) {
 	for i, key := range jobKeys {
 		t.Run(key, func(t *testing.T) {
 			t.Parallel()
-			_, ok := queue.cache.Load(key)
+			_, ok := queue.counterCache.Load(key)
 			assert.True(t, ok)
 
 			assert.EventuallyWithT(t, func(c *assert.CollectT) {
 				assert.GreaterOrEqual(c, triggered[i].Load(), int64(1))
 			}, 5*time.Second, time.Millisecond)
 
-			_, ok = queue.cache.Load(key)
+			_, ok = queue.counterCache.Load(key)
 			assert.True(t, ok)
 
 			require.NoError(t, queue.HandleInformerEvent(context.Background(), &informer.Event{
@@ -72,13 +72,13 @@ func Test_delete_race(t *testing.T) {
 				Key:   []byte(key),
 			}))
 
-			_, ok = queue.cache.Load(key)
+			_, ok = queue.counterCache.Load(key)
 			assert.False(t, ok)
 
 			currentTriggered := triggered[i].Load()
 			time.Sleep(time.Second * 2)
 			assert.Equal(t, currentTriggered, triggered[i].Load())
-			_, ok = queue.cache.Load(key)
+			_, ok = queue.counterCache.Load(key)
 			assert.False(t, ok)
 		})
 	}

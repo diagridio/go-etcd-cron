@@ -45,13 +45,6 @@ func (y *Yard) Deleted(key string) {
 	y.deletesMap[key] = y.idx
 	y.idx++
 
-	// Congrats, you've reached the end of the universe. How's the weather?
-	const maxUint64 = ^uint64(0)
-	if y.idx == maxUint64 {
-		y.idx = 0
-		y.deletesMap = make(map[string]uint64)
-	}
-
 	// If the deletes map is getting too big (over 500k), remove the oldest 10k.
 	if len(y.deletesMap) >= maxKeys {
 		target := y.idx - (maxKeys - 10000)

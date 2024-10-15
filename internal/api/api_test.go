@@ -3,7 +3,6 @@ Copyright (c) 2024 Diagrid Inc.
 Licensed under the MIT License.
 */
 
-//nolint:dupl
 package api
 
 import (
@@ -275,15 +274,6 @@ func Test_DeliverablePrefixes(t *testing.T) {
 		close(api.closeCh)
 		cancel, err := api.DeliverablePrefixes(context.Background(), "hello world")
 		assert.Equal(t, errors.New("api is closed"), err)
-		assert.Nil(t, cancel)
-	})
-
-	t.Run("invalid name should error", func(t *testing.T) {
-		t.Parallel()
-
-		api := newAPI(t)
-		cancel, err := api.DeliverablePrefixes(context.Background(), "./.")
-		require.Error(t, err)
 		assert.Nil(t, cancel)
 	})
 }
