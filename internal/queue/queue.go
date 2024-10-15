@@ -219,10 +219,10 @@ func (q *Queue) handleTrigger(ctx context.Context, counter counter.Interface) bo
 func (q *Queue) executeFn(ctx context.Context) func(counter.Interface) {
 	return func(counter counter.Interface) {
 		q.counterLock.Lock(counter.Key())
-		defer q.counterLock.Unlock(counter.Key())
 
 		_, ok := q.counterCache.Load(counter.Key())
 		if !ok || ctx.Err() != nil {
+			q.counterLock.Unlock(counter.Key())
 			return
 		}
 
@@ -232,6 +232,7 @@ func (q *Queue) executeFn(ctx context.Context) func(counter.Interface) {
 				q.counterCache.Delete(counter.Key())
 			}
 
+			q.counterLock.Unlock(counter.Key())
 			q.wg.Done()
 		}()
 	}
