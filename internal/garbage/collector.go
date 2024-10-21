@@ -151,7 +151,7 @@ func (c *collector) collect() error {
 	}
 
 	if err := c.client.DeleteMulti(keyList...); err != nil {
-		return fmt.Errorf("failed to delete keys: %w", err)
+		return fmt.Errorf("failed to delete garbage counters (%d): %w", len(keyList), err)
 	}
 
 	c.log.Info("Garbage collection complete", "keys", len(c.keys))

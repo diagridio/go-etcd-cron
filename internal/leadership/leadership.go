@@ -89,6 +89,9 @@ func (l *Leadership) Run(ctx context.Context) error {
 			defer cancel()
 			//nolint:contextcheck
 			_, err = l.client.Revoke(rctx, lease.ID)
+			if errors.Is(err, context.DeadlineExceeded) {
+				return nil
+			}
 			return err
 		},
 		func(ctx context.Context) error {
