@@ -8,6 +8,7 @@ package client
 import (
 	"context"
 	"errors"
+	"fmt"
 	"time"
 
 	"github.com/go-logr/logr"
@@ -74,7 +75,7 @@ func (c *client) DeleteMulti(keys ...string) error {
 			return terr
 		})
 		if err != nil {
-			return err
+			return fmt.Errorf("failed to delete keys (%d): %w", len(ops), err)
 		}
 	}
 

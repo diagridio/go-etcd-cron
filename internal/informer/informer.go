@@ -160,9 +160,6 @@ func (i *Informer) handleEvent(ev *clientv3.Event) (*Event, error) {
 		if i.yard.HasJustDeleted(string(ev.PrevKv.Key)) {
 			return nil, nil
 		}
-		if ev.Kv != nil {
-			i.collector.Push(i.key.CounterKey(i.key.JobName(ev.Kv.Key)))
-		}
 
 		kv = ev.PrevKv
 	default:
@@ -176,6 +173,10 @@ func (i *Informer) handleEvent(ev *clientv3.Event) (*Event, error) {
 
 	if !i.part.IsJobManaged(job.GetPartitionId()) {
 		return nil, nil
+	}
+
+	if !isPut && ev.Kv != nil {
+		i.collector.Push(i.key.CounterKey(i.key.JobName(ev.Kv.Key)))
 	}
 
 	return &Event{
