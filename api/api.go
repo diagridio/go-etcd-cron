@@ -7,6 +7,8 @@ package api
 
 import (
 	"context"
+
+	"google.golang.org/protobuf/types/known/anypb"
 )
 
 // TriggerFunction is the type of the function that is called when a job is
@@ -44,6 +46,11 @@ type API interface {
 	// the prefix is still active if there is at least one DeliverablePrefixes
 	// call that has not been unregistered.
 	DeliverablePrefixes(ctx context.Context, prefixes ...string) (context.CancelFunc, error)
+
+	// WatchLeadership returns a channel which will receive all current leadership values when the
+	// leadership keyspace changes. This function is responsible for sending the active set of
+	// available replicas.
+	WatchLeadership(ctx context.Context) chan []*anypb.Any
 }
 
 // Interface is a cron interface. It schedules and manages job which are stored

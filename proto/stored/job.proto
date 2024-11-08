@@ -5,7 +5,7 @@ Licensed under the MIT License.
 
 syntax = "proto3";
 
-package cron.stored;
+package stored;
 
 import "google/protobuf/timestamp.proto";
 import "proto/api/job.proto";
