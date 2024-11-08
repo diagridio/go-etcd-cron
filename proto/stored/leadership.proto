@@ -1,0 +1,23 @@
+/*
+Copyright (c) 2024 Diagrid Inc.
+Licensed under the MIT License.
+*/
+
+syntax = "proto3";
+
+package cron.stored;
+
+import "google/protobuf/any.proto";
+
+option go_package = "github.com/diagridio/go-etcd-cron/internal/api/stored";
+
+// Leadership is the message written to the leadership table when the replica
+// gains ownership of the leader key.
+message Leadership {
+  // total is this replicas understanding of the total number of partition
+  // replicas.
+  uint32 total = 1;
+  // replica_data is custom data that is associated with this leader (replica). All leader
+  // data will be sent to library consumer on leadership table updates.
+  optional google.protobuf.Any replica_data = 2;
+}

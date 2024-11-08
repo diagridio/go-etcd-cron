@@ -64,7 +64,7 @@ _gen-proto:
 	  --go_opt=module=$(PROTO_PREFIX) \
 	  --go-grpc_out=. \
 	  --go-grpc_opt=require_unimplemented_servers=false,module=$(PROTO_PREFIX) \
-	  ./proto/*.proto
-
+	  ./proto/api/*.proto \
+	  ./proto/stored/*.proto
 test:
 	go test -count 1 -timeout 300s --race ./...

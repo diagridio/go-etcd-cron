@@ -11,10 +11,12 @@ import (
 	"testing"
 	"time"
 
+	"github.com/dapr/dapr/pkg/proto/internals/v1"
 	"github.com/dapr/kit/ptr"
 	"github.com/go-logr/logr"
 	"github.com/stretchr/testify/require"
 	clientv3 "go.etcd.io/etcd/client/v3"
+	"google.golang.org/protobuf/types/known/anypb"
 
 	"github.com/diagridio/go-etcd-cron/api"
 	"github.com/diagridio/go-etcd-cron/cron"
@@ -29,6 +31,11 @@ type Cron struct {
 func newCron(t *testing.T, client *clientv3.Client, total, id uint32) *Cron {
 	t.Helper()
 
+	partitionOwner, _ := anypb.New(&internals.SchedulerPartitionOwner{
+		Host: "127.0.0.1",
+		Port: uint32(8686),
+	})
+
 	var calls atomic.Int64
 	cron, err := cron.New(cron.Options{
 		Log:            logr.Discard(),
@@ -41,6 +48,7 @@ func newCron(t *testing.T, client *clientv3.Client, total, id uint32) *Cron {
 			return &api.TriggerResponse{Result: api.TriggerResponseResult_SUCCESS}
 		},
 		CounterGarbageCollectionInterval: ptr.Of(time.Millisecond * 300),
+		ReplicaData:                      partitionOwner,
 	})
 	require.NoError(t, err)
 

@@ -10,20 +10,23 @@ import (
 	"errors"
 	"fmt"
 	"strings"
-
-	clientv3 "go.etcd.io/etcd/client/v3"
-	"google.golang.org/protobuf/proto"
+	"sync"
 
 	cronapi "github.com/diagridio/go-etcd-cron/api"
 	"github.com/diagridio/go-etcd-cron/internal/api/stored"
 	"github.com/diagridio/go-etcd-cron/internal/api/validator"
 	"github.com/diagridio/go-etcd-cron/internal/client"
 	"github.com/diagridio/go-etcd-cron/internal/key"
+	"github.com/diagridio/go-etcd-cron/internal/leadership"
 	"github.com/diagridio/go-etcd-cron/internal/queue"
 	"github.com/diagridio/go-etcd-cron/internal/scheduler"
+	clientv3 "go.etcd.io/etcd/client/v3"
+	"google.golang.org/protobuf/proto"
+	"google.golang.org/protobuf/types/known/anypb"
 )
 
 type Options struct {
+	Leadership       *leadership.Leadership
 	Client           client.Interface
 	Key              *key.Key
 	SchedulerBuilder *scheduler.Builder
@@ -38,6 +41,8 @@ type Options struct {
 
 // api implements the API interface.
 type api struct {
+	wg           sync.WaitGroup
+	leadership   *leadership.Leadership
 	client       client.Interface
 	key          *key.Key
 	schedBuilder *scheduler.Builder
@@ -201,7 +206,7 @@ func (a *api) List(ctx context.Context, prefix string) (*cronapi.ListResponse, e
 	}, nil
 }
 
-// RegisterDeliverablePrefixes registers the given Job name prefixes as being
+// DeliverablePrefixes registers the given Job name prefixes as being
 // deliverable. Calling the returned CancelFunc will de-register those
 // prefixes as being deliverable.
 func (a *api) DeliverablePrefixes(ctx context.Context, prefixes ...string) (context.CancelFunc, error) {
@@ -225,4 +230,20 @@ func (a *api) waitReady(ctx context.Context) error {
 	case <-ctx.Done():
 		return context.Cause(ctx)
 	}
+}
+
+// WatchLeadership returns the dynamic, scribed leadership replica data
+func (a *api) WatchLeadership(ctx context.Context) chan []*anypb.Any {
+	ch := make(chan []*anypb.Any)
+	ch, activeReplicaValues := a.leadership.Subscribe(ctx)
+	a.wg.Add(1)
+	go func() {
+		defer a.wg.Done()
+		select {
+		case <-ctx.Done():
+			return
+		case ch <- activeReplicaValues:
+		}
+	}()
+	return ch
 }

@@ -9,6 +9,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -18,6 +19,7 @@ import (
 	"go.etcd.io/etcd/client/pkg/v3/logutil"
 	clientv3 "go.etcd.io/etcd/client/v3"
 	"go.uber.org/zap"
+	"google.golang.org/protobuf/types/known/anypb"
 	"k8s.io/utils/clock"
 
 	"github.com/diagridio/go-etcd-cron/api"
@@ -64,21 +66,111 @@ type Options struct {
 	// performance.
 	// Defaults to 180 seconds.
 	CounterGarbageCollectionInterval *time.Duration
+
+	// ReplicaData is custom data associated with the replica, for example,
+	// host + port for the active replica
+	ReplicaData *anypb.Any
 }
 
 // cron is the implementation of the cron interface.
 type cron struct {
-	api.API
+	API  api.API
+	opts Options
 
-	log        logr.Logger
-	informer   *informer.Informer
-	queue      *queue.Queue
-	leadership *leadership.Leadership
-	collector  garbage.Interface
+	lock         sync.RWMutex
+	log          logr.Logger
+	informer     *informer.Informer
+	queue        *queue.Queue
+	leadership   *leadership.Leadership
+	collector    garbage.Interface
+	schedBuilder *scheduler.Builder
+	client       client.Interface
+	yard         *grave.Yard
+	key          *key.Key
+	part         partitioner.Interface
 
-	running atomic.Bool
-	closeCh chan struct{}
-	readyCh chan struct{}
+	running       atomic.Bool
+	restartDoneCh chan struct{}
+	closeCh       chan struct{}
+	readyCh       chan struct{}
+}
+
+func (c *cron) restart() error {
+	var err error
+	c.lock.Lock()
+	defer c.lock.Unlock()
+
+	c.restartDoneCh = make(chan struct{})
+	c.readyCh = make(chan struct{})
+
+	c.part, err = partitioner.New(partitioner.Options{
+		ID:    c.opts.PartitionID,
+		Total: c.opts.PartitionTotal,
+	})
+	if err != nil {
+		return fmt.Errorf("failed to create partitioner: %w", err)
+	}
+
+	c.client = client.New(client.Options{
+		Log:    c.log,
+		Client: c.opts.Client,
+	})
+
+	c.collector, err = garbage.New(garbage.Options{
+		Log:                c.log,
+		Client:             c.client,
+		CollectionInterval: c.opts.CounterGarbageCollectionInterval,
+	})
+	if err != nil {
+		return fmt.Errorf("failed to create garbage collector: %w", err)
+	}
+
+	c.key = key.New(key.Options{
+		Namespace:   c.opts.Namespace,
+		PartitionID: c.opts.PartitionID,
+	})
+
+	c.yard = grave.New()
+	c.informer = informer.New(informer.Options{
+		Key:         c.key,
+		Client:      c.client,
+		Collector:   c.collector,
+		Partitioner: c.part,
+		Yard:        c.yard,
+	})
+
+	c.leadership = leadership.New(leadership.Options{
+		Log:            c.log,
+		Client:         c.client,
+		PartitionTotal: c.opts.PartitionTotal,
+		Key:            c.key,
+		ReplicaData:    c.opts.ReplicaData,
+	})
+
+	c.schedBuilder = scheduler.NewBuilder()
+
+	c.queue = queue.New(queue.Options{
+		Log:              c.log,
+		Client:           c.client,
+		Clock:            clock.RealClock{},
+		Key:              c.key,
+		SchedulerBuilder: c.schedBuilder,
+		TriggerFn:        c.opts.TriggerFn,
+		Collector:        c.collector,
+		Yard:             c.yard,
+	})
+
+	c.API = internalapi.New(internalapi.Options{
+		Client:           c.client,
+		Key:              c.key,
+		SchedulerBuilder: c.schedBuilder,
+		Queue:            c.queue,
+		ReadyCh:          c.readyCh,
+		CloseCh:          c.closeCh,
+	})
+
+	close(c.restartDoneCh)
+	return nil
 }
 
 // New creates a new cron instance.
@@ -91,14 +183,6 @@ func New(opts Options) (api.Interface, error) {
 		return nil, errors.New("client is required")
 	}
 
-	part, err := partitioner.New(partitioner.Options{
-		ID:    opts.PartitionID,
-		Total: opts.PartitionTotal,
-	})
-	if err != nil {
-		return nil, fmt.Errorf("failed to create partitioner: %w", err)
-	}
-
 	log := opts.Log
 	if log.GetSink() == nil {
 		sink, err := logutil.CreateDefaultZapLogger(zap.InfoLevel)
@@ -109,86 +193,33 @@ func New(opts Options) (api.Interface, error) {
 		log = log.WithName("diagrid-cron")
 	}
 
-	client := client.New(client.Options{
-		Log:    log,
-		Client: opts.Client,
-	})
-
-	collector, err := garbage.New(garbage.Options{
-		Log:                log,
-		Client:             client,
-		CollectionInterval: opts.CounterGarbageCollectionInterval,
-	})
-	if err != nil {
-		return nil, fmt.Errorf("failed to create garbage collector: %w", err)
+	c := &cron{
+		lock:          sync.RWMutex{},
+		opts:          opts,
+		log:           log,
+		restartDoneCh: make(chan struct{}),
+		readyCh:       make(chan struct{}),
+		closeCh:       make(chan struct{}),
 	}
 
-	key := key.New(key.Options{
-		Namespace:   opts.Namespace,
-		PartitionID: opts.PartitionID,
-	})
+	if err := c.restart(); err != nil {
+		return nil, err
+	}
 
-	yard := grave.New()
-	informer := informer.New(informer.Options{
-		Key:         key,
-		Client:      client,
-		Collector:   collector,
-		Partitioner: part,
-		Yard:        yard,
-	})
-
-	leadership := leadership.New(leadership.Options{
-		Log:            log,
-		Client:         client,
-		PartitionTotal: opts.PartitionTotal,
-		Key:            key,
-	})
-
-	schedBuilder := scheduler.NewBuilder()
-
-	queue := queue.New(queue.Options{
-		Log:              log,
-		Client:           client,
-		Clock:            clock.RealClock{},
-		Key:              key,
-		SchedulerBuilder: schedBuilder,
-		TriggerFn:        opts.TriggerFn,
-		Collector:        collector,
-		Yard:             yard,
-	})
-
-	readyCh := make(chan struct{})
-	closeCh := make(chan struct{})
-
-	api := internalapi.New(internalapi.Options{
-		Client:           client,
-		Key:              key,
-		SchedulerBuilder: schedBuilder,
-		Queue:            queue,
-		ReadyCh:          readyCh,
-		CloseCh:          closeCh,
-	})
-
-	return &cron{
-		API:        api,
-		log:        log,
-		leadership: leadership,
-		informer:   informer,
-		collector:  collector,
-		queue:      queue,
-		readyCh:    readyCh,
-		closeCh:    closeCh,
-	}, nil
+	select {
+	case <-c.restartDoneCh:
+		log.Info("Cron instance is initialized")
+	}
+	return c, nil
 }
 
 // Run is a blocking function that runs the cron instance.
 func (c *cron) Run(ctx context.Context) error {
 	if !c.running.CompareAndSwap(false, true) {
-		return errors.New("already running")
+		return errors.New("cron already running")
 	}
 
-	return concurrency.NewRunnerManager(
-		c.leadership.Run,
+	runners := []concurrency.Runner{
 		c.collector.Run,
 		c.queue.Run,
 		func(ctx context.Context) error {
@@ -234,5 +265,79 @@ func (c *cron) Run(ctx context.Context) error {
 
 			return nil
 		},
+	}
+
+	return concurrency.NewRunnerManager(
+		c.leadership.Run,
+		func(ctx context.Context) error {
+			for {
+				replicaUpdateCh, _ := c.leadership.Subscribe(ctx)
+
+				err := concurrency.NewRunnerManager(
+					append(
+						runners,
+						func(ctx context.Context) error {
+							select {
+							case <-replicaUpdateCh:
+								c.log.Info("Leadership change detected, reinitializing cron")
+								if err := c.restart(); err != nil {
+									return fmt.Errorf("failed to re-initialize cron: %w", err)
+								}
+								// Restart all runners bc there is a change in the total replicas (in leadership table)
+								return nil
+							case <-ctx.Done():
+							}
+							return nil
+						},
+					)...,
+				).Run(ctx)
+
+				if err != nil {
+					return err // something went wrong with one runner
+				}
+
+				if ctx.Err() != nil {
+					return ctx.Err() // top level ctx is errored
+				}
+				<-c.restartDoneCh // wait for restart to complete
+				c.log.Info("Cron restarted")
+			}
+
+		},
 	).Run(ctx)
+}
+
+// Add forwards the call to the embedded API.
+func (c *cron) Add(ctx context.Context, name string, job *api.Job) error {
+	return c.API.Add(ctx, name, job)
+}
+
+// Get forwards the call to the embedded API.
+func (c *cron) Get(ctx context.Context, name string) (*api.Job, error) {
+	return c.API.Get(ctx, name)
+}
+
+// Delete forwards the call to the embedded API.
+func (c *cron) Delete(ctx context.Context, name string) error {
+	return c.API.Delete(ctx, name)
+}
+
+// DeletePrefixes forwards the call to the embedded API.
+func (c *cron) DeletePrefixes(ctx context.Context, prefixes ...string) error {
+	return c.API.DeletePrefixes(ctx, prefixes...)
+}
+
+// List forwards the call to the embedded API.
+func (c *cron) List(ctx context.Context, prefix string) (*api.ListResponse, error) {
+	return c.API.List(ctx, prefix)
+}
+
+// DeliverablePrefixes forwards the call to the embedded API.
+func (c *cron) DeliverablePrefixes(ctx context.Context, prefixes ...string) (context.CancelFunc, error) {
+	return c.API.DeliverablePrefixes(ctx, prefixes...)
+}
+
+// WatchLeadership forwards the call to the embedded API.
+func (c *cron) WatchLeadership(ctx context.Context) chan []*anypb.Any {
+	return c.API.WatchLeadership(ctx)
 }
