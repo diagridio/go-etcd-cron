@@ -110,8 +110,8 @@ func (c *cron) restart() error {
 	//}
 	//defer c.restarting.Store(false)
 
-	c.lock.Lock()
-	defer c.lock.Unlock()
+	//c.lock.Lock()
+	//defer c.lock.Unlock()
 
 	c.closeCh = make(chan struct{})
 	c.readyCh = make(chan struct{})
@@ -326,11 +326,11 @@ func (c *cron) Run(ctx context.Context) error {
 							case <-replicaUpdateCh:
 								//c.lock.RUnlock() //added
 								c.log.Info("Leadership change detected, reinitializing cron")
-								//c.lock.Lock()
+								c.lock.Lock()
 								if err := c.restart(); err != nil {
 									return fmt.Errorf("failed to re-initialize cron: %w", err)
 								}
-								//c.lock.Unlock()
+								c.lock.Unlock()
 								//c.lock.RLock()
 								// Restart all runners bc there is a change in the total replicas (in leadership table)
 								return nil
