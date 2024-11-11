@@ -24,7 +24,7 @@ type Fake struct {
 	deliverablePrefixesFn func(ctx context.Context, prefixes ...string) (context.CancelFunc, error)
 }
 
-func (f *Fake) WatchLeadership(ctx context.Context) chan []*anypb.Any {
+func (f *Fake) WatchLeadership(ctx context.Context) (chan []*anypb.Any, error) {
 	panic("implement me")
 }
 

@@ -233,17 +233,21 @@ func (a *api) waitReady(ctx context.Context) error {
 }
 
 // WatchLeadership returns the dynamic, scribed leadership replica data
-func (a *api) WatchLeadership(ctx context.Context) chan []*anypb.Any {
+func (a *api) WatchLeadership(ctx context.Context) (chan []*anypb.Any, error) {
 	ch := make(chan []*anypb.Any)
-	ch, activeReplicaValues := a.leadership.Subscribe(ctx)
+
+	activeReplicaValues, subscribeCh := a.leadership.Subscribe(ctx)
+
 	a.wg.Add(1)
 	go func() {
 		defer a.wg.Done()
 		select {
 		case <-ctx.Done():
 			return
-		case ch <- activeReplicaValues:
+		case <-subscribeCh:
+			ch <- activeReplicaValues
 		}
 	}()
-	return ch
+
+	return ch, nil
 }

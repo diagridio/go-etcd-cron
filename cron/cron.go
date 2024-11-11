@@ -74,9 +74,11 @@ type Options struct {
 
 // cron is the implementation of the cron interface.
 type cron struct {
-	API  api.API
+	api  api.API
 	opts Options
+	wg   sync.WaitGroup
 
+	//restartLock  sync.Mutex
 	lock         sync.RWMutex
 	log          logr.Logger
 	informer     *informer.Informer
@@ -89,6 +91,10 @@ type cron struct {
 	key          *key.Key
 	part         partitioner.Interface
 
+	apiLock    sync.Mutex
+	apiReadyCh chan struct{}
+
+	//restarting    atomic.Bool
 	running       atomic.Bool
 	restartDoneCh chan struct{}
 	closeCh       chan struct{}
@@ -96,13 +102,27 @@ type cron struct {
 }
 
 func (c *cron) restart() error {
-	var err error
+	//c.restartLock.Lock()
+	//defer c.restartLock.Unlock()
+
+	//if !c.restarting.CompareAndSwap(false, true) {
+	//	return nil // Another restart is already in progress
+	//}
+	//defer c.restarting.Store(false)
+
 	c.lock.Lock()
 	defer c.lock.Unlock()
 
-	c.restartDoneCh = make(chan struct{})
+	c.closeCh = make(chan struct{})
 	c.readyCh = make(chan struct{})
+	c.apiLock.Lock()
+	//defer c.apiLock.Unlock()
+	c.apiReadyCh = make(chan struct{})
+	c.apiLock.Unlock()
 
+	c.restartDoneCh = make(chan struct{})
+
+	var err error
 	c.part, err = partitioner.New(partitioner.Options{
 		ID:    c.opts.PartitionID,
 		Total: c.opts.PartitionTotal,
@@ -160,7 +180,7 @@ func (c *cron) restart() error {
 		Yard:             c.yard,
 	})
 
-	c.API = internalapi.New(internalapi.Options{
+	c.api = internalapi.New(internalapi.Options{
 		Client:           c.client,
 		Key:              c.key,
 		SchedulerBuilder: c.schedBuilder,
@@ -169,6 +189,7 @@ func (c *cron) restart() error {
 		CloseCh:          c.closeCh,
 	})
 
+	close(c.apiReadyCh)
 	close(c.restartDoneCh)
 	return nil
 }
@@ -194,7 +215,6 @@ func New(opts Options) (api.Interface, error) {
 	}
 
 	c := &cron{
-		lock:          sync.RWMutex{},
 		opts:          opts,
 		log:           log,
 		restartDoneCh: make(chan struct{}),
@@ -202,9 +222,11 @@ func New(opts Options) (api.Interface, error) {
 		closeCh:       make(chan struct{}),
 	}
 
+	c.lock.Lock()
 	if err := c.restart(); err != nil {
 		return nil, err
 	}
+	c.lock.Unlock()
 
 	select {
 	case <-c.restartDoneCh:
@@ -215,25 +237,37 @@ func New(opts Options) (api.Interface, error) {
 
 // Run is a blocking function that runs the cron instance.
 func (c *cron) Run(ctx context.Context) error {
+	//c.lock.RLock() // Cassie this caused it to hang for the go test cmd
+	//defer c.lock.RUnlock()
+
 	if !c.running.CompareAndSwap(false, true) {
 		return errors.New("cron already running")
 	}
+
+	defer c.running.Store(false)
 
 	runners := []concurrency.Runner{
 		c.collector.Run,
 		c.queue.Run,
 		func(ctx context.Context) error {
+			//c.lock.RLock()
+			//defer c.lock.RUnlock()
 			if err := c.leadership.WaitForLeadership(ctx); err != nil {
 				return err
 			}
 
-			return c.informer.Run(ctx)
+			err := c.informer.Run(ctx)
+			//c.lock.RUnlock()
+			return err
+			//return c.informer.Run(ctx)
 		},
 		func(ctx context.Context) error {
+			//c.lock.RLock()
+			//defer c.lock.RUnlock()
 			if err := c.leadership.WaitForLeadership(ctx); err != nil {
 				return err
 			}
-
+			//c.lock.RUnlock()
 			ev, err := c.informer.Events()
 			if err != nil {
 				return err
@@ -251,15 +285,24 @@ func (c *cron) Run(ctx context.Context) error {
 			}
 		},
 		func(ctx context.Context) error {
-			defer close(c.closeCh)
+			defer func() {
+				if c.closeCh != nil {
+					close(c.closeCh)
+				}
+			}()
+			//c.lock.RLock()
+			//defer c.lock.RUnlock()
 			if err := c.leadership.WaitForLeadership(ctx); err != nil {
 				return err
 			}
 			if err := c.informer.Ready(ctx); err != nil {
 				return err
 			}
+			//c.lock.RUnlock()
 
+			//c.lock.Lock()
 			close(c.readyCh)
+			//c.lock.Unlock()
 			c.log.Info("cron is ready")
 			<-ctx.Done()
 
@@ -267,22 +310,28 @@ func (c *cron) Run(ctx context.Context) error {
 		},
 	}
 
-	return concurrency.NewRunnerManager(
+	err := concurrency.NewRunnerManager(
 		c.leadership.Run,
 		func(ctx context.Context) error {
-			for {
-				replicaUpdateCh, _ := c.leadership.Subscribe(ctx)
+			//c.lock.RLock()
+			_, replicaUpdateCh := c.leadership.Subscribe(ctx)
+			//c.lock.RUnlock()
 
+			for {
 				err := concurrency.NewRunnerManager(
 					append(
 						runners,
 						func(ctx context.Context) error {
 							select {
 							case <-replicaUpdateCh:
+								//c.lock.RUnlock() //added
 								c.log.Info("Leadership change detected, reinitializing cron")
+								//c.lock.Lock()
 								if err := c.restart(); err != nil {
 									return fmt.Errorf("failed to re-initialize cron: %w", err)
 								}
+								//c.lock.Unlock()
+								//c.lock.RLock()
 								// Restart all runners bc there is a change in the total replicas (in leadership table)
 								return nil
 							case <-ctx.Done():
@@ -305,39 +354,81 @@ func (c *cron) Run(ctx context.Context) error {
 
 		},
 	).Run(ctx)
+
+	return err
 }
 
 // Add forwards the call to the embedded API.
 func (c *cron) Add(ctx context.Context, name string, job *api.Job) error {
-	return c.API.Add(ctx, name, job)
+	if err := c.waitAPIReady(ctx); err != nil {
+		return err
+	}
+	return c.api.Add(ctx, name, job)
 }
 
 // Get forwards the call to the embedded API.
 func (c *cron) Get(ctx context.Context, name string) (*api.Job, error) {
-	return c.API.Get(ctx, name)
+	if err := c.waitAPIReady(ctx); err != nil {
+		return nil, err
+	}
+
+	return c.api.Get(ctx, name)
 }
 
 // Delete forwards the call to the embedded API.
 func (c *cron) Delete(ctx context.Context, name string) error {
-	return c.API.Delete(ctx, name)
+	if err := c.waitAPIReady(ctx); err != nil {
+		return err
+	}
+
+	return c.api.Delete(ctx, name)
 }
 
 // DeletePrefixes forwards the call to the embedded API.
 func (c *cron) DeletePrefixes(ctx context.Context, prefixes ...string) error {
-	return c.API.DeletePrefixes(ctx, prefixes...)
+	if err := c.waitAPIReady(ctx); err != nil {
+		return err
+	}
+
+	return c.api.DeletePrefixes(ctx, prefixes...)
 }
 
 // List forwards the call to the embedded API.
 func (c *cron) List(ctx context.Context, prefix string) (*api.ListResponse, error) {
-	return c.API.List(ctx, prefix)
+	if err := c.waitAPIReady(ctx); err != nil {
+		return nil, err
+	}
+
+	return c.api.List(ctx, prefix)
 }
 
 // DeliverablePrefixes forwards the call to the embedded API.
 func (c *cron) DeliverablePrefixes(ctx context.Context, prefixes ...string) (context.CancelFunc, error) {
-	return c.API.DeliverablePrefixes(ctx, prefixes...)
+	if err := c.waitAPIReady(ctx); err != nil {
+		return nil, err
+	}
+
+	return c.api.DeliverablePrefixes(ctx, prefixes...)
 }
 
 // WatchLeadership forwards the call to the embedded API.
-func (c *cron) WatchLeadership(ctx context.Context) chan []*anypb.Any {
-	return c.API.WatchLeadership(ctx)
+func (c *cron) WatchLeadership(ctx context.Context) (chan []*anypb.Any, error) {
+	if err := c.waitAPIReady(ctx); err != nil {
+		return nil, err
+	}
+
+	return c.api.WatchLeadership(ctx)
+}
+
+func (c *cron) waitAPIReady(ctx context.Context) error {
+	c.apiLock.Lock()
+	ch := c.apiReadyCh
+	c.apiLock.Unlock()
+
+	select {
+	case <-ch:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
 }

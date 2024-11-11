@@ -11,10 +11,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/dapr/dapr/pkg/proto/internals/v1"
 	"github.com/go-logr/logr"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/protobuf/types/known/anypb"
+	"google.golang.org/protobuf/types/known/wrapperspb"
 
 	"github.com/diagridio/go-etcd-cron/api"
 	"github.com/diagridio/go-etcd-cron/tests/framework/etcd"
@@ -25,10 +25,8 @@ func Test_Run(t *testing.T) {
 
 	t.Run("Running multiple times should error", func(t *testing.T) {
 		t.Parallel()
-		partitionOwner, _ := anypb.New(&internals.SchedulerPartitionOwner{
-			Host: "127.0.0.1",
-			Port: uint32(8686),
-		})
+		replicaData, err := anypb.New(wrapperspb.Bytes([]byte("data")))
+		require.NoError(t, err)
 		client := etcd.EmbeddedBareClient(t)
 		var triggered atomic.Int64
 		cronI, err := New(Options{
@@ -41,7 +39,7 @@ func Test_Run(t *testing.T) {
 				triggered.Add(1)
 				return &api.TriggerResponse{Result: api.TriggerResponseResult_SUCCESS}
 			},
-			ReplicaData: partitionOwner,
+			ReplicaData: replicaData,
 		})
 		require.NoError(t, err)
 		cron := cronI.(*cron)
