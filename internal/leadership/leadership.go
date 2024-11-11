@@ -51,31 +51,28 @@ type Options struct {
 type Leadership struct {
 	log     logr.Logger
 	client  client.Interface
-	batcher *batcher.Batcher[int, []*anypb.Any]
+	batcher *batcher.Batcher[int, struct{}]
 	lock    sync.RWMutex
 
-	partitionTotal atomic.Uint32
-	key            *key.Key
-
-	activeReplicas atomic.Pointer[[]*anypb.Any]
-	replicaData    *anypb.Any
+	partitionTotal  uint32
+	key             *key.Key
+	allReplicaDatas []*anypb.Any
+	replicaData     *anypb.Any
 
 	readyCh chan struct{}
 	running atomic.Bool
 }
 
 func New(opts Options) *Leadership {
-	l := &Leadership{
-		batcher:     batcher.New[int, []*anypb.Any](0),
-		lock:        sync.RWMutex{},
-		log:         opts.Log.WithName("leadership"),
-		client:      opts.Client,
-		key:         opts.Key,
-		readyCh:     make(chan struct{}),
-		replicaData: opts.ReplicaData,
+	return &Leadership{
+		batcher:        batcher.New[int, struct{}](0),
+		log:            opts.Log.WithName("leadership"),
+		client:         opts.Client,
+		key:            opts.Key,
+		partitionTotal: opts.PartitionTotal,
+		readyCh:        make(chan struct{}),
+		replicaData:    opts.ReplicaData,
 	}
-	l.partitionTotal.Store(opts.PartitionTotal)
-	return l
 }
 
 // Run runs the Leadership. Attempts to acquire the partition lease key and
@@ -84,12 +81,24 @@ func (l *Leadership) Run(ctx context.Context) error {
 	if !l.running.CompareAndSwap(false, true) {
 		return errors.New("leadership already running")
 	}
-	//defer func() {
-	//	if l.batcher != nil {
-	//		l.batcher.Close()
-	//	}
-	//}()
+	defer l.batcher.Close()
 
+	for {
+		if ctx.Err() != nil {
+			//l.batcher.Close()
+			return ctx.Err()
+		}
+		if err := l.loop(ctx); err != nil {
+			return err
+		}
+	}
+}
+
+// loop is the main leadership loop. It will attempt to acquire the partition
+// leadership key for itself, then wait until all other partitions have gained
+// their leadership. After election, if any changes are observed, this loop
+// will exit, to be restarted.
+func (l *Leadership) loop(ctx context.Context) error {
 	l.log.Info("Attempting to acquire partition leadership")
 
 	lease, err := l.client.Grant(ctx, 20)
@@ -130,33 +139,33 @@ func (l *Leadership) Run(ctx context.Context) error {
 
 			watcherCtx, watcherCancel := context.WithCancel(ctx)
 			defer watcherCancel()
+			ch := l.client.Watch(watcherCtx, l.key.LeadershipNamespace(), clientv3.WithRev(resp.Header.Revision), clientv3.WithPrefix())
 
-			ch := l.client.Watch(watcherCtx, l.key.LeadershipKey(), clientv3.WithRev(resp.Header.Revision))
+			// Leadership acquisition loop
 			for {
-				// write leadership key
 				ok, err := l.attemptPartitionLeadership(ctx, lease.ID)
+
 				if err != nil {
 					return err
 				}
 
 				if ok {
 					l.log.Info("Partition leadership acquired")
-					//watcherCancel()
 					break
 				}
 
 				l.log.Info("Partition leadership acquired by another replica, waiting for leadership to be dropped...")
-
 				select {
 				case <-ctx.Done():
 					return ctx.Err()
-				case w := <-ch:
-					if err := l.handleLeadershipChangeEvents(ctx, w); err != nil {
-						return nil
-					}
+				case <-ch:
+					l.log.Info("Partition leadership changed, attempting to acquire partition leadership")
+					return nil
+
 				}
 			}
 
+			// Check leadership keys for consistency
 			for {
 				ok, err := l.checkLeadershipKeys(ctx)
 				if err != nil {
@@ -173,89 +182,49 @@ func (l *Leadership) Run(ctx context.Context) error {
 				select {
 				case <-ctx.Done():
 					return ctx.Err()
-				case <-time.After(time.Second / 2):
+				case <-ch:
 				}
 			}
 
+			l.lock.Lock()
 			close(l.readyCh)
-			<-ctx.Done()
+			l.lock.Unlock()
 
-			//if l.batcher != nil {
-			//	l.batcher.Close()
-			//}
-			//l.batcher.Close()
-			return nil
+			select {
+			case <-ctx.Done():
+				return ctx.Err()
+			case <-ch:
+				l.lock.Lock()
+				l.readyCh = make(chan struct{})
+				l.batcher.Batch(0, struct{}{})
+				l.lock.Unlock()
+				return nil
+			}
 		},
 	).Run(ctx)
 }
 
-func (l *Leadership) handleLeadershipChangeEvents(ctx context.Context, w clientv3.WatchResponse) error {
-	var leadershipChangedReplicaData []*anypb.Any
-
-	// Dynamic update for partitionTotal based on the current count of leadership keys
-	if err := l.updatePartitionTotal(ctx); err != nil {
-		return err
-	}
-
-	for _, ev := range w.Events {
-		var leadershipData stored.Leadership
-		if err := proto.Unmarshal(ev.Kv.Value, &leadershipData); err != nil {
-			return err
-		}
-
-		storedReplicaDataAny, err := anypb.New(leadershipData.GetReplicaData())
-		if err != nil {
-			l.log.Error(err, "Failed to wrap leadership message in anypb.Any")
-			continue
-		}
-		// only send back the replicaData, not total count
-		leadershipChangedReplicaData = append(leadershipChangedReplicaData, storedReplicaDataAny)
-	}
-
-	l.activeReplicas.Store(&leadershipChangedReplicaData)
-	l.batcher.Batch(0, leadershipChangedReplicaData)
-	if err := w.Err(); err != nil {
-		return err
-	}
-	return nil
-}
-
-// updatePartitionTotal checks and updates the partition total dynamically
-func (l *Leadership) updatePartitionTotal(ctx context.Context) error {
-	resp, err := l.client.Get(ctx, l.key.LeadershipNamespace(), clientv3.WithPrefix())
-	if err != nil {
-		return err
-	}
-	if resp.Count == 0 {
-		return errors.New("leadership namespace has no keys")
-	}
-	newTotal := strconv.Itoa(int(resp.Count))
-
-	if strconv.Itoa(int(l.partitionTotal.Load())) != newTotal {
-		total, err := strconv.Atoi(newTotal)
-		if err != nil {
-			return err
-		}
-		l.partitionTotal.Store(uint32(total))
-		l.log.Info("Updated partition total", "total", total)
-	}
-
-	return nil
-}
-
 // checkLeadershipKeys keys will check if all leadership keys are the same as
-// the dynamic partition total.
+// the partition total.
 func (l *Leadership) checkLeadershipKeys(ctx context.Context) (bool, error) {
+	l.lock.Lock()
+	defer l.lock.Unlock()
+
 	resp, err := l.client.Get(ctx, l.key.LeadershipKey())
 	if err != nil {
 		return false, err
 	}
+
+	if resp.Kvs == nil {
+		return false, fmt.Errorf("failed to check leaderhship keys. keys are nil")
+	}
+
 	var leader stored.Leadership
-	err = proto.Unmarshal(resp.Kvs[0].Value, &leader)
-	if err != nil {
+	if err = proto.Unmarshal(resp.Kvs[0].Value, &leader); err != nil {
 		return false, fmt.Errorf("failed to unmarshal leadership data: %w", err)
 	}
-	if resp.Count == 0 || leader.Total != l.partitionTotal.Load() {
+	// TODO: Cassie check that the replica data matches here as well
+	if resp.Count == 0 || leader.Total != l.partitionTotal {
 		return false, errors.New("lost partition leadership key")
 	}
 
@@ -268,21 +237,26 @@ func (l *Leadership) checkLeadershipKeys(ctx context.Context) (bool, error) {
 		return false, errors.New("leadership namespace has no keys")
 	}
 
+	l.allReplicaDatas = make([]*anypb.Any, 0, resp.Count)
+
 	// TODO: @joshvanl:
 	// We can be more aggressive starting earlier here by only returning an error
 	// if there is a different partition total which _also_ overlaps with this
 	// partition.
 	for _, kv := range resp.Kvs {
 		var leader stored.Leadership
-		err = proto.Unmarshal(kv.Value, &leader)
-		if err != nil {
+		if err = proto.Unmarshal(kv.Value, &leader); err != nil {
 			return false, fmt.Errorf("failed to unmarshal leadership data: %w", err)
 		}
 
-		if leader.Total != l.partitionTotal.Load() {
-			l.log.WithValues("key", string(kv.Key), "value", string(kv.Value)).Info("leadership key does not match partition total, waiting for leadership to be dropped")
+		if leader.Total != l.partitionTotal {
+			ptotal := strconv.FormatUint(uint64(leader.Total), 10)
+			l.log.WithValues("key", string(kv.Key), "value", ptotal).Info(
+				"leadership key does not match partition total, waiting for leadership to be dropped",
+			)
 			return false, nil
 		}
+		l.allReplicaDatas = append(l.allReplicaDatas, leader.ReplicaData)
 	}
 
 	return true, nil
@@ -295,12 +269,10 @@ func (l *Leadership) attemptPartitionLeadership(ctx context.Context, leaseID cli
 	ctx, cancel := context.WithTimeout(ctx, time.Second*5)
 	defer cancel()
 
-	leader := &stored.Leadership{
-		Total:       l.partitionTotal.Load(),
+	leaderBytes, err := proto.Marshal(&stored.Leadership{
+		Total:       l.partitionTotal,
 		ReplicaData: l.replicaData,
-	}
-
-	leaderBytes, err := proto.Marshal(leader)
+	})
 	if err != nil {
 		return false, fmt.Errorf("failed to marshal leadership data: %w", err)
 	}
@@ -313,14 +285,24 @@ func (l *Leadership) attemptPartitionLeadership(ctx context.Context, leaseID cli
 		return false, err
 	}
 
-	return resp.Succeeded, nil
+	// leadership acquired
+	if resp.Succeeded {
+		return true, nil
+	}
+
+	l.log.Info("Leadership already acquired by another replica, waiting for leadership to be dropped...")
+	return false, nil
 }
 
 // WaitForLeadership will block until the leadership is ready. If the context is
 // cancelled, it will return the context error.
 func (l *Leadership) WaitForLeadership(ctx context.Context) error {
+	l.lock.RLock()
+	readyCh := l.readyCh
+	l.lock.RUnlock()
+
 	select {
-	case <-l.readyCh:
+	case <-readyCh:
 		return nil
 	case <-ctx.Done():
 		return ctx.Err()
@@ -329,14 +311,22 @@ func (l *Leadership) WaitForLeadership(ctx context.Context) error {
 
 // Subscribe returns a channel for leadership key space updates, as well as the
 // initial set.
-func (l *Leadership) Subscribe(ctx context.Context) (chan []*anypb.Any, []*anypb.Any) {
-	ch := make(chan []*anypb.Any)
-	l.batcher.Subscribe(ctx, ch)
+func (l *Leadership) Subscribe(ctx context.Context) ([]*anypb.Any, chan struct{}) {
+	l.lock.RLock()
+	readyCh := l.readyCh
+	l.lock.RUnlock()
 
-	// returns active set of replicas
-	if activeReplicas := l.activeReplicas.Load(); activeReplicas != nil {
-		return ch, *activeReplicas
+	select {
+	case <-ctx.Done():
+		return nil, make(chan struct{})
+	case <-readyCh:
 	}
 
-	return ch, nil
+	l.lock.RLock()
+	defer l.lock.RUnlock()
+
+	ch := make(chan struct{})
+	l.batcher.Subscribe(ctx, ch)
+
+	return l.allReplicaDatas, ch
 }

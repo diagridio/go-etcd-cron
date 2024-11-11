@@ -50,7 +50,7 @@ type API interface {
 	// WatchLeadership returns a channel which will receive all current leadership values when the
 	// leadership keyspace changes. This function is responsible for sending the active set of
 	// available replicas.
-	WatchLeadership(ctx context.Context) chan []*anypb.Any
+	WatchLeadership(ctx context.Context) (chan []*anypb.Any, error)
 }
 
 // Interface is a cron interface. It schedules and manages job which are stored
