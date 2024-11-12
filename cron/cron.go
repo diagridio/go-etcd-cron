@@ -76,9 +76,8 @@ type Options struct {
 type cron struct {
 	api  api.API
 	opts Options
-	wg   sync.WaitGroup
 
-	//restartLock  sync.Mutex
+	restartLock  sync.Mutex
 	lock         sync.RWMutex
 	log          logr.Logger
 	informer     *informer.Informer
@@ -94,7 +93,7 @@ type cron struct {
 	apiLock    sync.Mutex
 	apiReadyCh chan struct{}
 
-	//restarting    atomic.Bool
+	restarting    atomic.Bool
 	running       atomic.Bool
 	restartDoneCh chan struct{}
 	closeCh       chan struct{}
@@ -102,28 +101,25 @@ type cron struct {
 }
 
 func (c *cron) restart() error {
-	//c.restartLock.Lock()
-	//defer c.restartLock.Unlock()
+	c.restartLock.Lock()
+	defer c.restartLock.Unlock()
 
-	//if !c.restarting.CompareAndSwap(false, true) {
-	//	return nil // Another restart is already in progress
-	//}
-	//defer c.restarting.Store(false)
+	if !c.restarting.CompareAndSwap(false, true) {
+		return errors.New("cron already restarting")
+	}
+	defer c.restarting.Store(false)
 
-	//c.lock.Lock()
-	//defer c.lock.Unlock()
-
+	c.lock.Lock()
 	c.closeCh = make(chan struct{})
 	c.readyCh = make(chan struct{})
+	c.restartDoneCh = make(chan struct{})
+	c.lock.Unlock()
+
 	c.apiLock.Lock()
-	//defer c.apiLock.Unlock()
 	c.apiReadyCh = make(chan struct{})
 	c.apiLock.Unlock()
 
-	c.restartDoneCh = make(chan struct{})
-
-	var err error
-	c.part, err = partitioner.New(partitioner.Options{
+	part, err := partitioner.New(partitioner.Options{
 		ID:    c.opts.PartitionID,
 		Total: c.opts.PartitionTotal,
 	})
@@ -131,12 +127,12 @@ func (c *cron) restart() error {
 		return fmt.Errorf("failed to create partitioner: %w", err)
 	}
 
-	c.client = client.New(client.Options{
+	client := client.New(client.Options{
 		Log:    c.log,
 		Client: c.opts.Client,
 	})
 
-	c.collector, err = garbage.New(garbage.Options{
+	collector, err := garbage.New(garbage.Options{
 		Log:                c.log,
 		Client:             c.client,
 		CollectionInterval: c.opts.CounterGarbageCollectionInterval,
@@ -145,13 +141,13 @@ func (c *cron) restart() error {
 		return fmt.Errorf("failed to create garbage collector: %w", err)
 	}
 
-	c.key = key.New(key.Options{
+	key := key.New(key.Options{
 		Namespace:   c.opts.Namespace,
 		PartitionID: c.opts.PartitionID,
 	})
 
-	c.yard = grave.New()
-	c.informer = informer.New(informer.Options{
+	yard := grave.New()
+	informer := informer.New(informer.Options{
 		Key:         c.key,
 		Client:      c.client,
 		Collector:   c.collector,
@@ -159,7 +155,7 @@ func (c *cron) restart() error {
 		Yard:        c.yard,
 	})
 
-	c.leadership = leadership.New(leadership.Options{
+	leadership := leadership.New(leadership.Options{
 		Log:            c.log,
 		Client:         c.client,
 		PartitionTotal: c.opts.PartitionTotal,
@@ -167,9 +163,9 @@ func (c *cron) restart() error {
 		ReplicaData:    c.opts.ReplicaData,
 	})
 
-	c.schedBuilder = scheduler.NewBuilder()
+	schedBuilder := scheduler.NewBuilder()
 
-	c.queue = queue.New(queue.Options{
+	queue := queue.New(queue.Options{
 		Log:              c.log,
 		Client:           c.client,
 		Clock:            clock.RealClock{},
@@ -180,7 +176,7 @@ func (c *cron) restart() error {
 		Yard:             c.yard,
 	})
 
-	c.api = internalapi.New(internalapi.Options{
+	api := internalapi.New(internalapi.Options{
 		Client:           c.client,
 		Key:              c.key,
 		SchedulerBuilder: c.schedBuilder,
@@ -189,8 +185,22 @@ func (c *cron) restart() error {
 		CloseCh:          c.closeCh,
 	})
 
+	c.lock.Lock()
+	c.part = part
+	c.client = client
+	c.collector = collector
+	c.key = key
+	c.yard = yard
+	c.informer = informer
+	c.leadership = leadership
+	c.schedBuilder = schedBuilder
+	c.queue = queue
+	c.api = api
+
 	close(c.apiReadyCh)
 	close(c.restartDoneCh)
+	c.lock.Unlock()
+
 	return nil
 }
 
@@ -222,11 +232,9 @@ func New(opts Options) (api.Interface, error) {
 		closeCh:       make(chan struct{}),
 	}
 
-	c.lock.Lock()
 	if err := c.restart(); err != nil {
 		return nil, err
 	}
-	c.lock.Unlock()
 
 	select {
 	case <-c.restartDoneCh:
@@ -237,9 +245,6 @@ func New(opts Options) (api.Interface, error) {
 
 // Run is a blocking function that runs the cron instance.
 func (c *cron) Run(ctx context.Context) error {
-	//c.lock.RLock() // Cassie this caused it to hang for the go test cmd
-	//defer c.lock.RUnlock()
-
 	if !c.running.CompareAndSwap(false, true) {
 		return errors.New("cron already running")
 	}
@@ -250,24 +255,17 @@ func (c *cron) Run(ctx context.Context) error {
 		c.collector.Run,
 		c.queue.Run,
 		func(ctx context.Context) error {
-			//c.lock.RLock()
-			//defer c.lock.RUnlock()
 			if err := c.leadership.WaitForLeadership(ctx); err != nil {
 				return err
 			}
 
 			err := c.informer.Run(ctx)
-			//c.lock.RUnlock()
 			return err
-			//return c.informer.Run(ctx)
 		},
 		func(ctx context.Context) error {
-			//c.lock.RLock()
-			//defer c.lock.RUnlock()
 			if err := c.leadership.WaitForLeadership(ctx); err != nil {
 				return err
 			}
-			//c.lock.RUnlock()
 			ev, err := c.informer.Events()
 			if err != nil {
 				return err
@@ -285,24 +283,15 @@ func (c *cron) Run(ctx context.Context) error {
 			}
 		},
 		func(ctx context.Context) error {
-			defer func() {
-				if c.closeCh != nil {
-					close(c.closeCh)
-				}
-			}()
-			//c.lock.RLock()
-			//defer c.lock.RUnlock()
+			defer close(c.closeCh)
 			if err := c.leadership.WaitForLeadership(ctx); err != nil {
 				return err
 			}
 			if err := c.informer.Ready(ctx); err != nil {
 				return err
 			}
-			//c.lock.RUnlock()
 
-			//c.lock.Lock()
 			close(c.readyCh)
-			//c.lock.Unlock()
 			c.log.Info("cron is ready")
 			<-ctx.Done()
 
@@ -313,9 +302,7 @@ func (c *cron) Run(ctx context.Context) error {
 	err := concurrency.NewRunnerManager(
 		c.leadership.Run,
 		func(ctx context.Context) error {
-			//c.lock.RLock()
 			_, replicaUpdateCh := c.leadership.Subscribe(ctx)
-			//c.lock.RUnlock()
 
 			for {
 				err := concurrency.NewRunnerManager(
@@ -324,14 +311,10 @@ func (c *cron) Run(ctx context.Context) error {
 						func(ctx context.Context) error {
 							select {
 							case <-replicaUpdateCh:
-								//c.lock.RUnlock() //added
 								c.log.Info("Leadership change detected, reinitializing cron")
-								c.lock.Lock()
 								if err := c.restart(); err != nil {
 									return fmt.Errorf("failed to re-initialize cron: %w", err)
 								}
-								c.lock.Unlock()
-								//c.lock.RLock()
 								// Restart all runners bc there is a change in the total replicas (in leadership table)
 								return nil
 							case <-ctx.Done():
