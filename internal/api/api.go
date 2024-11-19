@@ -17,16 +17,13 @@ import (
 	"github.com/diagridio/go-etcd-cron/internal/api/validator"
 	"github.com/diagridio/go-etcd-cron/internal/client"
 	"github.com/diagridio/go-etcd-cron/internal/key"
-	"github.com/diagridio/go-etcd-cron/internal/leadership"
 	"github.com/diagridio/go-etcd-cron/internal/queue"
 	"github.com/diagridio/go-etcd-cron/internal/scheduler"
 	clientv3 "go.etcd.io/etcd/client/v3"
 	"google.golang.org/protobuf/proto"
-	"google.golang.org/protobuf/types/known/anypb"
 )
 
 type Options struct {
-	Leadership       *leadership.Leadership
 	Client           client.Interface
 	Key              *key.Key
 	SchedulerBuilder *scheduler.Builder
@@ -37,21 +34,54 @@ type Options struct {
 	JobNameSanitizer *strings.Replacer
 }
 
+type Interface interface {
+	// Add adds a job to the cron instance.
+	Add(ctx context.Context, name string, job *cronapi.Job) error
+
+	// Get gets a job from the cron instance.
+	Get(ctx context.Context, name string) (*cronapi.Job, error)
+
+	// Delete deletes a job from the cron instance.
+	Delete(ctx context.Context, name string) error
+
+	// DeletePrefixes deletes all jobs with the given prefixes from the cron
+	// instance.
+	DeletePrefixes(ctx context.Context, prefixes ...string) error
+
+	// List lists all jobs under a given job name prefix.
+	List(ctx context.Context, prefix string) (*cronapi.ListResponse, error)
+
+	// DeliverablePrefixes registers the given Job name prefixes as being
+	// deliverable. Any Jobs that reside in the staging queue because they were
+	// undeliverable at the time of trigger but whose names match these prefixes
+	// will be immediately re-triggered.
+	// The returned CancelFunc should be called to unregister the prefixes,
+	// meaning these prefixes are no longer delivable by the caller. Duplicate
+	// Prefixes may be called together and will be pooled together, meaning that
+	// the prefix is still active if there is at least one DeliverablePrefixes
+	// call that has not been unregistered.
+	DeliverablePrefixes(ctx context.Context, prefixes ...string) (context.CancelFunc, error)
+
+	// SetReady signals that the API is ready to accept requests.
+	SetReady()
+
+	// Close closes the API.
+	Close()
+}
+
 // api implements the API interface.
 type api struct {
 	wg           sync.WaitGroup
-	leadership   *leadership.Leadership
 	client       client.Interface
 	key          *key.Key
 	schedBuilder *scheduler.Builder
 	validator    *validator.Validator
 	queue        *queue.Queue
-	lock         sync.RWMutex
 	readyCh      chan struct{}
 	closeCh      chan struct{}
 }
 
-func New(opts Options) cronapi.API {
+func New(opts Options) Interface {
 	return &api{
 		client:       opts.Client,
 		key:          opts.Key,
@@ -215,55 +245,21 @@ func (a *api) DeliverablePrefixes(ctx context.Context, prefixes ...string) (cont
 	return a.queue.DeliverablePrefixes(prefixes...), nil
 }
 
-func (a *api) waitReady(ctx context.Context) error {
-	a.lock.RLock()
-	readyCh := a.readyCh
-	a.lock.RUnlock()
+func (a *api) Close() {
+	close(a.closeCh)
+}
 
+func (a *api) SetReady() {
+	close(a.readyCh)
+}
+
+func (a *api) waitReady(ctx context.Context) error {
 	select {
-	case <-readyCh:
+	case <-a.readyCh:
 		return nil
 	case <-a.closeCh:
 		return errors.New("api is closed")
 	case <-ctx.Done():
 		return context.Cause(ctx)
 	}
-}
-
-func (a *api) SetReady() {
-	a.lock.Lock()
-	defer a.lock.Unlock()
-	close(a.readyCh)
-}
-
-func (a *api) SetUnready() {
-	a.lock.Lock()
-	defer a.lock.Unlock()
-	a.readyCh = make(chan struct{})
-}
-
-func (a *api) Close() {
-	a.lock.Lock()
-	defer a.lock.Unlock()
-	close(a.closeCh)
-}
-
-// WatchLeadership returns the dynamic, scribed leadership replica data
-func (a *api) WatchLeadership(ctx context.Context) (chan []*anypb.Any, error) {
-	ch := make(chan []*anypb.Any)
-
-	activeReplicaValues, subscribeCh := a.leadership.Subscribe(ctx)
-
-	a.wg.Add(1)
-	go func() {
-		defer a.wg.Done()
-		select {
-		case <-ctx.Done():
-			return
-		case <-subscribeCh:
-			ch <- activeReplicaValues
-		}
-	}()
-
-	return ch, nil
 }

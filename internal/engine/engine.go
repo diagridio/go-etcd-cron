@@ -8,40 +8,109 @@ package engine
 import (
 	"context"
 	"errors"
+	"fmt"
 	"sync/atomic"
+	"time"
 
 	"github.com/dapr/kit/concurrency"
-	"github.com/diagridio/go-etcd-cron/api"
-	"github.com/diagridio/go-etcd-cron/internal/garbage"
-	"github.com/diagridio/go-etcd-cron/internal/informer"
-	"github.com/diagridio/go-etcd-cron/internal/queue"
 	"github.com/go-logr/logr"
+	"k8s.io/utils/clock"
+
+	"github.com/diagridio/go-etcd-cron/api"
+	internalapi "github.com/diagridio/go-etcd-cron/internal/api"
+	"github.com/diagridio/go-etcd-cron/internal/client"
+	"github.com/diagridio/go-etcd-cron/internal/garbage"
+	"github.com/diagridio/go-etcd-cron/internal/grave"
+	"github.com/diagridio/go-etcd-cron/internal/informer"
+	"github.com/diagridio/go-etcd-cron/internal/key"
+	"github.com/diagridio/go-etcd-cron/internal/partitioner"
+	"github.com/diagridio/go-etcd-cron/internal/queue"
+	"github.com/diagridio/go-etcd-cron/internal/scheduler"
 )
 
 // Options are the options for creating a new engine instance.
 type Options struct {
-	Log       logr.Logger
-	Collector garbage.Interface
-	Queue     *queue.Queue
-	Informer  *informer.Informer
-	API       api.API
+	// Log is the logger to use for logging.
+	Log logr.Logger
+
+	// Key is the key to use for storing cron entries.
+	Key *key.Key
+
+	// Partitioner is the partitioner to use for partitioning cron entries.
+	Partitioner partitioner.Interface
+
+	// Client is the etcd client to use for storing cron entries.
+	Client client.Interface
+
+	// TriggerFn is the function to call when a cron job is triggered.
+	TriggerFn api.TriggerFunction
+
+	// CounterGarbageCollectionInterval is the interval at which to run the
+	// garbage collection for counters is run. Counters are also garbage
+	// collected on shutdown. Counters are batch deleted, so a larger value
+	// increases the counter bucket and reduces the number of database
+	// operations.
+	// This value rarely needs to be set and is mostly used for testing. A small
+	// interval value will increase database operations and thus degrade cron
+	// performance.
+	// Defaults to 180 seconds.
+	CounterGarbageCollectionInterval *time.Duration
 }
 
 type Engine struct {
-	opts Options
-
-	running atomic.Bool
-	readyCh chan struct{}
-	closeCh chan struct{}
+	log       logr.Logger
+	collector garbage.Interface
+	queue     *queue.Queue
+	informer  *informer.Informer
+	api       internalapi.Interface
+	running   atomic.Bool
 }
 
-func New(opts Options) *Engine {
-	e := &Engine{
-		opts:    opts,
-		readyCh: make(chan struct{}),
-		closeCh: make(chan struct{}),
+func New(opts Options) (*Engine, error) {
+	collector, err := garbage.New(garbage.Options{
+		Log:                opts.Log,
+		Client:             opts.Client,
+		CollectionInterval: opts.CounterGarbageCollectionInterval,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to create garbage collector: %w", err)
 	}
-	return e
+
+	yard := grave.New()
+	informer := informer.New(informer.Options{
+		Key:         opts.Key,
+		Client:      opts.Client,
+		Collector:   collector,
+		Partitioner: opts.Partitioner,
+		Yard:        yard,
+	})
+
+	schedBuilder := scheduler.NewBuilder()
+	queue := queue.New(queue.Options{
+		Log:              opts.Log,
+		Client:           opts.Client,
+		Clock:            clock.RealClock{},
+		Key:              opts.Key,
+		SchedulerBuilder: schedBuilder,
+		TriggerFn:        opts.TriggerFn,
+		Collector:        collector,
+		Yard:             yard,
+	})
+
+	api := internalapi.New(internalapi.Options{
+		Client:           opts.Client,
+		Key:              opts.Key,
+		SchedulerBuilder: schedBuilder,
+		Queue:            queue,
+	})
+
+	return &Engine{
+		log:       opts.Log.WithName("engine"),
+		collector: collector,
+		queue:     queue,
+		informer:  informer,
+		api:       api,
+	}, nil
 }
 
 func (e *Engine) Run(ctx context.Context) error {
@@ -50,12 +119,15 @@ func (e *Engine) Run(ctx context.Context) error {
 	}
 	defer e.running.Store(false)
 
+	e.log.Info("starting cron engine")
+	defer e.log.Info("cron engine shut down")
+
 	return concurrency.NewRunnerManager(
-		e.opts.Collector.Run,
-		e.opts.Queue.Run,
-		e.opts.Informer.Run,
+		e.collector.Run,
+		e.queue.Run,
+		e.informer.Run,
 		func(ctx context.Context) error {
-			ev, err := e.opts.Informer.Events()
+			ev, err := e.informer.Events()
 			if err != nil {
 				return err
 			}
@@ -65,25 +137,29 @@ func (e *Engine) Run(ctx context.Context) error {
 				case <-ctx.Done():
 					return ctx.Err()
 				case event := <-ev:
-					if err := e.opts.Queue.HandleInformerEvent(ctx, event); err != nil {
+					if err := e.queue.HandleInformerEvent(ctx, event); err != nil {
 						return err
 					}
 				}
 			}
 		},
 		func(ctx context.Context) error {
-			defer close(e.closeCh)
-			if err := e.opts.Informer.Ready(ctx); err != nil {
+			defer e.api.Close()
+
+			if err := e.informer.Ready(ctx); err != nil {
 				return err
 			}
 
-			e.opts.API.SetReady()
-			e.opts.Log.Info("cron engine is ready")
+			e.api.SetReady()
+			e.log.Info("cron engine is ready")
 			<-ctx.Done()
-			e.opts.Log.Info("cron engine is shutting down")
-			e.opts.API.SetUnready()
+			e.log.Info("cron engine is shutting down")
 
 			return nil
 		},
 	).Run(ctx)
+}
+
+func (e *Engine) API() internalapi.Interface {
+	return e.api
 }

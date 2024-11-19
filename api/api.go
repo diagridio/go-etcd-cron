@@ -7,8 +7,6 @@ package api
 
 import (
 	"context"
-
-	"google.golang.org/protobuf/types/known/anypb"
 )
 
 // TriggerFunction is the type of the function that is called when a job is
@@ -18,8 +16,18 @@ import (
 // queue.
 type TriggerFunction func(context.Context, *TriggerRequest) *TriggerResponse
 
-// API is the interface for interacting with the cron instance.
-type API interface {
+// Interface is a cron interface. It schedules and manages job which are stored
+// and informed from ETCD. It uses a trigger function to call when a job is
+// triggered.
+// Jobs may be oneshot or recurring. Recurring jobs are scheduled to run at
+// their next scheduled time. Oneshot jobs are scheduled to run once and are
+// removed from the schedule after they are triggered.
+type Interface interface {
+	// Run is a blocking function that runs the cron instance. It will return an
+	// error if the instance is already running.
+	// Returns when the given context is cancelled, after doing all cleanup.
+	Run(ctx context.Context) error
+
 	// Add adds a job to the cron instance.
 	Add(ctx context.Context, name string, job *Job) error
 
@@ -46,29 +54,4 @@ type API interface {
 	// the prefix is still active if there is at least one DeliverablePrefixes
 	// call that has not been unregistered.
 	DeliverablePrefixes(ctx context.Context, prefixes ...string) (context.CancelFunc, error)
-
-	// WatchLeadership returns a channel which will receive all current leadership values when the
-	// leadership keyspace changes. This function is responsible for sending the active set of
-	// available replicas.
-	WatchLeadership(ctx context.Context) (chan []*anypb.Any, error)
-
-	Close()
-	SetReady()
-	SetUnready()
-}
-
-// Interface is a cron interface. It schedules and manages job which are stored
-// and informed from ETCD. It uses a trigger function to call when a job is
-// triggered.
-// Jobs may be oneshot or recurring. Recurring jobs are scheduled to run at
-// their next scheduled time. Oneshot jobs are scheduled to run once and are
-// removed from the schedule after they are triggered.
-type Interface interface {
-	// Run is a blocking function that runs the cron instance. It will return an
-	// error if the instance is already running.
-	// Returns when the given context is cancelled, after doing all cleanup.
-	Run(ctx context.Context) error
-
-	// API implements the client API for the cron instance.
-	API
 }
