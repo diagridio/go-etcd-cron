@@ -102,6 +102,8 @@ func New(opts Options) (*Engine, error) {
 		Key:              opts.Key,
 		SchedulerBuilder: schedBuilder,
 		Queue:            queue,
+		Informer:         informer,
+		Log:              opts.Log,
 	})
 
 	return &Engine{
@@ -126,6 +128,7 @@ func (e *Engine) Run(ctx context.Context) error {
 		e.collector.Run,
 		e.queue.Run,
 		e.informer.Run,
+		e.api.Run,
 		func(ctx context.Context) error {
 			ev, err := e.informer.Events()
 			if err != nil {
@@ -142,20 +145,6 @@ func (e *Engine) Run(ctx context.Context) error {
 					}
 				}
 			}
-		},
-		func(ctx context.Context) error {
-			defer e.api.Close()
-
-			if err := e.informer.Ready(ctx); err != nil {
-				return err
-			}
-
-			e.api.SetReady()
-			e.log.Info("cron engine is ready")
-			<-ctx.Done()
-			e.log.Info("cron engine is shutting down")
-
-			return nil
 		},
 	).Run(ctx)
 }
