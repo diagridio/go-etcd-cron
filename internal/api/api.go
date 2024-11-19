@@ -11,30 +11,39 @@ import (
 	"fmt"
 	"strings"
 	"sync"
+	"sync/atomic"
 
 	cronapi "github.com/diagridio/go-etcd-cron/api"
 	"github.com/diagridio/go-etcd-cron/internal/api/stored"
 	"github.com/diagridio/go-etcd-cron/internal/api/validator"
 	"github.com/diagridio/go-etcd-cron/internal/client"
+	"github.com/diagridio/go-etcd-cron/internal/informer"
 	"github.com/diagridio/go-etcd-cron/internal/key"
 	"github.com/diagridio/go-etcd-cron/internal/queue"
 	"github.com/diagridio/go-etcd-cron/internal/scheduler"
+	"github.com/go-logr/logr"
 	clientv3 "go.etcd.io/etcd/client/v3"
 	"google.golang.org/protobuf/proto"
 )
 
 type Options struct {
+	Log              logr.Logger
 	Client           client.Interface
 	Key              *key.Key
 	SchedulerBuilder *scheduler.Builder
 	Queue            *queue.Queue
+	Informer         *informer.Informer
 
 	// JobNameSanitizer is a replacer that sanitizes job names before name
 	// validation.
 	JobNameSanitizer *strings.Replacer
 }
 
+// Interface is the internal API that implements the API backend.
 type Interface interface {
+	// Run runs the API.
+	Run(ctx context.Context) error
+
 	// Add adds a job to the cron instance.
 	Add(ctx context.Context, name string, job *cronapi.Job) error
 
@@ -61,38 +70,59 @@ type Interface interface {
 	// the prefix is still active if there is at least one DeliverablePrefixes
 	// call that has not been unregistered.
 	DeliverablePrefixes(ctx context.Context, prefixes ...string) (context.CancelFunc, error)
-
-	// SetReady signals that the API is ready to accept requests.
-	SetReady()
-
-	// Close closes the API.
-	Close()
 }
 
 // api implements the API interface.
 type api struct {
+	log          logr.Logger
 	wg           sync.WaitGroup
 	client       client.Interface
 	key          *key.Key
 	schedBuilder *scheduler.Builder
 	validator    *validator.Validator
 	queue        *queue.Queue
-	readyCh      chan struct{}
-	closeCh      chan struct{}
+	informer     *informer.Informer
+
+	running atomic.Bool
+	readyCh chan struct{}
+	closeCh chan struct{}
 }
 
 func New(opts Options) Interface {
 	return &api{
+		log:          opts.Log.WithName("api"),
 		client:       opts.Client,
 		key:          opts.Key,
 		schedBuilder: opts.SchedulerBuilder,
 		validator: validator.New(validator.Options{
 			JobNameSanitizer: opts.JobNameSanitizer,
 		}),
-		queue:   opts.Queue,
-		readyCh: make(chan struct{}),
-		closeCh: make(chan struct{}),
+		queue:    opts.Queue,
+		informer: opts.Informer,
+		readyCh:  make(chan struct{}),
+		closeCh:  make(chan struct{}),
 	}
+}
+
+func (a *api) Run(ctx context.Context) error {
+	if !a.running.CompareAndSwap(false, true) {
+		return errors.New("api is already running")
+	}
+
+	defer close(a.closeCh)
+
+	if err := a.informer.Ready(ctx); err != nil {
+		return err
+	}
+
+	close(a.readyCh)
+
+	a.log.Info("api is ready")
+
+	<-ctx.Done()
+	a.log.Info("api is shutting down")
+
+	return nil
 }
 
 // Add adds a new cron job to the cron instance.
@@ -245,20 +275,12 @@ func (a *api) DeliverablePrefixes(ctx context.Context, prefixes ...string) (cont
 	return a.queue.DeliverablePrefixes(prefixes...), nil
 }
 
-func (a *api) Close() {
-	close(a.closeCh)
-}
-
-func (a *api) SetReady() {
-	close(a.readyCh)
-}
-
 func (a *api) waitReady(ctx context.Context) error {
 	select {
-	case <-a.readyCh:
-		return nil
 	case <-a.closeCh:
 		return errors.New("api is closed")
+	case <-a.readyCh:
+		return nil
 	case <-ctx.Done():
 		return context.Cause(ctx)
 	}
