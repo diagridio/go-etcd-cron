@@ -51,6 +51,10 @@ type API interface {
 	// leadership keyspace changes. This function is responsible for sending the active set of
 	// available replicas.
 	WatchLeadership(ctx context.Context) (chan []*anypb.Any, error)
+
+	Close()
+	SetReady()
+	SetUnready()
 }
 
 // Interface is a cron interface. It schedules and manages job which are stored

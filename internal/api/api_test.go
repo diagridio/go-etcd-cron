@@ -330,7 +330,5 @@ func newAPINotReady(t *testing.T) *api {
 		Key:              key,
 		SchedulerBuilder: schedulerBuilder,
 		Queue:            queue,
-		ReadyCh:          make(chan struct{}),
-		CloseCh:          make(chan struct{}),
 	}).(*api)
 }

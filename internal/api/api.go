@@ -31,8 +31,6 @@ type Options struct {
 	Key              *key.Key
 	SchedulerBuilder *scheduler.Builder
 	Queue            *queue.Queue
-	ReadyCh          chan struct{}
-	CloseCh          chan struct{}
 
 	// JobNameSanitizer is a replacer that sanitizes job names before name
 	// validation.
@@ -48,16 +46,12 @@ type api struct {
 	schedBuilder *scheduler.Builder
 	validator    *validator.Validator
 	queue        *queue.Queue
+	lock         sync.RWMutex
 	readyCh      chan struct{}
 	closeCh      chan struct{}
 }
 
 func New(opts Options) cronapi.API {
-	closeCh := opts.CloseCh
-	if closeCh == nil {
-		closeCh = make(chan struct{})
-	}
-
 	return &api{
 		client:       opts.Client,
 		key:          opts.Key,
@@ -66,8 +60,8 @@ func New(opts Options) cronapi.API {
 			JobNameSanitizer: opts.JobNameSanitizer,
 		}),
 		queue:   opts.Queue,
-		readyCh: opts.ReadyCh,
-		closeCh: closeCh,
+		readyCh: make(chan struct{}),
+		closeCh: make(chan struct{}),
 	}
 }
 
@@ -222,14 +216,36 @@ func (a *api) DeliverablePrefixes(ctx context.Context, prefixes ...string) (cont
 }
 
 func (a *api) waitReady(ctx context.Context) error {
+	a.lock.RLock()
+	readyCh := a.readyCh
+	a.lock.RUnlock()
+
 	select {
-	case <-a.readyCh:
+	case <-readyCh:
 		return nil
 	case <-a.closeCh:
 		return errors.New("api is closed")
 	case <-ctx.Done():
 		return context.Cause(ctx)
 	}
+}
+
+func (a *api) SetReady() {
+	a.lock.Lock()
+	defer a.lock.Unlock()
+	close(a.readyCh)
+}
+
+func (a *api) SetUnready() {
+	a.lock.Lock()
+	defer a.lock.Unlock()
+	a.readyCh = make(chan struct{})
+}
+
+func (a *api) Close() {
+	a.lock.Lock()
+	defer a.lock.Unlock()
+	close(a.closeCh)
 }
 
 // WatchLeadership returns the dynamic, scribed leadership replica data
