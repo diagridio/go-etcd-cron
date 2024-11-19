@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/dapr/kit/concurrency"
+	"github.com/diagridio/go-etcd-cron/internal/engine"
 	"github.com/go-logr/logr"
 	"github.com/go-logr/zapr"
 	"go.etcd.io/etcd/client/pkg/v3/logutil"
@@ -155,11 +156,12 @@ func (c *cron) restart() error {
 		Yard:        c.yard,
 	})
 
+	// engine is not leadership aware
 	leadership := leadership.New(leadership.Options{
 		Log:            c.log,
 		Client:         c.client,
 		PartitionTotal: c.opts.PartitionTotal,
-		Key:            c.key,
+		Key:            *c.key,
 		ReplicaData:    c.opts.ReplicaData,
 	})
 
@@ -181,8 +183,6 @@ func (c *cron) restart() error {
 		Key:              c.key,
 		SchedulerBuilder: c.schedBuilder,
 		Queue:            c.queue,
-		ReadyCh:          c.readyCh,
-		CloseCh:          c.closeCh,
 	})
 
 	c.lock.Lock()
@@ -224,22 +224,31 @@ func New(opts Options) (api.Interface, error) {
 		log = log.WithName("diagrid-cron")
 	}
 
+	key := key.New(key.Options{
+		Namespace:   opts.Namespace,
+		PartitionID: opts.PartitionID,
+	})
+	client := client.New(client.Options{
+		Log:    log,
+		Client: opts.Client,
+	})
+
+	leadership := leadership.New(leadership.Options{
+		Log:            log,
+		Client:         client,
+		PartitionTotal: opts.PartitionTotal,
+		Key:            *key,
+		ReplicaData:    opts.ReplicaData,
+	})
 	c := &cron{
 		opts:          opts,
 		log:           log,
+		leadership:    leadership,
 		restartDoneCh: make(chan struct{}),
 		readyCh:       make(chan struct{}),
 		closeCh:       make(chan struct{}),
 	}
 
-	if err := c.restart(); err != nil {
-		return nil, err
-	}
-
-	select {
-	case <-c.restartDoneCh:
-		log.Info("Cron instance is initialized")
-	}
 	return c, nil
 }
 
@@ -250,91 +259,30 @@ func (c *cron) Run(ctx context.Context) error {
 	}
 
 	defer c.running.Store(false)
+	defer c.leadership.Close()
+	defer c.api.Close()
 
-	runners := []concurrency.Runner{
-		c.collector.Run,
-		c.queue.Run,
-		func(ctx context.Context) error {
-			if err := c.leadership.WaitForLeadership(ctx); err != nil {
-				return err
-			}
-
-			err := c.informer.Run(ctx)
-			return err
-		},
-		func(ctx context.Context) error {
-			if err := c.leadership.WaitForLeadership(ctx); err != nil {
-				return err
-			}
-			ev, err := c.informer.Events()
-			if err != nil {
-				return err
-			}
-
-			for {
-				select {
-				case <-ctx.Done():
-					return ctx.Err()
-				case e := <-ev:
-					if err := c.queue.HandleInformerEvent(ctx, e); err != nil {
-						return err
-					}
-				}
-			}
-		},
-		func(ctx context.Context) error {
-			defer close(c.closeCh)
-			if err := c.leadership.WaitForLeadership(ctx); err != nil {
-				return err
-			}
-			if err := c.informer.Ready(ctx); err != nil {
-				return err
-			}
-
-			close(c.readyCh)
-			c.log.Info("cron is ready")
-			<-ctx.Done()
-
-			return nil
-		},
-	}
-
+	engine := engine.New(engine.Options{
+		Log:       c.log,
+		Collector: c.collector,
+		Queue:     c.queue,
+		Informer:  c.informer,
+		API:       c.api,
+	})
 	err := concurrency.NewRunnerManager(
 		c.leadership.Run,
 		func(ctx context.Context) error {
-			_, replicaUpdateCh := c.leadership.Subscribe(ctx)
-
 			for {
-				err := concurrency.NewRunnerManager(
-					append(
-						runners,
-						func(ctx context.Context) error {
-							select {
-							case <-replicaUpdateCh:
-								c.log.Info("Leadership change detected, reinitializing cron")
-								if err := c.restart(); err != nil {
-									return fmt.Errorf("failed to re-initialize cron: %w", err)
-								}
-								// Restart all runners bc there is a change in the total replicas (in leadership table)
-								return nil
-							case <-ctx.Done():
-							}
-							return nil
-						},
-					)...,
-				).Run(ctx)
-
+				leaderCtx, err := c.leadership.WaitForLeadership(ctx)
 				if err != nil {
-					return err // something went wrong with one runner
+					return err
 				}
 
-				if ctx.Err() != nil {
-					return ctx.Err() // top level ctx is errored
+				// needs leadership to be ready
+				if err = engine.Run(leaderCtx); err != nil {
+					return err
 				}
-				<-c.restartDoneCh // wait for restart to complete
-				c.log.Info("Cron restarted")
 			}
-
 		},
 	).Run(ctx)
 
@@ -401,6 +349,18 @@ func (c *cron) WatchLeadership(ctx context.Context) (chan []*anypb.Any, error) {
 	}
 
 	return c.api.WatchLeadership(ctx)
+}
+
+func (c *cron) Close() {
+	c.api.Close()
+}
+
+func (c *cron) SetReady() {
+	c.api.SetReady()
+}
+
+func (c *cron) SetUnready() {
+	c.api.SetUnready()
 }
 
 func (c *cron) waitAPIReady(ctx context.Context) error {
