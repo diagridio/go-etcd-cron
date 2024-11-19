@@ -14,26 +14,20 @@ import (
 	"time"
 
 	"github.com/dapr/kit/concurrency"
-	"github.com/diagridio/go-etcd-cron/internal/engine"
 	"github.com/go-logr/logr"
 	"github.com/go-logr/zapr"
 	"go.etcd.io/etcd/client/pkg/v3/logutil"
 	clientv3 "go.etcd.io/etcd/client/v3"
 	"go.uber.org/zap"
 	"google.golang.org/protobuf/types/known/anypb"
-	"k8s.io/utils/clock"
 
 	"github.com/diagridio/go-etcd-cron/api"
 	internalapi "github.com/diagridio/go-etcd-cron/internal/api"
 	"github.com/diagridio/go-etcd-cron/internal/client"
-	"github.com/diagridio/go-etcd-cron/internal/garbage"
-	"github.com/diagridio/go-etcd-cron/internal/grave"
-	"github.com/diagridio/go-etcd-cron/internal/informer"
+	"github.com/diagridio/go-etcd-cron/internal/engine"
 	"github.com/diagridio/go-etcd-cron/internal/key"
 	"github.com/diagridio/go-etcd-cron/internal/leadership"
 	"github.com/diagridio/go-etcd-cron/internal/partitioner"
-	"github.com/diagridio/go-etcd-cron/internal/queue"
-	"github.com/diagridio/go-etcd-cron/internal/scheduler"
 )
 
 // Options are the options for creating a new cron instance.
@@ -75,133 +69,20 @@ type Options struct {
 
 // cron is the implementation of the cron interface.
 type cron struct {
-	api  api.API
-	opts Options
+	log logr.Logger
 
-	restartLock  sync.Mutex
-	lock         sync.RWMutex
-	log          logr.Logger
-	informer     *informer.Informer
-	queue        *queue.Queue
-	leadership   *leadership.Leadership
-	collector    garbage.Interface
-	schedBuilder *scheduler.Builder
-	client       client.Interface
-	yard         *grave.Yard
-	key          *key.Key
-	part         partitioner.Interface
+	key         *key.Key
+	leadership  *leadership.Leadership
+	client      client.Interface
+	part        partitioner.Interface
+	triggerFn   api.TriggerFunction
+	gcgInterval *time.Duration
 
-	apiLock    sync.Mutex
-	apiReadyCh chan struct{}
-
-	restarting    atomic.Bool
-	running       atomic.Bool
-	restartDoneCh chan struct{}
-	closeCh       chan struct{}
-	readyCh       chan struct{}
-}
-
-func (c *cron) restart() error {
-	c.restartLock.Lock()
-	defer c.restartLock.Unlock()
-
-	if !c.restarting.CompareAndSwap(false, true) {
-		return errors.New("cron already restarting")
-	}
-	defer c.restarting.Store(false)
-
-	c.lock.Lock()
-	c.closeCh = make(chan struct{})
-	c.readyCh = make(chan struct{})
-	c.restartDoneCh = make(chan struct{})
-	c.lock.Unlock()
-
-	c.apiLock.Lock()
-	c.apiReadyCh = make(chan struct{})
-	c.apiLock.Unlock()
-
-	part, err := partitioner.New(partitioner.Options{
-		ID:    c.opts.PartitionID,
-		Total: c.opts.PartitionTotal,
-	})
-	if err != nil {
-		return fmt.Errorf("failed to create partitioner: %w", err)
-	}
-
-	client := client.New(client.Options{
-		Log:    c.log,
-		Client: c.opts.Client,
-	})
-
-	collector, err := garbage.New(garbage.Options{
-		Log:                c.log,
-		Client:             c.client,
-		CollectionInterval: c.opts.CounterGarbageCollectionInterval,
-	})
-	if err != nil {
-		return fmt.Errorf("failed to create garbage collector: %w", err)
-	}
-
-	key := key.New(key.Options{
-		Namespace:   c.opts.Namespace,
-		PartitionID: c.opts.PartitionID,
-	})
-
-	yard := grave.New()
-	informer := informer.New(informer.Options{
-		Key:         c.key,
-		Client:      c.client,
-		Collector:   c.collector,
-		Partitioner: c.part,
-		Yard:        c.yard,
-	})
-
-	// engine is not leadership aware
-	leadership := leadership.New(leadership.Options{
-		Log:            c.log,
-		Client:         c.client,
-		PartitionTotal: c.opts.PartitionTotal,
-		Key:            *c.key,
-		ReplicaData:    c.opts.ReplicaData,
-	})
-
-	schedBuilder := scheduler.NewBuilder()
-
-	queue := queue.New(queue.Options{
-		Log:              c.log,
-		Client:           c.client,
-		Clock:            clock.RealClock{},
-		Key:              c.key,
-		SchedulerBuilder: c.schedBuilder,
-		TriggerFn:        c.opts.TriggerFn,
-		Collector:        c.collector,
-		Yard:             c.yard,
-	})
-
-	api := internalapi.New(internalapi.Options{
-		Client:           c.client,
-		Key:              c.key,
-		SchedulerBuilder: c.schedBuilder,
-		Queue:            c.queue,
-	})
-
-	c.lock.Lock()
-	c.part = part
-	c.client = client
-	c.collector = collector
-	c.key = key
-	c.yard = yard
-	c.informer = informer
-	c.leadership = leadership
-	c.schedBuilder = schedBuilder
-	c.queue = queue
-	c.api = api
-
-	close(c.apiReadyCh)
-	close(c.restartDoneCh)
-	c.lock.Unlock()
-
-	return nil
+	lock    sync.RWMutex
+	engine  atomic.Pointer[engine.Engine]
+	running atomic.Bool
+	readyCh chan struct{}
+	closeCh chan struct{}
 }
 
 // New creates a new cron instance.
@@ -224,32 +105,42 @@ func New(opts Options) (api.Interface, error) {
 		log = log.WithName("diagrid-cron")
 	}
 
+	part, err := partitioner.New(partitioner.Options{
+		ID:    opts.PartitionID,
+		Total: opts.PartitionTotal,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to create partitioner: %w", err)
+	}
+
+	client := client.New(client.Options{
+		Log:    opts.Log,
+		Client: opts.Client,
+	})
+
 	key := key.New(key.Options{
 		Namespace:   opts.Namespace,
 		PartitionID: opts.PartitionID,
-	})
-	client := client.New(client.Options{
-		Log:    log,
-		Client: opts.Client,
 	})
 
 	leadership := leadership.New(leadership.Options{
 		Log:            log,
 		Client:         client,
 		PartitionTotal: opts.PartitionTotal,
-		Key:            *key,
-		ReplicaData:    opts.ReplicaData,
+		Key:            key,
 	})
-	c := &cron{
-		opts:          opts,
-		log:           log,
-		leadership:    leadership,
-		restartDoneCh: make(chan struct{}),
-		readyCh:       make(chan struct{}),
-		closeCh:       make(chan struct{}),
-	}
 
-	return c, nil
+	return &cron{
+		log:         log,
+		key:         key,
+		client:      client,
+		part:        part,
+		triggerFn:   opts.TriggerFn,
+		gcgInterval: opts.CounterGarbageCollectionInterval,
+		leadership:  leadership,
+		readyCh:     make(chan struct{}),
+		closeCh:     make(chan struct{}),
+	}, nil
 }
 
 // Run is a blocking function that runs the cron instance.
@@ -258,120 +149,130 @@ func (c *cron) Run(ctx context.Context) error {
 		return errors.New("cron already running")
 	}
 
-	defer c.running.Store(false)
-	defer c.leadership.Close()
-	defer c.api.Close()
+	defer close(c.closeCh)
 
-	engine := engine.New(engine.Options{
-		Log:       c.log,
-		Collector: c.collector,
-		Queue:     c.queue,
-		Informer:  c.informer,
-		API:       c.api,
-	})
 	err := concurrency.NewRunnerManager(
 		c.leadership.Run,
 		func(ctx context.Context) error {
 			for {
-				leaderCtx, err := c.leadership.WaitForLeadership(ctx)
+				engine, err := engine.New(engine.Options{
+					Log:                              c.log,
+					Key:                              c.key,
+					Partitioner:                      c.part,
+					Client:                           c.client,
+					TriggerFn:                        c.triggerFn,
+					CounterGarbageCollectionInterval: c.gcgInterval,
+				})
+				if err != nil {
+					return fmt.Errorf("failed to create engine: %w", err)
+				}
+
+				ectx, err := c.leadership.WaitForLeadership(ctx)
 				if err != nil {
 					return err
 				}
 
-				// needs leadership to be ready
-				if err = engine.Run(leaderCtx); err != nil {
+				c.lock.Lock()
+				c.engine.Store(engine)
+				close(c.readyCh)
+				c.lock.Unlock()
+
+				if err := engine.Run(ectx); err != nil {
 					return err
 				}
+
+				if err := ctx.Err(); err != nil {
+					return err
+				}
+
+				c.log.Info("restarting engine")
+
+				c.lock.Lock()
+				c.readyCh = make(chan struct{})
+				c.lock.Unlock()
 			}
 		},
 	).Run(ctx)
+	if err != nil {
+		return err
+	}
 
-	return err
+	c.log.Info("cron shutdown gracefully")
+
+	return nil
 }
 
 // Add forwards the call to the embedded API.
 func (c *cron) Add(ctx context.Context, name string, job *api.Job) error {
-	if err := c.waitAPIReady(ctx); err != nil {
+	api, err := c.waitAPIReady(ctx)
+	if err != nil {
 		return err
 	}
-	return c.api.Add(ctx, name, job)
+
+	return api.Add(ctx, name, job)
 }
 
 // Get forwards the call to the embedded API.
 func (c *cron) Get(ctx context.Context, name string) (*api.Job, error) {
-	if err := c.waitAPIReady(ctx); err != nil {
+	api, err := c.waitAPIReady(ctx)
+	if err != nil {
 		return nil, err
 	}
 
-	return c.api.Get(ctx, name)
+	return api.Get(ctx, name)
 }
 
 // Delete forwards the call to the embedded API.
 func (c *cron) Delete(ctx context.Context, name string) error {
-	if err := c.waitAPIReady(ctx); err != nil {
+	api, err := c.waitAPIReady(ctx)
+	if err != nil {
 		return err
 	}
 
-	return c.api.Delete(ctx, name)
+	return api.Delete(ctx, name)
 }
 
 // DeletePrefixes forwards the call to the embedded API.
 func (c *cron) DeletePrefixes(ctx context.Context, prefixes ...string) error {
-	if err := c.waitAPIReady(ctx); err != nil {
+	api, err := c.waitAPIReady(ctx)
+	if err != nil {
 		return err
 	}
 
-	return c.api.DeletePrefixes(ctx, prefixes...)
+	return api.DeletePrefixes(ctx, prefixes...)
 }
 
 // List forwards the call to the embedded API.
 func (c *cron) List(ctx context.Context, prefix string) (*api.ListResponse, error) {
-	if err := c.waitAPIReady(ctx); err != nil {
+	api, err := c.waitAPIReady(ctx)
+	if err != nil {
 		return nil, err
 	}
 
-	return c.api.List(ctx, prefix)
+	return api.List(ctx, prefix)
 }
 
 // DeliverablePrefixes forwards the call to the embedded API.
 func (c *cron) DeliverablePrefixes(ctx context.Context, prefixes ...string) (context.CancelFunc, error) {
-	if err := c.waitAPIReady(ctx); err != nil {
+	api, err := c.waitAPIReady(ctx)
+	if err != nil {
 		return nil, err
 	}
 
-	return c.api.DeliverablePrefixes(ctx, prefixes...)
+	return api.DeliverablePrefixes(ctx, prefixes...)
 }
 
-// WatchLeadership forwards the call to the embedded API.
-func (c *cron) WatchLeadership(ctx context.Context) (chan []*anypb.Any, error) {
-	if err := c.waitAPIReady(ctx); err != nil {
-		return nil, err
-	}
-
-	return c.api.WatchLeadership(ctx)
-}
-
-func (c *cron) Close() {
-	c.api.Close()
-}
-
-func (c *cron) SetReady() {
-	c.api.SetReady()
-}
-
-func (c *cron) SetUnready() {
-	c.api.SetUnready()
-}
-
-func (c *cron) waitAPIReady(ctx context.Context) error {
-	c.apiLock.Lock()
-	ch := c.apiReadyCh
-	c.apiLock.Unlock()
+func (c *cron) waitAPIReady(ctx context.Context) (internalapi.Interface, error) {
+	c.lock.Lock()
+	readyCh := c.readyCh
+	c.lock.Unlock()
 
 	select {
-	case <-ch:
-		return nil
+	case <-readyCh:
+		return c.engine.Load().API(), nil
+	case <-c.closeCh:
+		return nil, errors.New("cron is closed")
 	case <-ctx.Done():
-		return ctx.Err()
+		return nil, ctx.Err()
 	}
 }

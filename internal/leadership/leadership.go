@@ -9,14 +9,12 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log"
 	"strconv"
 	"sync"
 	"sync/atomic"
 	"time"
 
 	"github.com/dapr/kit/concurrency"
-	"github.com/dapr/kit/events/batcher"
 	"github.com/diagridio/go-etcd-cron/internal/api/stored"
 	"github.com/go-logr/logr"
 	clientv3 "go.etcd.io/etcd/client/v3"
@@ -39,7 +37,7 @@ type Options struct {
 	PartitionTotal uint32
 
 	// Key is the ETCD key generator.
-	Key key.Key
+	Key *key.Key
 
 	// ReplicaData is the replicaData for the instance using the cron library.
 	// This will contain data like host + port for keeping track of active replicas.
@@ -50,32 +48,32 @@ type Options struct {
 // partition, as well as ensuring that there are no other active partitions
 // which are acting on a different partition total.
 type Leadership struct {
-	log     logr.Logger
-	client  client.Interface
-	batcher *batcher.Batcher[int, struct{}]
-	lock    sync.RWMutex
-	wg      sync.WaitGroup
+	log    logr.Logger
+	client client.Interface
+	lock   sync.RWMutex
+	wg     sync.WaitGroup
 
 	partitionTotal  uint32
-	key             key.Key
+	key             *key.Key
 	allReplicaDatas []*anypb.Any
 	replicaData     *anypb.Any
 
 	changeCh chan struct{}
 	readyCh  chan struct{}
+	closeCh  chan struct{}
 	running  atomic.Bool
 }
 
 func New(opts Options) *Leadership {
 	return &Leadership{
-		batcher:        batcher.New[int, struct{}](0),
 		log:            opts.Log.WithName("leadership"),
 		client:         opts.Client,
 		key:            opts.Key,
 		partitionTotal: opts.PartitionTotal,
 		replicaData:    opts.ReplicaData,
 		readyCh:        make(chan struct{}),
-		changeCh:       make(chan struct{}, 1),
+		changeCh:       make(chan struct{}),
+		closeCh:        make(chan struct{}),
 	}
 }
 
@@ -85,11 +83,9 @@ func (l *Leadership) Run(ctx context.Context) error {
 	if !l.running.CompareAndSwap(false, true) {
 		return errors.New("leadership already running")
 	}
-	defer func() {
-		l.running.Store(false)
-		l.batcher.Close()
-		l.wg.Wait()
-	}()
+
+	defer l.wg.Wait()
+	defer close(l.closeCh)
 
 	for {
 		select {
@@ -97,7 +93,6 @@ func (l *Leadership) Run(ctx context.Context) error {
 			return ctx.Err()
 		default:
 			if err := l.loop(ctx); err != nil {
-				log.Printf("restarting leadership loop due to err: %s", err)
 				return err
 			}
 		}
@@ -149,12 +144,12 @@ func (l *Leadership) loop(ctx context.Context) error {
 
 			watcherCtx, watcherCancel := context.WithCancel(ctx)
 			defer watcherCancel()
+
 			ch := l.client.Watch(watcherCtx, l.key.LeadershipNamespace(), clientv3.WithRev(resp.Header.Revision), clientv3.WithPrefix())
 
 			// Leadership acquisition loop
 			for {
 				ok, err := l.attemptPartitionLeadership(ctx, lease.ID)
-
 				if err != nil {
 					return err
 				}
@@ -170,11 +165,6 @@ func (l *Leadership) loop(ctx context.Context) error {
 					return ctx.Err()
 				case <-ch:
 					l.log.Info("Partition leadership changed, attempting to acquire partition leadership")
-					//select {
-					//case l.changeCh <- struct{}{}:
-					//default:
-					//}
-					return nil
 				}
 			}
 
@@ -186,39 +176,51 @@ func (l *Leadership) loop(ctx context.Context) error {
 				}
 
 				if ok {
-					l.log.Info("All partition leadership keys match partition total, ready processing")
-					l.lock.Lock()
-					close(l.readyCh)
-					l.lock.Unlock()
 					break
 				}
+
 				l.log.Info("Not all partition leadership keys match partition total, waiting for leadership to be dropped...")
 
 				select {
 				case <-ctx.Done():
 					return ctx.Err()
 				case <-ch:
-					return nil
 				}
 			}
 
-			//l.lock.Lock()
-			//close(l.readyCh)
-			//l.lock.Unlock()
+			l.log.Info("All partition leadership keys match partition total, processing is ready")
+			l.lock.Lock()
+			close(l.readyCh)
+			l.lock.Unlock()
 
-			// todo: cassie pulled this into a go routine
-			select {
-			case <-ctx.Done():
-				return ctx.Err()
-			case <-ch:
-				l.lock.Lock()
-				defer l.lock.Unlock()
-				l.readyCh = make(chan struct{})
-				l.batcher.Batch(0, struct{}{})
-				l.changeCh <- struct{}{}
-				return nil
+			for {
+				select {
+				case <-ctx.Done():
+				case <-ch:
+				}
+
+				if ctx.Err() != nil {
+					break
+				}
+
+				ok, err := l.checkLeadershipKeys(ctx)
+				if err != nil {
+					return err
+				}
+
+				if !ok {
+					break
+				}
 			}
 
+			l.lock.Lock()
+			defer l.lock.Unlock()
+
+			l.readyCh = make(chan struct{})
+			close(l.changeCh)
+			l.changeCh = make(chan struct{})
+
+			return ctx.Err()
 		},
 	).Run(ctx)
 }
@@ -343,33 +345,4 @@ func (l *Leadership) WaitForLeadership(ctx context.Context) (context.Context, er
 	}()
 
 	return leaderCtx, nil
-}
-
-// Subscribe returns a channel for leadership key space updates, as well as the
-// initial set.
-func (l *Leadership) Subscribe(ctx context.Context) ([]*anypb.Any, chan struct{}) {
-	l.lock.RLock()
-	readyCh := l.readyCh
-	l.lock.RUnlock()
-
-	select {
-	case <-ctx.Done():
-		return nil, make(chan struct{})
-	case <-readyCh:
-	}
-
-	l.lock.RLock()
-	defer l.lock.RUnlock()
-
-	ch := make(chan struct{})
-	l.batcher.Subscribe(ctx, ch)
-
-	return l.allReplicaDatas, ch
-}
-
-func (l *Leadership) Close() {
-	l.lock.Lock()
-	defer l.lock.Unlock()
-	close(l.changeCh)
-	l.wg.Wait()
 }
