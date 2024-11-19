@@ -325,9 +325,11 @@ func (l *Leadership) WaitForLeadership(ctx context.Context) (context.Context, er
 	l.lock.RUnlock()
 
 	select {
-	case <-readyCh:
+	case <-l.closeCh:
+		return nil, errors.New("leadership closed")
 	case <-ctx.Done():
 		return nil, ctx.Err()
+	case <-readyCh:
 	}
 
 	leaderCtx, cancel := context.WithCancel(ctx)
@@ -339,6 +341,7 @@ func (l *Leadership) WaitForLeadership(ctx context.Context) (context.Context, er
 
 		select {
 		case <-ctx.Done():
+		case <-l.closeCh:
 		case <-changeCh:
 			// Leadership change detected; cancel context to signal leadership shift
 		}
