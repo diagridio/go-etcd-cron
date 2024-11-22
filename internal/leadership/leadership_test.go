@@ -28,6 +28,44 @@ import (
 func Test_Run(t *testing.T) {
 	t.Parallel()
 
+	t.Run("Leadership should error if ctx canceled", func(t *testing.T) {
+		t.Parallel()
+
+		client := etcd.Embedded(t)
+
+		exprMessage := &expr.Expr{
+			Expression:  "cron-test-expression",
+			Description: "this is dummy cron test data. ooo lala",
+			Location:    "home",
+		}
+
+		replicaData, err := anypb.New(exprMessage)
+		require.NoError(t, err)
+
+		l := New(Options{
+			Client:         client,
+			PartitionTotal: 10,
+			Key: key.New(key.Options{
+				Namespace:   "abc",
+				PartitionID: 0,
+			}),
+			ReplicaData: replicaData,
+		})
+
+		ctx, cancel := context.WithCancel(context.Background())
+		errCh := make(chan error)
+
+		go func() { errCh <- l.Run(ctx) }()
+		cancel()
+
+		select {
+		case err := <-errCh:
+			assert.ErrorIs(t, context.Canceled, err)
+		case <-time.After(2 * time.Second):
+			t.Fatal("timed out waiting for error")
+		}
+	})
+
 	t.Run("Leadership should become leader and become ready", func(t *testing.T) {
 		t.Parallel()
 
@@ -67,6 +105,48 @@ func Test_Run(t *testing.T) {
 
 		_, err = l.WaitForLeadership(ctx)
 		require.NoError(t, err)
+	})
+
+	t.Run("Leadership should error if ctx canceled after being ready", func(t *testing.T) {
+		t.Parallel()
+
+		client := etcd.Embedded(t)
+
+		exprMessage := &expr.Expr{
+			Expression:  "cron-test-expression",
+			Description: "this is dummy cron test data. ooo lala",
+			Location:    "home",
+		}
+
+		replicaData, err := anypb.New(exprMessage)
+		require.NoError(t, err)
+
+		l := New(Options{
+			Client:         client,
+			PartitionTotal: 10,
+			Key: key.New(key.Options{
+				Namespace:   "abc",
+				PartitionID: 0,
+			}),
+			ReplicaData: replicaData,
+		})
+
+		ctx, cancel := context.WithCancel(context.Background())
+		errCh := make(chan error)
+
+		go func() { errCh <- l.Run(ctx) }()
+
+		_, err = l.WaitForLeadership(ctx)
+		require.NoError(t, err)
+
+		cancel()
+
+		select {
+		case err := <-errCh:
+			assert.ErrorIs(t, context.Canceled, err)
+		case <-time.After(2 * time.Second):
+			t.Fatal("timed out waiting for error")
+		}
 	})
 
 	t.Run("Running leadership multiple times should error", func(t *testing.T) {
