@@ -10,7 +10,6 @@ import (
 	"errors"
 	"fmt"
 	"strings"
-	"sync"
 	"sync/atomic"
 
 	cronapi "github.com/diagridio/go-etcd-cron/api"
@@ -75,7 +74,6 @@ type Interface interface {
 // api implements the API interface.
 type api struct {
 	log          logr.Logger
-	wg           sync.WaitGroup
 	client       client.Interface
 	key          *key.Key
 	schedBuilder *scheduler.Builder
