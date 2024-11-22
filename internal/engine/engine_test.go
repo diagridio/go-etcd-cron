@@ -27,11 +27,11 @@ func Test_New(t *testing.T) {
 		client := etcd.Embedded(t)
 		key := key.New(key.Options{
 			Namespace:   "test-ns",
-			PartitionID: 1,
+			PartitionID: 0,
 		})
 
 		part, err := partitioner.New(partitioner.Options{
-			ID:    1,
+			ID:    0,
 			Total: 1,
 		})
 		require.NoError(t, err)
@@ -59,11 +59,11 @@ func Test_Run(t *testing.T) {
 		client := etcd.Embedded(t)
 		key := key.New(key.Options{
 			Namespace:   "test-ns",
-			PartitionID: 1,
+			PartitionID: 0,
 		})
 
 		part, err := partitioner.New(partitioner.Options{
-			ID:    1,
+			ID:    0,
 			Total: 1,
 		})
 		require.NoError(t, err)
@@ -102,11 +102,11 @@ func Test_Run(t *testing.T) {
 		client := etcd.Embedded(t)
 		key := key.New(key.Options{
 			Namespace:   "test-ns",
-			PartitionID: 1,
+			PartitionID: 0,
 		})
 
 		part, err := partitioner.New(partitioner.Options{
-			ID:    1,
+			ID:    0,
 			Total: 1,
 		})
 		require.NoError(t, err)
@@ -151,11 +151,11 @@ func Test_API(t *testing.T) {
 	client := etcd.Embedded(t)
 	key := key.New(key.Options{
 		Namespace:   "test-ns",
-		PartitionID: 1,
+		PartitionID: 0,
 	})
 
 	part, err := partitioner.New(partitioner.Options{
-		ID:    1,
+		ID:    0,
 		Total: 1,
 	})
 	require.NoError(t, err)
