@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"log"
 	"net/url"
 	"time"
 
@@ -82,6 +83,7 @@ func main() {
 		panic(err)
 	}
 
+	log.Println("canceling the cron run now...")
 	cancel()
 	time.Sleep(time.Second * 2)
 }

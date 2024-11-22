@@ -193,6 +193,7 @@ func (l *Leadership) loop(ctx context.Context) error {
 			close(l.readyCh)
 			l.lock.Unlock()
 
+			// Continually monitor leadership key consistency
 			for {
 				select {
 				case <-ctx.Done():
@@ -245,8 +246,7 @@ func (l *Leadership) checkLeadershipKeys(ctx context.Context) (bool, error) {
 		return false, fmt.Errorf("failed to unmarshal leadership data: %w", err)
 	}
 
-	// TODO: Cassie check that the replica data matches here as well
-	if resp.Count == 0 || leader.Total != l.partitionTotal {
+	if resp.Count == 0 || leader.Total != l.partitionTotal || !proto.Equal(leader.ReplicaData, l.replicaData) {
 		return false, errors.New("lost partition leadership key")
 	}
 
@@ -266,6 +266,7 @@ func (l *Leadership) checkLeadershipKeys(ctx context.Context) (bool, error) {
 	// partition.
 	for _, kv := range resp.Kvs {
 		var leader stored.Leadership
+
 		if err = proto.Unmarshal(kv.Value, &leader); err != nil {
 			return false, fmt.Errorf("failed to unmarshal leadership data: %w", err)
 		}
@@ -277,7 +278,6 @@ func (l *Leadership) checkLeadershipKeys(ctx context.Context) (bool, error) {
 			)
 			return false, nil
 		}
-
 		l.allReplicaDatas = append(l.allReplicaDatas, leader.ReplicaData)
 	}
 
@@ -288,9 +288,6 @@ func (l *Leadership) checkLeadershipKeys(ctx context.Context) (bool, error) {
 // it does not exist.
 // If it does exist, and we successfully wrote the leadership key, it will return true.
 func (l *Leadership) attemptPartitionLeadership(ctx context.Context, leaseID clientv3.LeaseID) (bool, error) {
-	ctx, cancel := context.WithTimeout(ctx, time.Second*5)
-	defer cancel()
-
 	leaderBytes, err := proto.Marshal(&stored.Leadership{
 		Total:       l.partitionTotal,
 		ReplicaData: l.replicaData,
@@ -322,10 +319,11 @@ func (l *Leadership) WaitForLeadership(ctx context.Context) (context.Context, er
 	l.lock.RLock()
 	readyCh := l.readyCh
 	changeCh := l.changeCh
+	closeCh := l.closeCh
 	l.lock.RUnlock()
 
 	select {
-	case <-l.closeCh:
+	case <-closeCh:
 		return nil, errors.New("leadership closed")
 	case <-ctx.Done():
 		return nil, ctx.Err()
@@ -341,7 +339,7 @@ func (l *Leadership) WaitForLeadership(ctx context.Context) (context.Context, er
 
 		select {
 		case <-ctx.Done():
-		case <-l.closeCh:
+		case <-closeCh:
 		case <-changeCh:
 			// Leadership change detected; cancel context to signal leadership shift
 		}
