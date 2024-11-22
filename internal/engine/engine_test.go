@@ -34,6 +34,7 @@ func Test_New(t *testing.T) {
 			ID:    1,
 			Total: 1,
 		})
+		require.NoError(t, err)
 
 		engine, err := New(Options{
 			Key:         key,
@@ -65,6 +66,7 @@ func Test_Run(t *testing.T) {
 			ID:    1,
 			Total: 1,
 		})
+		require.NoError(t, err)
 
 		engine, err := New(Options{
 			Key:         key,
@@ -107,6 +109,7 @@ func Test_Run(t *testing.T) {
 			ID:    1,
 			Total: 1,
 		})
+		require.NoError(t, err)
 
 		engine, err := New(Options{
 			Key:         key,
@@ -155,6 +158,7 @@ func Test_API(t *testing.T) {
 		ID:    1,
 		Total: 1,
 	})
+	require.NoError(t, err)
 
 	engine, err := New(Options{
 		Key:         key,
