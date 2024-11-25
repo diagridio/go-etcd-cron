@@ -49,13 +49,11 @@ func Test_Run(t *testing.T) {
 		cron := cronI.(*cron)
 
 		ctx, cancel := context.WithCancel(context.Background())
-		defer cancel()
 		errCh1 := make(chan error)
 		errCh2 := make(chan error)
 
 		go func() {
 			errCh1 <- cronI.Run(ctx)
-			close(errCh1)
 		}()
 
 		select {
@@ -66,7 +64,6 @@ func Test_Run(t *testing.T) {
 
 		go func() {
 			errCh2 <- cronI.Run(ctx)
-			close(errCh2)
 		}()
 
 		select {
@@ -112,7 +109,6 @@ func Test_Run(t *testing.T) {
 
 		go func() {
 			errCh <- cronI.Run(ctx)
-			close(errCh)
 		}()
 
 		// wait until ready
