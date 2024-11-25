@@ -99,8 +99,6 @@ func (l *Leadership) Run(ctx context.Context) error {
 // their leadership. After election, if any changes are observed, this loop
 // will exit, to be restarted.
 func (l *Leadership) loop(ctx context.Context) error {
-	l.log.Info("Attempting to acquire partition leadership")
-
 	lease, err := l.client.Grant(ctx, 20)
 	if err != nil {
 		return err
