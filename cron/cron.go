@@ -173,7 +173,6 @@ func (c *cron) Run(ctx context.Context) error {
 			}
 			return
 		}
-		return
 	}(ctx)
 
 	engineCtx, engineCancel := context.WithCancel(ctx)
