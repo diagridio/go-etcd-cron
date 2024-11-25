@@ -9,10 +9,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"sync"
 	"sync/atomic"
 	"time"
 
-	"github.com/dapr/kit/concurrency"
 	"github.com/go-logr/logr"
 	"k8s.io/utils/clock"
 
@@ -64,6 +64,7 @@ type Engine struct {
 	informer  *informer.Informer
 	api       internalapi.Interface
 	running   atomic.Bool
+	wg        sync.WaitGroup
 }
 
 func New(opts Options) (*Engine, error) {
@@ -112,6 +113,7 @@ func New(opts Options) (*Engine, error) {
 		queue:     queue,
 		informer:  informer,
 		api:       api,
+		wg:        sync.WaitGroup{},
 	}, nil
 }
 
@@ -124,29 +126,55 @@ func (e *Engine) Run(ctx context.Context) error {
 	e.log.Info("starting cron engine")
 	defer e.log.Info("cron engine shut down")
 
-	return concurrency.NewRunnerManager(
-		e.collector.Run,
-		e.queue.Run,
-		e.informer.Run,
-		e.api.Run,
-		func(ctx context.Context) error {
-			ev, err := e.informer.Events()
-			if err != nil {
-				return err
-			}
+	errCh := make(chan error, 5)
+	defer close(errCh)
 
-			for {
-				select {
-				case <-ctx.Done():
-					return ctx.Err()
-				case event := <-ev:
-					if err := e.queue.HandleInformerEvent(ctx, event); err != nil {
-						return err
+	e.wg.Add(4)
+
+	go func() { defer e.wg.Done(); errCh <- e.collector.Run(ctx) }()
+	go func() { defer e.wg.Done(); errCh <- e.queue.Run(ctx) }()
+	go func() { defer e.wg.Done(); errCh <- e.informer.Run(ctx) }()
+	go func() { defer e.wg.Done(); errCh <- e.api.Run(ctx) }()
+
+	e.wg.Add(1)
+	go func(ctx context.Context) {
+		defer e.wg.Done()
+
+		ev, err := e.informer.Events()
+		if err != nil {
+			select {
+			case errCh <- err:
+			case <-ctx.Done():
+			}
+			return
+		}
+
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case event := <-ev:
+				if err := e.queue.HandleInformerEvent(ctx, event); err != nil {
+					select {
+					case errCh <- err:
+					case <-ctx.Done():
 					}
+					return
 				}
 			}
-		},
-	).Run(ctx)
+		}
+	}(ctx)
+
+	<-ctx.Done()
+
+	e.wg.Wait()
+
+	select {
+	case err := <-errCh:
+		return err
+	default:
+		return nil
+	}
 }
 
 func (e *Engine) API() internalapi.Interface {

@@ -90,10 +90,8 @@ func Test_Run(t *testing.T) {
 		time.Sleep(100 * time.Millisecond)
 		cancel()
 
-		err = <-errCh
-
 		// runner manager returns nil here
-		assert.NoError(t, err)
+		assert.NoError(t, <-errCh)
 	})
 
 	t.Run("multiple starts", func(t *testing.T) {

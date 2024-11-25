@@ -9,7 +9,6 @@ import (
 	"context"
 
 	"github.com/diagridio/go-etcd-cron/api"
-	"google.golang.org/protobuf/types/known/anypb"
 )
 
 // Fake is a fake cron instance used for testing.
@@ -22,19 +21,6 @@ type Fake struct {
 	listFn func(ctx context.Context, prefix string) (*api.ListResponse, error)
 
 	deliverablePrefixesFn func(ctx context.Context, prefixes ...string) (context.CancelFunc, error)
-}
-
-func (f *Fake) Close() {
-}
-
-func (f *Fake) SetReady() {
-}
-
-func (f *Fake) SetUnready() {
-}
-
-func (f *Fake) WatchLeadership(ctx context.Context) (chan []*anypb.Any, error) {
-	panic("implement me")
 }
 
 func New() *Fake {
