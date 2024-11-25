@@ -49,11 +49,13 @@ func Test_Run(t *testing.T) {
 		cron := cronI.(*cron)
 
 		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
 		errCh1 := make(chan error)
 		errCh2 := make(chan error)
 
 		go func() {
 			errCh1 <- cronI.Run(ctx)
+			close(errCh1)
 		}()
 
 		select {
@@ -64,6 +66,7 @@ func Test_Run(t *testing.T) {
 
 		go func() {
 			errCh2 <- cronI.Run(ctx)
+			close(errCh2)
 		}()
 
 		select {
@@ -109,6 +112,7 @@ func Test_Run(t *testing.T) {
 
 		go func() {
 			errCh <- cronI.Run(ctx)
+			close(errCh)
 		}()
 
 		// wait until ready
@@ -159,7 +163,7 @@ func Test_Run(t *testing.T) {
 		cronI, err := New(Options{
 			Log:            logr.Discard(),
 			Client:         client,
-			Namespace:      "abc",
+			Namespace:      "abcd",
 			PartitionID:    0,
 			PartitionTotal: 10,
 			TriggerFn: func(context.Context, *api.TriggerRequest) *api.TriggerResponse {
@@ -176,6 +180,7 @@ func Test_Run(t *testing.T) {
 
 		go func() {
 			errCh <- cronI.Run(ctx)
+			close(errCh)
 		}()
 
 		cron.lock.RLock()
@@ -219,12 +224,12 @@ func Test_Run(t *testing.T) {
 			}
 		}(childCtx)
 
-		_, err = client.Put(context.Background(), "abc/leadership/1", string(leadershipData))
+		_, err = client.Put(context.Background(), "abcd/leadership/1", string(leadershipData))
 		require.NoError(t, err, "failed to insert leadership data into etcd")
 
 		select {
 		case <-restartingCh:
-		case <-time.After(1 * time.Second):
+		case <-time.After(5 * time.Second):
 			t.Fatal("timed out waiting for cron to be ready")
 		}
 
@@ -264,6 +269,7 @@ func Test_Run(t *testing.T) {
 
 		go func() {
 			errCh <- cronI.Run(ctx)
+			close(errCh)
 		}()
 
 		cron.lock.RLock()
@@ -312,18 +318,18 @@ func Test_Run(t *testing.T) {
 
 		select {
 		case <-restartingCh:
-		case <-time.After(1 * time.Second):
-			t.Fatal("timed out waiting for cron to be ready")
+		case <-time.After(5 * time.Second):
+			t.Fatal("timed out waiting for cron to be restarting")
 		}
 
-		cron.lock.Lock()
+		cron.lock.RLock()
 		newReadyCh := cron.readyCh
-		cron.lock.Unlock()
+		cron.lock.RUnlock()
 
 		select {
 		case <-newReadyCh:
 			t.Fatal("cron should not be ready while restarting")
-		case <-time.After(2 * time.Second):
+		case <-time.After(5 * time.Second):
 		}
 
 		cancel()
@@ -345,7 +351,7 @@ func Test_Run(t *testing.T) {
 		cronI, err := New(Options{
 			Log:            logr.Discard(),
 			Client:         client,
-			Namespace:      "abc",
+			Namespace:      "abcde",
 			PartitionID:    0,
 			PartitionTotal: 10,
 			TriggerFn: func(context.Context, *api.TriggerRequest) *api.TriggerResponse {
@@ -362,6 +368,7 @@ func Test_Run(t *testing.T) {
 
 		go func() {
 			errCh <- cronI.Run(ctx)
+			close(errCh)
 		}()
 
 		cron.lock.RLock()
@@ -406,19 +413,19 @@ func Test_Run(t *testing.T) {
 			}
 		}(childCtx)
 
-		_, err = client.Put(context.Background(), "abc/leadership/1", string(leadershipData))
+		_, err = client.Put(context.Background(), "abcde/leadership/1", string(leadershipData))
 		require.NoError(t, err, "failed to insert leadership data into etcd")
 
 		// cron engine restarting
 		select {
 		case <-restartingCh:
-		case <-time.After(1 * time.Second):
+		case <-time.After(5 * time.Second):
 			t.Fatal("timed out waiting for cron to be ready")
 		}
 
-		cron.lock.Lock()
+		cron.lock.RLock()
 		newReadyCh := cron.readyCh
-		cron.lock.Unlock()
+		cron.lock.RUnlock()
 
 		select {
 		case <-newReadyCh:
@@ -463,7 +470,7 @@ func Test_Run(t *testing.T) {
 		cronI, err := New(Options{
 			Log:            logr.Discard(),
 			Client:         client,
-			Namespace:      "abc",
+			Namespace:      "abcdef",
 			PartitionID:    0,
 			PartitionTotal: 10,
 			TriggerFn: func(context.Context, *api.TriggerRequest) *api.TriggerResponse {
@@ -480,6 +487,7 @@ func Test_Run(t *testing.T) {
 
 		go func() {
 			errCh <- cronI.Run(ctx)
+			close(errCh)
 		}()
 
 		cron.lock.RLock()
@@ -492,13 +500,6 @@ func Test_Run(t *testing.T) {
 		case <-time.After(1 * time.Second):
 			t.Fatal("timed out waiting for cron to be ready")
 		}
-
-		// intentionally incorrect total
-		leadershipData, err := proto.Marshal(&stored.Leadership{
-			Total:       5,
-			ReplicaData: replicaData,
-		})
-		require.NoError(t, err, "failed to marshal leadership data")
 
 		childCtx, childCancel := context.WithCancel(ctx)
 		defer cancel()
@@ -524,18 +525,32 @@ func Test_Run(t *testing.T) {
 			}
 		}(childCtx)
 
-		_, err = client.Put(context.Background(), "abc/leadership/1", string(leadershipData))
-		require.NoError(t, err, "failed to insert leadership data into etcd")
-
+		// wait until ready
 		select {
-		case <-restartingCh:
+		case <-readyCh:
 		case <-time.After(1 * time.Second):
 			t.Fatal("timed out waiting for cron to be ready")
 		}
 
-		cron.lock.Lock()
+		// intentionally incorrect total
+		leadershipData, err := proto.Marshal(&stored.Leadership{
+			Total:       5,
+			ReplicaData: replicaData,
+		})
+		require.NoError(t, err, "failed to marshal leadership data")
+
+		_, err = client.Put(context.Background(), "abcdef/leadership/1", string(leadershipData))
+		require.NoError(t, err, "failed to insert leadership data into etcd")
+
+		select {
+		case <-restartingCh:
+		case <-time.After(5 * time.Second):
+			t.Fatal("timed out waiting for cron to be ready")
+		}
+
+		cron.lock.RLock()
 		newReadyCh := cron.readyCh
-		cron.lock.Unlock()
+		cron.lock.RUnlock()
 
 		select {
 		case <-newReadyCh:
@@ -557,7 +572,7 @@ func Test_Run(t *testing.T) {
 		})
 		require.NoError(t, err)
 
-		_, err = client.Put(context.Background(), "abc/leadership/1", string(correctLeadershipData))
+		_, err = client.Put(context.Background(), "abcdef/leadership/1", string(correctLeadershipData))
 		require.NoError(t, err, "failed to update leadership data in etcd")
 
 		// Wait for the cron to become ready again
@@ -567,7 +582,7 @@ func Test_Run(t *testing.T) {
 
 		select {
 		case <-finalReadyCh:
-		case <-time.After(2 * time.Second):
+		case <-time.After(5 * time.Second):
 			t.Fatal("cron did not become ready again after restart")
 		}
 

@@ -235,7 +235,9 @@ func (l *Leadership) checkLeadershipKeys(ctx context.Context) (bool, error) {
 	l.lock.Lock()
 	defer l.lock.Unlock()
 
-	resp, err := l.client.Get(ctx, l.key.LeadershipKey())
+	getKeyCtx, getKeyCancel := context.WithTimeout(ctx, 5*time.Second)
+	defer getKeyCancel()
+	resp, err := l.client.Get(getKeyCtx, l.key.LeadershipKey())
 	if err != nil {
 		return false, err
 	}
@@ -253,7 +255,9 @@ func (l *Leadership) checkLeadershipKeys(ctx context.Context) (bool, error) {
 		return false, errors.New("lost partition leadership key")
 	}
 
-	resp, err = l.client.Get(ctx, l.key.LeadershipNamespace(), clientv3.WithPrefix())
+	getNSCtx, getNSCancel := context.WithTimeout(ctx, 5*time.Second)
+	defer getNSCancel()
+	resp, err = l.client.Get(getNSCtx, l.key.LeadershipNamespace(), clientv3.WithPrefix())
 	if err != nil {
 		return false, err
 	}
