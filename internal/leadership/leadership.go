@@ -84,10 +84,6 @@ func (l *Leadership) Run(ctx context.Context) error {
 		return errors.New("leadership already running")
 	}
 
-	if !l.running.CompareAndSwap(false, true) {
-		return errors.New("leadership already running")
-	}
-
 	defer l.wg.Wait()
 	defer close(l.closeCh)
 
@@ -200,7 +196,6 @@ func (l *Leadership) loop(ctx context.Context) error {
 				case <-ch:
 				}
 
-
 				ok, err := l.checkLeadershipKeys(ctx)
 				if err != nil {
 					return err
@@ -210,8 +205,8 @@ func (l *Leadership) loop(ctx context.Context) error {
 					break
 				}
 			}
-			
-		    l.log.Info("Leadership key inconsistency detected, dropping leadership...")
+
+			l.log.Info("Leadership key inconsistency detected, dropping leadership...")
 
 			l.lock.Lock()
 			defer l.lock.Unlock()
