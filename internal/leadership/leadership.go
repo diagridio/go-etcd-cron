@@ -87,10 +87,16 @@ func (l *Leadership) Run(ctx context.Context) error {
 	defer l.wg.Wait()
 	defer close(l.closeCh)
 
+	// reset closeCh between restarts
+	l.lock.Lock()
+	l.closeCh = make(chan struct{})
+	l.lock.Unlock()
+
 	for {
 		if err := l.loop(ctx); err != nil {
 			return err
 		}
+
 	}
 }
 

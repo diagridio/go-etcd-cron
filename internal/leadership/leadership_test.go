@@ -1159,3 +1159,68 @@ func putLeadershipData(t *testing.T, client client.Interface, partitionID, total
 	_, err = client.Put(context.Background(), fmt.Sprintf("abc/leadership/%d", partitionID), string(leadershipData))
 	require.NoError(t, err, "failed to insert leadership data into etcd")
 }
+
+func TestLeadershipRestart(t *testing.T) {
+	t.Parallel()
+
+	client := etcd.Embedded(t)
+
+	exprMessage := &expr.Expr{
+		Expression:  "cron-test-expression",
+		Description: "this is dummy cron test data. ooo lala",
+		Location:    "home",
+	}
+
+	replicaData, err := anypb.New(exprMessage)
+	require.NoError(t, err)
+
+	l := New(Options{
+		Client:         client,
+		PartitionTotal: 10,
+		Key: key.New(key.Options{
+			Namespace:   "abc",
+			PartitionID: 0,
+		}),
+		ReplicaData: replicaData,
+	})
+
+	// start leadership
+	ctx, cancel := context.WithCancel(context.Background())
+	errCh := make(chan error)
+	go func() { errCh <- l.Run(ctx) }()
+
+	_, err = l.WaitForLeadership(ctx)
+	assert.NoError(t, err, "Leadership should be acquired")
+
+	// leadership Loss
+	cancel()
+
+	select {
+	case <-errCh:
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for error")
+	}
+
+	// ensure leadership cleanup
+	resp, err := client.Get(context.Background(), "abc/leadership", clientv3.WithPrefix())
+	require.NoError(t, err)
+	require.Empty(t, resp.Count, 0)
+
+	ctx2, cancel2 := context.WithCancel(context.Background())
+	errCh2 := make(chan error)
+
+	t.Cleanup(func() {
+		cancel2()
+		select {
+		case <-errCh2:
+		case <-time.After(2 * time.Second):
+			t.Fatal("timed out waiting for error")
+		}
+	})
+	
+	// restart leadership
+	go func() { errCh2 <- l.Run(ctx2) }()
+
+	_, err = l.WaitForLeadership(ctx2)
+	assert.NoError(t, err, "Leadership should reacquire after restart")
+}
