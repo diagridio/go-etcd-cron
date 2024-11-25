@@ -86,8 +86,6 @@ func Test_Run(t *testing.T) {
 		errCh := make(chan error)
 		go func() { errCh <- engine.Run(ctx) }()
 
-		// Allow time for the engine to start
-		time.Sleep(100 * time.Millisecond)
 		cancel()
 
 		// runner manager returns nil here
