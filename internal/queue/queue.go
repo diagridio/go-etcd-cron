@@ -132,6 +132,10 @@ func (q *Queue) Run(ctx context.Context) error {
 	q.queue = queue.NewProcessor[string, counter.Interface](q.executeFn(ctx)).WithClock(q.clock)
 
 	close(q.readyCh)
+
+	q.log.Info("queue is ready")
+	defer q.log.Info("shutting down queue")
+
 	<-ctx.Done()
 	q.queue.Close()
 	return nil

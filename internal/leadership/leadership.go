@@ -92,9 +92,12 @@ func (l *Leadership) Run(ctx context.Context) error {
 		case <-ctx.Done():
 			return ctx.Err()
 		default:
-			if err := l.loop(ctx); err != nil {
+			loopCtx, loopCancel := context.WithCancel(ctx)
+			if err := l.loop(loopCtx); err != nil {
+				loopCancel()
 				return err
 			}
+			loopCancel()
 		}
 	}
 }
@@ -188,7 +191,7 @@ func (l *Leadership) loop(ctx context.Context) error {
 				}
 			}
 
-			l.log.Info("All partition leadership keys match partition total, processing is ready")
+			l.log.Info("All partition leadership keys match partition total, leadership is ready")
 			l.lock.Lock()
 			close(l.readyCh)
 			l.lock.Unlock()
@@ -197,6 +200,7 @@ func (l *Leadership) loop(ctx context.Context) error {
 			for {
 				select {
 				case <-ctx.Done():
+					break
 				case <-ch:
 				}
 
@@ -213,7 +217,6 @@ func (l *Leadership) loop(ctx context.Context) error {
 					break
 				}
 			}
-
 			l.lock.Lock()
 			defer l.lock.Unlock()
 
@@ -288,6 +291,8 @@ func (l *Leadership) checkLeadershipKeys(ctx context.Context) (bool, error) {
 // it does not exist.
 // If it does exist, and we successfully wrote the leadership key, it will return true.
 func (l *Leadership) attemptPartitionLeadership(ctx context.Context, leaseID clientv3.LeaseID) (bool, error) {
+	leaderCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
 	leaderBytes, err := proto.Marshal(&stored.Leadership{
 		Total:       l.partitionTotal,
 		ReplicaData: l.replicaData,
@@ -296,7 +301,7 @@ func (l *Leadership) attemptPartitionLeadership(ctx context.Context, leaseID cli
 		return false, fmt.Errorf("failed to marshal leadership data: %w", err)
 	}
 
-	tx := l.client.Txn(ctx).
+	tx := l.client.Txn(leaderCtx).
 		If(clientv3.Compare(clientv3.CreateRevision(l.key.LeadershipKey()), "=", 0)).
 		Then(clientv3.OpPut(l.key.LeadershipKey(), string(leaderBytes), clientv3.WithLease(leaseID)))
 	resp, err := tx.Commit()
@@ -333,17 +338,17 @@ func (l *Leadership) WaitForLeadership(ctx context.Context) (context.Context, er
 	leaderCtx, cancel := context.WithCancel(ctx)
 
 	l.wg.Add(1)
-	go func() {
+	go func(ctx context.Context) {
 		defer l.wg.Done()
 		defer cancel()
 
 		select {
-		case <-ctx.Done():
+		case <-leaderCtx.Done():
 		case <-closeCh:
 		case <-changeCh:
 			// Leadership change detected; cancel context to signal leadership shift
 		}
-	}()
+	}(ctx)
 
 	return leaderCtx, nil
 }

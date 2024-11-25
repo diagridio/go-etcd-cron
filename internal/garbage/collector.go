@@ -90,6 +90,7 @@ func (c *collector) Run(ctx context.Context) error {
 	if !c.running.CompareAndSwap(false, true) {
 		return errors.New("garbage collector is already running")
 	}
+	c.log.Info("starting garbage collector")
 
 	defer c.closed.Store(true)
 	for {
