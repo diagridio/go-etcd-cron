@@ -20,7 +20,7 @@ import (
 	"github.com/diagridio/go-etcd-cron/tests/framework/cron/integration"
 )
 
-func Test_patition(t *testing.T) {
+func Test_partition(t *testing.T) {
 	t.Parallel()
 
 	cron := integration.NewBase(t, 100)
