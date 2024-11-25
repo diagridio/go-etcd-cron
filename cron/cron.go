@@ -62,7 +62,7 @@ type Options struct {
 	CounterGarbageCollectionInterval *time.Duration
 
 	// ReplicaData is custom data associated with the replica, for example,
-	// host + port for the active replica
+	// host + port for the active replica. This data will be written to the leadership keyspace, with the latest cluster values being returned from `WatchLeadership`. Useful for consumer coordination.
 	ReplicaData *anypb.Any
 }
 
