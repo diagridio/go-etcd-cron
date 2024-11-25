@@ -13,6 +13,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/dapr/kit/concurrency"
 	"github.com/go-logr/logr"
 	"k8s.io/utils/clock"
 
