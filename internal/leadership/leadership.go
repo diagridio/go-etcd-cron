@@ -96,7 +96,6 @@ func (l *Leadership) Run(ctx context.Context) error {
 		if err := l.loop(ctx); err != nil {
 			return err
 		}
-
 	}
 }
 
@@ -202,7 +201,8 @@ func (l *Leadership) loop(ctx context.Context) error {
 
 				ok, err := l.checkLeadershipKeys(ctx)
 				if err != nil {
-					return err
+					l.log.Error(err, "Dropping leadership due to error")
+					break
 				}
 
 				if !ok {
