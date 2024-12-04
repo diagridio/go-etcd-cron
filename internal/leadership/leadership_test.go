@@ -1146,6 +1146,7 @@ func Test_WaitForLeadership(t *testing.T) {
 		require.NoError(t, err)
 	})
 }
+
 func putLeadershipData(t *testing.T, client client.Interface, partitionID, total uint32, replicaData *anypb.Any) {
 	t.Helper()
 
@@ -1157,4 +1158,95 @@ func putLeadershipData(t *testing.T, client client.Interface, partitionID, total
 
 	_, err = client.Put(context.Background(), fmt.Sprintf("abc/leadership/%d", partitionID), string(leadershipData))
 	require.NoError(t, err, "failed to insert leadership data into etcd")
+}
+
+func Test_LeadershipSubscribe(t *testing.T) {
+	t.Parallel()
+
+	t.Run("Subscribe should show the total leadership replicas", func(t *testing.T) {
+		t.Parallel()
+
+		leadershipProto1 := &stored.Leadership{
+			Total:       2,
+			ReplicaData: &anypb.Any{Value: []byte("l1-initial-replica-data")},
+		}
+		anyLeadershipData1, err := anypb.New(leadershipProto1)
+		require.NoError(t, err)
+
+		leadershipProto2 := &stored.Leadership{
+			Total:       2,
+			ReplicaData: &anypb.Any{Value: []byte("l2-initial-replica-data")},
+		}
+		anyLeadershipData2, err := anypb.New(leadershipProto2)
+		require.NoError(t, err)
+
+		client := etcd.Embedded(t)
+
+		l1 := New(Options{
+			Client:         client,
+			PartitionTotal: 2,
+			Key: key.New(key.Options{
+				Namespace:   "abc",
+				PartitionID: 0,
+			}),
+			ReplicaData: anyLeadershipData1,
+		})
+
+		l2 := New(Options{
+			Client:         client,
+			PartitionTotal: 2,
+			Key: key.New(key.Options{
+				Namespace:   "abc",
+				PartitionID: 1,
+			}),
+			ReplicaData: anyLeadershipData2,
+		})
+
+		errCh := make(chan error)
+
+		ctx1, cancel1 := context.WithCancel(context.Background())
+		ctx2, cancel2 := context.WithCancel(context.Background())
+		defer cancel1()
+		defer cancel2()
+
+		go func() { errCh <- l1.Run(ctx1) }()
+		go func() { errCh <- l2.Run(ctx2) }()
+
+		// Wait for leadership for both instances
+		_, l1err := l1.WaitForLeadership(ctx1)
+		require.NoError(t, l1err)
+
+		_, l2err := l2.WaitForLeadership(ctx2)
+		require.NoError(t, l2err)
+
+		// Subscribe to leadership events
+		activeReplicaValues, _ := l1.Subscribe(ctx1)
+		activeReplicaValuesL2, _ := l2.Subscribe(ctx2)
+
+		require.Len(t, activeReplicaValues, 2)
+		require.Len(t, activeReplicaValuesL2, 2)
+
+		// l1
+		require.NotEmpty(t, activeReplicaValues, "expected to get active replica values for l1 upon subscription")
+		require.NotNil(t, activeReplicaValues[0])
+		var leader stored.Leadership
+		assert.NoError(t, proto.Unmarshal(activeReplicaValues[0].Value, &leader))
+		replicaData := string(leader.ReplicaData.Value)
+		require.Equal(t, "l1-initial-replica-data", replicaData)
+		require.NotNil(t, activeReplicaValues[1])
+		assert.NoError(t, proto.Unmarshal(activeReplicaValues[1].Value, &leader))
+		replicaData = string(leader.ReplicaData.Value)
+		require.Equal(t, "l2-initial-replica-data", replicaData)
+
+		// l2
+		require.NotEmpty(t, activeReplicaValuesL2, "expected to get active replica values for l2 upon subscription")
+		require.NotNil(t, activeReplicaValuesL2[0])
+		var leaderL2 stored.Leadership
+		assert.NoError(t, proto.Unmarshal(activeReplicaValuesL2[0].Value, &leaderL2))
+		replicaDataL2 := string(leaderL2.ReplicaData.Value)
+		require.Equal(t, "l1-initial-replica-data", replicaDataL2)
+		assert.NoError(t, proto.Unmarshal(activeReplicaValuesL2[1].Value, &leaderL2))
+		replicaDataL2 = string(leaderL2.ReplicaData.Value)
+		require.Equal(t, "l2-initial-replica-data", replicaDataL2)
+	})
 }

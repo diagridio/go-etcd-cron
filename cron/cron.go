@@ -158,12 +158,12 @@ func (c *cron) Run(ctx context.Context) error {
 		func(ctx context.Context) error {
 			for {
 				engine, err := engine.New(engine.Options{
-					Log:         c.log,
-					Key:         c.key,
-					Partitioner: c.part,
-					Client:      c.client,
-					TriggerFn:   c.triggerFn,
-
+					Log:                              c.log,
+					Key:                              c.key,
+					Partitioner:                      c.part,
+					Client:                           c.client,
+					TriggerFn:                        c.triggerFn,
+					Leadership:                       c.leadership,
 					CounterGarbageCollectionInterval: c.gcgInterval,
 				})
 				if err != nil {
@@ -180,7 +180,6 @@ func (c *cron) Run(ctx context.Context) error {
 				c.lock.Lock()
 				close(c.readyCh)
 				c.lock.Unlock()
-
 				err = engine.Run(leadershipCtx)
 
 				c.lock.Lock()
@@ -256,6 +255,15 @@ func (c *cron) DeliverablePrefixes(ctx context.Context, prefixes ...string) (con
 	}
 
 	return api.DeliverablePrefixes(ctx, prefixes...)
+}
+
+func (c *cron) WatchLeadership(ctx context.Context) (chan []*anypb.Any, error) {
+	api, err := c.waitAPIReady(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	return api.WatchLeadership(ctx)
 }
 
 func (c *cron) waitAPIReady(ctx context.Context) (internalapi.Interface, error) {

@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/dapr/kit/concurrency"
+	"github.com/diagridio/go-etcd-cron/internal/leadership"
 	"github.com/go-logr/logr"
 	"k8s.io/utils/clock"
 
@@ -56,6 +57,8 @@ type Options struct {
 	// performance.
 	// Defaults to 180 seconds.
 	CounterGarbageCollectionInterval *time.Duration
+
+	Leadership *leadership.Leadership
 }
 
 type Engine struct {
@@ -106,6 +109,7 @@ func New(opts Options) (*Engine, error) {
 		Queue:            queue,
 		Informer:         informer,
 		Log:              opts.Log,
+		Leadership:       opts.Leadership,
 	})
 
 	return &Engine{

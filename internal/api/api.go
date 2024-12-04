@@ -10,7 +10,13 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"sync"
 	"sync/atomic"
+
+	"github.com/go-logr/logr"
+	clientv3 "go.etcd.io/etcd/client/v3"
+	"google.golang.org/protobuf/proto"
+	"google.golang.org/protobuf/types/known/anypb"
 
 	cronapi "github.com/diagridio/go-etcd-cron/api"
 	"github.com/diagridio/go-etcd-cron/internal/api/stored"
@@ -18,11 +24,9 @@ import (
 	"github.com/diagridio/go-etcd-cron/internal/client"
 	"github.com/diagridio/go-etcd-cron/internal/informer"
 	"github.com/diagridio/go-etcd-cron/internal/key"
+	"github.com/diagridio/go-etcd-cron/internal/leadership"
 	"github.com/diagridio/go-etcd-cron/internal/queue"
 	"github.com/diagridio/go-etcd-cron/internal/scheduler"
-	"github.com/go-logr/logr"
-	clientv3 "go.etcd.io/etcd/client/v3"
-	"google.golang.org/protobuf/proto"
 )
 
 type Options struct {
@@ -36,6 +40,8 @@ type Options struct {
 	// JobNameSanitizer is a replacer that sanitizes job names before name
 	// validation.
 	JobNameSanitizer *strings.Replacer
+
+	Leadership *leadership.Leadership
 }
 
 // Interface is the internal API that implements the API backend.
@@ -69,6 +75,11 @@ type Interface interface {
 	// the prefix is still active if there is at least one DeliverablePrefixes
 	// call that has not been unregistered.
 	DeliverablePrefixes(ctx context.Context, prefixes ...string) (context.CancelFunc, error)
+
+	// WatchLeadership returns a channel which will receive all current leadership values when the
+	// leadership keyspace changes. This function is responsible for sending the active set of
+	// available replicas.
+	WatchLeadership(ctx context.Context) (chan []*anypb.Any, error)
 }
 
 // api implements the API interface.
@@ -80,7 +91,9 @@ type api struct {
 	validator    *validator.Validator
 	queue        *queue.Queue
 	informer     *informer.Informer
+	leadership   *leadership.Leadership
 
+	wg      sync.WaitGroup
 	running atomic.Bool
 	readyCh chan struct{}
 	closeCh chan struct{}
@@ -95,10 +108,12 @@ func New(opts Options) Interface {
 		validator: validator.New(validator.Options{
 			JobNameSanitizer: opts.JobNameSanitizer,
 		}),
-		queue:    opts.Queue,
-		informer: opts.Informer,
-		readyCh:  make(chan struct{}),
-		closeCh:  make(chan struct{}),
+		queue:      opts.Queue,
+		informer:   opts.Informer,
+		leadership: opts.Leadership,
+		wg:         sync.WaitGroup{},
+		readyCh:    make(chan struct{}),
+		closeCh:    make(chan struct{}),
 	}
 }
 
@@ -271,6 +286,26 @@ func (a *api) DeliverablePrefixes(ctx context.Context, prefixes ...string) (cont
 	}
 
 	return a.queue.DeliverablePrefixes(prefixes...), nil
+}
+
+// WatchLeadership returns the dynamic, subscribed leadership replica data
+func (a *api) WatchLeadership(ctx context.Context) (chan []*anypb.Any, error) {
+	ch := make(chan []*anypb.Any)
+
+	activeReplicaValues, subscribeCh := a.leadership.Subscribe(ctx)
+
+	a.wg.Add(1)
+	go func() {
+		defer a.wg.Done()
+		select {
+		case <-ctx.Done():
+			return
+		case <-subscribeCh:
+			ch <- activeReplicaValues
+		}
+	}()
+
+	return ch, nil
 }
 
 func (a *api) waitReady(ctx context.Context) error {
