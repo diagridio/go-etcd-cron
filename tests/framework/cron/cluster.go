@@ -13,7 +13,7 @@ import (
 
 type Cluster struct {
 	*Cron
-	crons [3]*Cron
+	Crons [3]*Cron
 }
 
 func TripplePartition(t *testing.T) *Cluster {
@@ -24,14 +24,14 @@ func TripplePartition(t *testing.T) *Cluster {
 	cr3 := newCron(t, client, 3, 2)
 	return &Cluster{
 		Cron:  cr1,
-		crons: [3]*Cron{cr1, cr2, cr3},
+		Crons: [3]*Cron{cr1, cr2, cr3},
 	}
 }
 
 func TripplePartitionRun(t *testing.T) *Cluster {
 	t.Helper()
 	crs := TripplePartition(t)
-	for _, cr := range crs.crons {
+	for _, cr := range crs.Crons {
 		cr.run(t)
 	}
 	return crs
@@ -40,7 +40,7 @@ func TripplePartitionRun(t *testing.T) *Cluster {
 func (c *Cluster) Stop(t *testing.T) {
 	t.Helper()
 
-	for _, cr := range c.crons {
+	for _, cr := range c.Crons {
 		if cr != nil {
 			cr.Stop(t)
 		}
