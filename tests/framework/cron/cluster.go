@@ -36,3 +36,13 @@ func TripplePartitionRun(t *testing.T) *Cluster {
 	}
 	return crs
 }
+
+func (c *Cluster) Stop(t *testing.T) {
+	t.Helper()
+
+	for _, cr := range c.crons {
+		if cr != nil {
+			cr.Stop(t)
+		}
+	}
+}
