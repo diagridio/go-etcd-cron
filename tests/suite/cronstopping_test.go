@@ -10,9 +10,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/diagridio/go-etcd-cron/tests/framework/cron"
 	"github.com/stretchr/testify/require"
 	clientv3 "go.etcd.io/etcd/client/v3"
+
+	"github.com/diagridio/go-etcd-cron/tests/framework/cron"
 )
 
 func Test_cron_stopping(t *testing.T) {

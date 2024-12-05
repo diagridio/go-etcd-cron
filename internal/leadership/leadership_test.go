@@ -766,11 +766,12 @@ func Test_Run(t *testing.T) {
 
 				// cancel & ensure keys are removed
 				cancel()
-				time.Sleep(1 * time.Second)
 				for i := 0; i < numInstances; i++ {
-					resp, err := client.Get(context.Background(), fmt.Sprintf("abc/leadership/%d", i))
-					require.NoError(t, err)
-					assert.Equal(t, int64(0), resp.Count)
+					assert.EventuallyWithT(t, func(c *assert.CollectT) {
+						resp, err := client.Get(context.Background(), fmt.Sprintf("abc/leadership/%d", i))
+						require.NoError(t, err)
+						assert.Equal(t, int64(0), resp.Count)
+					}, 4*time.Second, 10*time.Millisecond)
 				}
 			})
 		}
