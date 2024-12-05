@@ -704,6 +704,77 @@ func Test_Run(t *testing.T) {
 			t.Fatal("timed out waiting for error")
 		}
 	})
+
+	t.Run("Leadership key behavior with 1, 3, 5 crons running", func(t *testing.T) {
+		t.Parallel()
+
+		testCases := []int{1, 3, 5}
+		for _, numInstances := range testCases {
+			t.Run(fmt.Sprintf("%d cron instances", numInstances), func(t *testing.T) {
+				t.Parallel()
+
+				client := etcd.Embedded(t)
+				ctx, cancel := context.WithCancel(context.Background())
+				defer cancel()
+
+				exprMsg := &expr.Expr{
+					Expression:  fmt.Sprintf("cron-test-expression-%d", numInstances),
+					Description: "test leadership with multiple crons",
+					Location:    "home",
+				}
+
+				replicaData, err := anypb.New(exprMsg)
+				require.NoError(t, err)
+
+				var leaders []*Leadership
+				for i := 0; i < numInstances; i++ {
+					l := New(Options{
+						Client:         client,
+						PartitionTotal: 10,
+						Key: key.New(key.Options{
+							Namespace:   "abc",
+							PartitionID: uint32(i),
+						}),
+						ReplicaData: replicaData,
+					})
+					leaders = append(leaders, l)
+
+					go func(l *Leadership) {
+						_ = l.Run(ctx)
+					}(l)
+				}
+
+				// ensure leadership
+				for i := 0; i < numInstances; i++ {
+					_, err = leaders[i].WaitForLeadership(ctx)
+					require.NoError(t, err)
+
+					resp, err := client.Get(ctx, fmt.Sprintf("abc/leadership/%d", i))
+					require.NoError(t, err)
+					assert.Equal(t, int64(1), resp.Count)
+
+					var leader stored.Leadership
+					assert.NoError(t, proto.Unmarshal(resp.Kvs[0].Value, &leader))
+					assert.Equal(t, uint32(10), leader.Total)
+
+					var retrievedExpr expr.Expr
+					assert.NoError(t, leader.ReplicaData.UnmarshalTo(&retrievedExpr))
+					assert.Equal(t, exprMsg.Expression, retrievedExpr.Expression)
+					assert.Equal(t, exprMsg.Description, retrievedExpr.Description)
+					assert.Equal(t, exprMsg.Location, retrievedExpr.Location)
+				}
+
+				// cancel & ensure keys are removed
+				cancel()
+				time.Sleep(1 * time.Second)
+				for i := 0; i < numInstances; i++ {
+					resp, err := client.Get(context.Background(), fmt.Sprintf("abc/leadership/%d", i))
+					require.NoError(t, err)
+					assert.Equal(t, int64(0), resp.Count)
+				}
+			})
+		}
+	})
 }
 
 func Test_checkLeadershipKeys(t *testing.T) {
