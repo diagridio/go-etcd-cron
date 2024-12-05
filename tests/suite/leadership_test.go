@@ -11,11 +11,13 @@ import (
 	"testing"
 	"time"
 
-	"github.com/diagridio/go-etcd-cron/internal/api/stored"
-	"github.com/diagridio/go-etcd-cron/tests/framework/cron"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	clientv3 "go.etcd.io/etcd/client/v3"
 	"google.golang.org/protobuf/proto"
+
+	"github.com/diagridio/go-etcd-cron/internal/api/stored"
+	"github.com/diagridio/go-etcd-cron/tests/framework/cron"
 )
 
 func Test_single_instance_leadership(t *testing.T) {
@@ -32,11 +34,12 @@ func Test_single_instance_leadership(t *testing.T) {
 	_, err = cr.KV.Do(context.Background(), clientv3.OpPut("abc/leadership/0", string(leaderBytes)))
 	require.NoError(t, err, "Failed to write leadership key with one instance")
 
-	time.Sleep(time.Second)
+	assert.EventuallyWithT(t, func(c *assert.CollectT) {
+		resp, err := cr.KV.Do(context.Background(), clientv3.OpGet("abc/leadership/0"))
+		require.NoError(t, err)
+		require.NotNil(t, resp)
+	}, 4*time.Second, 10*time.Millisecond)
 
-	resp, err := cr.KV.Do(context.Background(), clientv3.OpGet("abc/leadership/0"))
-	require.NoError(t, err)
-	require.NotNil(t, resp)
 }
 
 func Test_three_instances_leadership(t *testing.T) {
@@ -59,12 +62,12 @@ func Test_three_instances_leadership(t *testing.T) {
 		require.NoError(t, err, "Failed to write leadership key for instance %d", i)
 	}
 
-	time.Sleep(time.Second)
-
 	// Ensure leadership key is active
 	for i, cr := range cluster.Crons {
-		resp, err := cr.KV.Do(context.Background(), clientv3.OpGet(fmt.Sprintf("abc/leadership/%d", i)))
-		require.NoError(t, err, "Failed to retrieve leadership key for instance %d", i)
-		require.NotNil(t, resp, "Leadership key for instance %d should exist", i)
+		assert.EventuallyWithT(t, func(c *assert.CollectT) {
+			resp, err := cr.KV.Do(context.Background(), clientv3.OpGet(fmt.Sprintf("abc/leadership/%d", i)))
+			require.NoError(t, err, "Failed to retrieve leadership key for instance %d", i)
+			require.NotNil(t, resp, "Leadership key for instance %d should exist", i)
+		}, 4*time.Second, 10*time.Millisecond)
 	}
 }
