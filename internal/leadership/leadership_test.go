@@ -776,6 +776,71 @@ func Test_Run(t *testing.T) {
 			})
 		}
 	})
+
+	t.Run("Adding more keys than running instances", func(t *testing.T) {
+		t.Parallel()
+
+		client := etcd.Embedded(t)
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+
+		numInstances := 2
+		totalKeys := 5
+
+		var leaders []*Leadership
+		for i := 0; i < numInstances; i++ {
+			l := New(Options{
+				Client:         client,
+				PartitionTotal: uint32(2),
+				Key: key.New(key.Options{
+					Namespace:   "abc",
+					PartitionID: uint32(i),
+				}),
+				ReplicaData: nil,
+			})
+			leaders = append(leaders, l)
+			go func(l *Leadership) { _ = l.Run(ctx) }(l)
+		}
+
+		// put excess leadership keys
+		for i := numInstances; i < totalKeys; i++ {
+			putLeadershipData(t, client, uint32(i), uint32(totalKeys), nil)
+		}
+
+		readyCtx, cancel := context.WithTimeout(ctx, 3*time.Second)
+		defer cancel()
+		for _, l := range leaders {
+			// ensure leadership is not ready for the 2 running instances
+			_, err := l.WaitForLeadership(readyCtx)
+			assert.Error(t, err, "Leadership should not be ready when keys exceed running instances")
+		}
+
+		resp, _ := client.Get(context.Background(), "abc/leadership", clientv3.WithPrefix())
+		assert.Equal(t, int64(5), resp.Count)
+
+		// ensure readyCh is not closed for any leader bc they should not be ready
+		for _, l := range leaders {
+			select {
+			case <-l.readyCh:
+				t.Error("readyCh should not be closed when leadership is not ready")
+			default:
+			}
+		}
+
+		// delete excess leadership keys
+		for i := numInstances; i < totalKeys; i++ {
+			_, err := client.Delete(context.Background(), fmt.Sprintf("abc/leadership/%d", i))
+			require.NoError(t, err, "Failed to delete leadership key %d", i)
+		}
+
+		// make sure leadership is acquired now
+		newCtx, newCancel := context.WithCancel(ctx)
+		defer newCancel()
+		for _, leader := range leaders {
+			_, err := leader.WaitForLeadership(newCtx)
+			require.NoError(t, err, "Leadership should be acquired now since excess keys were removed")
+		}
+	})
 }
 
 func Test_checkLeadershipKeys(t *testing.T) {

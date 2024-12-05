@@ -39,7 +39,6 @@ func Test_single_instance_leadership(t *testing.T) {
 		require.NoError(t, err)
 		require.NotNil(t, resp)
 	}, 4*time.Second, 10*time.Millisecond)
-
 }
 
 func Test_three_instances_leadership(t *testing.T) {
