@@ -123,6 +123,7 @@ func (a *api) Run(ctx context.Context) error {
 	}
 
 	defer close(a.closeCh)
+	defer a.wg.Wait()
 
 	if err := a.informer.Ready(ctx); err != nil {
 		return err
