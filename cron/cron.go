@@ -180,6 +180,7 @@ func (c *cron) Run(ctx context.Context) error {
 				c.lock.Lock()
 				close(c.readyCh)
 				c.lock.Unlock()
+
 				err = engine.Run(leadershipCtx)
 
 				c.lock.Lock()

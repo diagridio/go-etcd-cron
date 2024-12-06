@@ -1,4 +1,5 @@
-/*v3Copyright (c) 2024 Diagrid Inc.
+/*
+Copyright (c) 2024 Diagrid Inc.
 Licensed under the MIT License.
 */
 

@@ -16,7 +16,7 @@ import (
 
 	"github.com/dapr/kit/concurrency"
 	"github.com/dapr/kit/events/batcher"
-	"github.com/diagridio/go-etcd-cron/internal/api/stored"
+
 	"github.com/go-logr/logr"
 	clientv3 "go.etcd.io/etcd/client/v3"
 	"google.golang.org/protobuf/proto"
@@ -24,6 +24,7 @@ import (
 
 	"github.com/diagridio/go-etcd-cron/internal/client"
 	"github.com/diagridio/go-etcd-cron/internal/key"
+	"github.com/diagridio/go-etcd-cron/internal/api/stored"
 )
 
 // Options are the options for the Leadership.
@@ -49,11 +50,11 @@ type Options struct {
 // partition, as well as ensuring that there are no other active partitions
 // which are acting on a different partition total.
 type Leadership struct {
-	log     logr.Logger
-	client  client.Interface
+	log    logr.Logger
+	client client.Interface
 	batcher *batcher.Batcher[int, struct{}]
-	lock    sync.RWMutex
-	wg      sync.WaitGroup
+	lock   sync.RWMutex
+	wg     sync.WaitGroup
 
 	partitionTotal  uint32
 	key             *key.Key
@@ -218,9 +219,9 @@ func (l *Leadership) loop(ctx context.Context) error {
 
 			l.lock.Lock()
 			defer l.lock.Unlock()
+
 			l.readyCh = make(chan struct{})
 			close(l.changeCh)
-			l.batcher.Batch(0, struct{}{}) // notify subscribers of change
 			l.changeCh = make(chan struct{})
 
 			return ctx.Err()

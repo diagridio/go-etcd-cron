@@ -14,7 +14,6 @@ import (
 	"time"
 
 	"github.com/dapr/kit/concurrency"
-	"github.com/diagridio/go-etcd-cron/internal/leadership"
 	"github.com/go-logr/logr"
 	"k8s.io/utils/clock"
 
@@ -28,6 +27,7 @@ import (
 	"github.com/diagridio/go-etcd-cron/internal/partitioner"
 	"github.com/diagridio/go-etcd-cron/internal/queue"
 	"github.com/diagridio/go-etcd-cron/internal/scheduler"
+	"github.com/diagridio/go-etcd-cron/internal/leadership"
 )
 
 // Options are the options for creating a new engine instance.

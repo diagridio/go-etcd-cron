@@ -88,23 +88,24 @@ func New(ctx context.Context, opts Options) (Interface, bool, error) {
 		return nil, false, err
 	}
 
+	c := &counter{
+		name:       opts.Name,
+		counterKey: counterKey,
+		jobKey:     jobKey,
+		client:     opts.Client,
+		schedule:   opts.Schedule,
+		job:        opts.Job,
+		yard:       opts.Yard,
+		collector:  opts.Collector,
+		triggerRequest: &api.TriggerRequest{
+			Name:     opts.Name,
+			Metadata: opts.Job.GetJob().GetMetadata(),
+			Payload:  opts.Job.GetJob().GetPayload(),
+		},
+	}
+
 	if res.Count == 0 {
-		c := &counter{
-			name:       opts.Name,
-			jobKey:     jobKey,
-			counterKey: counterKey,
-			client:     opts.Client,
-			schedule:   opts.Schedule,
-			job:        opts.Job,
-			count:      &stored.Counter{JobPartitionId: opts.Job.GetPartitionId()},
-			yard:       opts.Yard,
-			collector:  opts.Collector,
-			triggerRequest: &api.TriggerRequest{
-				Name:     opts.Name,
-				Metadata: opts.Job.GetJob().GetMetadata(),
-				Payload:  opts.Job.GetJob().GetPayload(),
-			},
-		}
+		c.count = &stored.Counter{JobPartitionId: opts.Job.GetPartitionId()}
 
 		if ok, err := c.tickNext(); err != nil || !ok {
 			return nil, false, err
@@ -131,21 +132,7 @@ func New(ctx context.Context, opts Options) (Interface, bool, error) {
 		}
 	}
 
-	c := &counter{
-		counterKey: counterKey,
-		jobKey:     jobKey,
-		client:     opts.Client,
-		schedule:   opts.Schedule,
-		job:        opts.Job,
-		count:      count,
-		yard:       opts.Yard,
-		collector:  opts.Collector,
-		triggerRequest: &api.TriggerRequest{
-			Name:     opts.Name,
-			Metadata: opts.Job.GetJob().GetMetadata(),
-			Payload:  opts.Job.GetJob().GetPayload(),
-		},
-	}
+	c.count = count
 
 	if ok, err := c.tickNext(); err != nil || !ok {
 		return nil, false, err

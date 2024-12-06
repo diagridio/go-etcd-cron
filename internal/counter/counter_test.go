@@ -167,6 +167,8 @@ func Test_New(t *testing.T) {
 		assert.True(t, ok)
 		assert.NotNil(t, c)
 
+		assert.Equal(t, "1", c.JobName())
+
 		cancel()
 		select {
 		case err := <-errCh:

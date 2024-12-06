@@ -24,8 +24,9 @@ import (
 
 type Cron struct {
 	api.Interface
-	KV    clientv3.KV
-	Calls *atomic.Int64
+	KV     clientv3.KV
+	Calls  *atomic.Int64
+	cancel context.CancelFunc
 }
 
 func newCron(t *testing.T, client *clientv3.Client, total, id uint32) *Cron {
@@ -61,8 +62,10 @@ func (c *Cron) run(t *testing.T) *Cron {
 
 	errCh := make(chan error)
 	ctx, cancel := context.WithCancel(context.Background())
+	c.cancel = cancel
+
 	t.Cleanup(func() {
-		cancel()
+		c.Stop(t)
 		select {
 		case err := <-errCh:
 			require.NoError(t, err)
@@ -95,4 +98,13 @@ func (c *Cron) get(t *testing.T, prefix string) *clientv3.GetResponse {
 	require.NoError(t, err)
 
 	return resp
+}
+
+func (c *Cron) Stop(t *testing.T) {
+	t.Helper()
+
+	if c.cancel != nil {
+		c.cancel()
+		c.cancel = nil
+	}
 }

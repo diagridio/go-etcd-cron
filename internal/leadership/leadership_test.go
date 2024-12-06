@@ -17,6 +17,7 @@ import (
 	"google.golang.org/genproto/googleapis/type/expr"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/anypb"
+	"google.golang.org/protobuf/types/known/wrapperspb"
 
 	"github.com/diagridio/go-etcd-cron/internal/api/stored"
 	"github.com/diagridio/go-etcd-cron/internal/client"
@@ -704,6 +705,247 @@ func Test_Run(t *testing.T) {
 			t.Fatal("timed out waiting for error")
 		}
 	})
+
+	t.Run("Leadership key behavior with 1, 3, 5 crons running", func(t *testing.T) {
+		t.Parallel()
+
+		testCases := []int{1, 3, 5}
+		for _, numInstances := range testCases {
+			t.Run(fmt.Sprintf("%d cron instances", numInstances), func(t *testing.T) {
+				t.Parallel()
+
+				client := etcd.Embedded(t)
+				ctx, cancel := context.WithCancel(context.Background())
+				defer cancel()
+
+				exprMsg := &expr.Expr{
+					Expression:  fmt.Sprintf("cron-test-expression-%d", numInstances),
+					Description: "test leadership with multiple crons",
+					Location:    "home",
+				}
+
+				replicaData, err := anypb.New(exprMsg)
+				require.NoError(t, err)
+
+				var leaders []*Leadership
+				for i := 0; i < numInstances; i++ {
+					l := New(Options{
+						Client:         client,
+						PartitionTotal: 10,
+						Key: key.New(key.Options{
+							Namespace:   "abc",
+							PartitionID: uint32(i),
+						}),
+						ReplicaData: replicaData,
+					})
+					leaders = append(leaders, l)
+
+					go func(l *Leadership) {
+						_ = l.Run(ctx)
+					}(l)
+				}
+
+				// ensure leadership
+				for i := 0; i < numInstances; i++ {
+					_, err = leaders[i].WaitForLeadership(ctx)
+					require.NoError(t, err)
+
+					resp, err := client.Get(ctx, fmt.Sprintf("abc/leadership/%d", i))
+					require.NoError(t, err)
+					assert.Equal(t, int64(1), resp.Count)
+
+					var leader stored.Leadership
+					assert.NoError(t, proto.Unmarshal(resp.Kvs[0].Value, &leader))
+					assert.Equal(t, uint32(10), leader.Total)
+
+					var retrievedExpr expr.Expr
+					assert.NoError(t, leader.ReplicaData.UnmarshalTo(&retrievedExpr))
+					assert.Equal(t, exprMsg.Expression, retrievedExpr.Expression)
+					assert.Equal(t, exprMsg.Description, retrievedExpr.Description)
+					assert.Equal(t, exprMsg.Location, retrievedExpr.Location)
+				}
+
+				// cancel & ensure keys are removed
+				cancel()
+				for i := 0; i < numInstances; i++ {
+					assert.EventuallyWithT(t, func(c *assert.CollectT) {
+						resp, err := client.Get(context.Background(), fmt.Sprintf("abc/leadership/%d", i))
+						require.NoError(t, err)
+						assert.Equal(t, int64(0), resp.Count)
+					}, 4*time.Second, 10*time.Millisecond)
+				}
+			})
+		}
+	})
+
+	t.Run("Adding more keys than running instances", func(t *testing.T) {
+		t.Parallel()
+
+		client := etcd.Embedded(t)
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+
+		numInstances := 2
+		totalKeys := 5
+
+		var leaders []*Leadership
+		for i := 0; i < numInstances; i++ {
+			l := New(Options{
+				Client:         client,
+				PartitionTotal: uint32(2),
+				Key: key.New(key.Options{
+					Namespace:   "abc",
+					PartitionID: uint32(i),
+				}),
+				ReplicaData: nil,
+			})
+			leaders = append(leaders, l)
+			go func(l *Leadership) { _ = l.Run(ctx) }(l)
+		}
+
+		// put excess leadership keys
+		for i := numInstances; i < totalKeys; i++ {
+			putLeadershipData(t, client, uint32(i), uint32(totalKeys), nil)
+		}
+
+		readyCtx, cancel := context.WithTimeout(ctx, 3*time.Second)
+		defer cancel()
+		for _, l := range leaders {
+			// ensure leadership is not ready for the 2 running instances
+			_, err := l.WaitForLeadership(readyCtx)
+			assert.Error(t, err, "Leadership should not be ready when keys exceed running instances")
+		}
+
+		resp, _ := client.Get(context.Background(), "abc/leadership", clientv3.WithPrefix())
+		assert.Equal(t, int64(5), resp.Count)
+
+		// ensure readyCh is not closed for any leader bc they should not be ready
+		for _, l := range leaders {
+			select {
+			case <-l.readyCh:
+				t.Error("readyCh should not be closed when leadership is not ready")
+			default:
+			}
+		}
+
+		// delete excess leadership keys
+		for i := numInstances; i < totalKeys; i++ {
+			_, err := client.Delete(context.Background(), fmt.Sprintf("abc/leadership/%d", i))
+			require.NoError(t, err, "Failed to delete leadership key %d", i)
+		}
+
+		// make sure leadership is acquired now
+		newCtx, newCancel := context.WithCancel(ctx)
+		defer newCancel()
+		for _, leader := range leaders {
+			_, err := leader.WaitForLeadership(newCtx)
+			require.NoError(t, err, "Leadership should be acquired now since excess keys were removed")
+		}
+	})
+
+	t.Run("Simulate dynamic scaling while updating replication data and partition total", func(t *testing.T) {
+		client := etcd.Embedded(t)
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+
+		// single instance
+		partitionTotal := uint32(1)
+		initialReplicaData := wrapperspb.Bytes([]byte("one-data"))
+		replicaData, err := anypb.New(initialReplicaData)
+		require.NoError(t, err)
+
+		leader := New(Options{
+			Client:         client,
+			PartitionTotal: partitionTotal,
+			Key: key.New(key.Options{
+				Namespace:   "abc",
+				PartitionID: 0,
+			}),
+			ReplicaData: replicaData,
+		})
+		singleCtx, singleCancel := context.WithCancel(ctx)
+		go func() { _ = leader.Run(singleCtx) }()
+
+		_, err = leader.WaitForLeadership(ctx)
+		require.NoError(t, err)
+
+		resp, err := client.Get(ctx, "abc/leadership/0")
+		require.NoError(t, err)
+		require.Contains(t, string(resp.Kvs[0].Value), "one-data")
+
+		singleCancel()
+
+		// 3 instances & new replication data
+		partitionTotal = 3
+		var leaders []*Leadership
+		threeCtx, threeCancel := context.WithCancel(ctx)
+		newReplicaData := wrapperspb.Bytes([]byte("three-data"))
+		replicaData, err = anypb.New(newReplicaData)
+		require.NoError(t, err)
+
+		for i := uint32(0); i < partitionTotal; i++ {
+			leader := New(Options{
+				Client:         client,
+				PartitionTotal: partitionTotal,
+				Key: key.New(key.Options{
+					Namespace:   "abc",
+					PartitionID: i,
+				}),
+				ReplicaData: replicaData,
+			})
+			leaders = append(leaders, leader)
+
+			go func(l *Leadership) { _ = l.Run(threeCtx) }(leader)
+		}
+
+		for _, leader := range leaders {
+			_, err := leader.WaitForLeadership(ctx)
+			require.NoError(t, err)
+		}
+
+		for i := uint32(0); i < partitionTotal; i++ {
+			resp, err := client.Get(ctx, fmt.Sprintf("abc/leadership/%d", i))
+			require.NoError(t, err)
+			require.Contains(t, string(resp.Kvs[0].Value), "three-data", "Replication data mismatch for leader %d", i)
+		}
+
+		threeCancel()
+		leaders = nil
+
+		// 5 instances & new replication data
+		partitionTotal = 5
+		fiveCtx, fiveCancel := context.WithCancel(ctx)
+		defer fiveCancel()
+
+		newReplicaData = wrapperspb.Bytes([]byte("five-data"))
+		replicaData, err = anypb.New(newReplicaData)
+		require.NoError(t, err)
+
+		for i := uint32(0); i < partitionTotal; i++ {
+			leader := New(Options{
+				Client:         client,
+				PartitionTotal: partitionTotal,
+				Key: key.New(key.Options{
+					Namespace:   "abc",
+					PartitionID: i,
+				}),
+				ReplicaData: replicaData,
+			})
+			leaders = append(leaders, leader)
+			go func(l *Leadership) { _ = l.Run(fiveCtx) }(leader)
+		}
+
+		for _, leader := range leaders {
+			_, err := leader.WaitForLeadership(ctx)
+			require.NoError(t, err)
+		}
+
+		for i := uint32(0); i < partitionTotal; i++ {
+			resp, err := client.Get(ctx, fmt.Sprintf("abc/leadership/%d", i))
+			require.NoError(t, err)
+			require.Contains(t, string(resp.Kvs[0].Value), "five-data", "Replication data mismatch for leader %d", i)
+		}
+	})
 }
 
 func Test_checkLeadershipKeys(t *testing.T) {
@@ -838,6 +1080,40 @@ func Test_checkLeadershipKeys(t *testing.T) {
 	})
 
 	t.Run("if some keys have the same partition total but some don't, return error", func(t *testing.T) {
+		t.Parallel()
+
+		client := etcd.Embedded(t)
+
+		exprMessage := &expr.Expr{
+			Expression:  "cron-test-expression",
+			Description: "this is dummy cron test data. ooo lala",
+			Location:    "home",
+		}
+
+		replicaData, err := anypb.New(exprMessage)
+		require.NoError(t, err)
+
+		l := New(Options{
+			Client:         client,
+			PartitionTotal: 10,
+			Key: key.New(key.Options{
+				Namespace:   "abc",
+				PartitionID: 0,
+			}),
+			ReplicaData: replicaData,
+		})
+
+		putLeadershipData(t, client, 0, 10, replicaData)
+		putLeadershipData(t, client, 3, 5, replicaData)
+		putLeadershipData(t, client, 5, 10, replicaData)
+		putLeadershipData(t, client, 8, 8, replicaData)
+
+		ok, err := l.checkLeadershipKeys(context.Background())
+		require.NoError(t, err)
+		assert.False(t, ok)
+	})
+
+	t.Run("old version of leadership value format (non-protobuf), return err", func(t *testing.T) {
 		t.Parallel()
 
 		client := etcd.Embedded(t)
@@ -1146,7 +1422,6 @@ func Test_WaitForLeadership(t *testing.T) {
 		require.NoError(t, err)
 	})
 }
-
 func putLeadershipData(t *testing.T, client client.Interface, partitionID, total uint32, replicaData *anypb.Any) {
 	t.Helper()
 
@@ -1158,95 +1433,4 @@ func putLeadershipData(t *testing.T, client client.Interface, partitionID, total
 
 	_, err = client.Put(context.Background(), fmt.Sprintf("abc/leadership/%d", partitionID), string(leadershipData))
 	require.NoError(t, err, "failed to insert leadership data into etcd")
-}
-
-func Test_LeadershipSubscribe(t *testing.T) {
-	t.Parallel()
-
-	t.Run("Subscribe should show the total leadership replicas", func(t *testing.T) {
-		t.Parallel()
-
-		leadershipProto1 := &stored.Leadership{
-			Total:       2,
-			ReplicaData: &anypb.Any{Value: []byte("l1-initial-replica-data")},
-		}
-		anyLeadershipData1, err := anypb.New(leadershipProto1)
-		require.NoError(t, err)
-
-		leadershipProto2 := &stored.Leadership{
-			Total:       2,
-			ReplicaData: &anypb.Any{Value: []byte("l2-initial-replica-data")},
-		}
-		anyLeadershipData2, err := anypb.New(leadershipProto2)
-		require.NoError(t, err)
-
-		client := etcd.Embedded(t)
-
-		l1 := New(Options{
-			Client:         client,
-			PartitionTotal: 2,
-			Key: key.New(key.Options{
-				Namespace:   "abc",
-				PartitionID: 0,
-			}),
-			ReplicaData: anyLeadershipData1,
-		})
-
-		l2 := New(Options{
-			Client:         client,
-			PartitionTotal: 2,
-			Key: key.New(key.Options{
-				Namespace:   "abc",
-				PartitionID: 1,
-			}),
-			ReplicaData: anyLeadershipData2,
-		})
-
-		errCh := make(chan error)
-
-		ctx1, cancel1 := context.WithCancel(context.Background())
-		ctx2, cancel2 := context.WithCancel(context.Background())
-		defer cancel1()
-		defer cancel2()
-
-		go func() { errCh <- l1.Run(ctx1) }()
-		go func() { errCh <- l2.Run(ctx2) }()
-
-		// Wait for leadership for both instances
-		_, l1err := l1.WaitForLeadership(ctx1)
-		require.NoError(t, l1err)
-
-		_, l2err := l2.WaitForLeadership(ctx2)
-		require.NoError(t, l2err)
-
-		// Subscribe to leadership events
-		activeReplicaValues, _ := l1.Subscribe(ctx1)
-		activeReplicaValuesL2, _ := l2.Subscribe(ctx2)
-
-		require.Len(t, activeReplicaValues, 2)
-		require.Len(t, activeReplicaValuesL2, 2)
-
-		// l1
-		require.NotEmpty(t, activeReplicaValues, "expected to get active replica values for l1 upon subscription")
-		require.NotNil(t, activeReplicaValues[0])
-		var leader stored.Leadership
-		assert.NoError(t, proto.Unmarshal(activeReplicaValues[0].Value, &leader))
-		replicaData := string(leader.ReplicaData.Value)
-		require.Equal(t, "l1-initial-replica-data", replicaData)
-		require.NotNil(t, activeReplicaValues[1])
-		assert.NoError(t, proto.Unmarshal(activeReplicaValues[1].Value, &leader))
-		replicaData = string(leader.ReplicaData.Value)
-		require.Equal(t, "l2-initial-replica-data", replicaData)
-
-		// l2
-		require.NotEmpty(t, activeReplicaValuesL2, "expected to get active replica values for l2 upon subscription")
-		require.NotNil(t, activeReplicaValuesL2[0])
-		var leaderL2 stored.Leadership
-		assert.NoError(t, proto.Unmarshal(activeReplicaValuesL2[0].Value, &leaderL2))
-		replicaDataL2 := string(leaderL2.ReplicaData.Value)
-		require.Equal(t, "l1-initial-replica-data", replicaDataL2)
-		assert.NoError(t, proto.Unmarshal(activeReplicaValuesL2[1].Value, &leaderL2))
-		replicaDataL2 = string(leaderL2.ReplicaData.Value)
-		require.Equal(t, "l2-initial-replica-data", replicaDataL2)
-	})
 }
