@@ -15,7 +15,8 @@ import (
 	"time"
 
 	"github.com/dapr/kit/concurrency"
-	"github.com/diagridio/go-etcd-cron/internal/api/stored"
+	"github.com/dapr/kit/events/batcher"
+
 	"github.com/go-logr/logr"
 	clientv3 "go.etcd.io/etcd/client/v3"
 	"google.golang.org/protobuf/proto"
@@ -23,6 +24,7 @@ import (
 
 	"github.com/diagridio/go-etcd-cron/internal/client"
 	"github.com/diagridio/go-etcd-cron/internal/key"
+	"github.com/diagridio/go-etcd-cron/internal/api/stored"
 )
 
 // Options are the options for the Leadership.
@@ -50,6 +52,7 @@ type Options struct {
 type Leadership struct {
 	log    logr.Logger
 	client client.Interface
+	batcher *batcher.Batcher[int, struct{}]
 	lock   sync.RWMutex
 	wg     sync.WaitGroup
 
@@ -67,6 +70,7 @@ type Leadership struct {
 func New(opts Options) *Leadership {
 	return &Leadership{
 		log:            opts.Log.WithName("leadership"),
+		batcher:        batcher.New[int, struct{}](0),
 		client:         opts.Client,
 		key:            opts.Key,
 		partitionTotal: opts.PartitionTotal,
@@ -86,6 +90,7 @@ func (l *Leadership) Run(ctx context.Context) error {
 
 	defer l.wg.Wait()
 	defer close(l.closeCh)
+	defer l.batcher.Close()
 
 	// reset closeCh between restarts
 	l.lock.Lock()
@@ -236,7 +241,6 @@ func (l *Leadership) checkLeadershipKeys(ctx context.Context) (bool, error) {
 	if err != nil {
 		return false, err
 	}
-
 	if resp.Kvs == nil {
 		return false, fmt.Errorf("failed to check leaderhship keys. keys are nil")
 	}
@@ -350,4 +354,26 @@ func (l *Leadership) WaitForLeadership(ctx context.Context) (context.Context, er
 	}(ctx)
 
 	return leaderCtx, nil
+}
+
+// Subscribe returns a channel for leadership key space updates, as well as the
+// initial set.
+func (l *Leadership) Subscribe(ctx context.Context) ([]*anypb.Any, chan struct{}) {
+	l.lock.RLock()
+	readyCh := l.readyCh
+	l.lock.RUnlock()
+
+	select {
+	case <-ctx.Done():
+		return nil, make(chan struct{})
+	case <-readyCh:
+	}
+
+	l.lock.RLock()
+	defer l.lock.RUnlock()
+
+	ch := make(chan struct{})
+	l.batcher.Subscribe(ctx, ch)
+
+	return l.allReplicaDatas, ch
 }

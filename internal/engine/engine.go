@@ -27,6 +27,7 @@ import (
 	"github.com/diagridio/go-etcd-cron/internal/partitioner"
 	"github.com/diagridio/go-etcd-cron/internal/queue"
 	"github.com/diagridio/go-etcd-cron/internal/scheduler"
+	"github.com/diagridio/go-etcd-cron/internal/leadership"
 )
 
 // Options are the options for creating a new engine instance.
@@ -56,6 +57,8 @@ type Options struct {
 	// performance.
 	// Defaults to 180 seconds.
 	CounterGarbageCollectionInterval *time.Duration
+
+	Leadership *leadership.Leadership
 }
 
 type Engine struct {
@@ -106,6 +109,7 @@ func New(opts Options) (*Engine, error) {
 		Queue:            queue,
 		Informer:         informer,
 		Log:              opts.Log,
+		Leadership:       opts.Leadership,
 	})
 
 	return &Engine{

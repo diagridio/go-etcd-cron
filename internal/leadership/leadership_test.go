@@ -1117,6 +1117,40 @@ func Test_checkLeadershipKeys(t *testing.T) {
 		t.Parallel()
 
 		client := etcd.Embedded(t)
+
+		exprMessage := &expr.Expr{
+			Expression:  "cron-test-expression",
+			Description: "this is dummy cron test data. ooo lala",
+			Location:    "home",
+		}
+
+		replicaData, err := anypb.New(exprMessage)
+		require.NoError(t, err)
+
+		l := New(Options{
+			Client:         client,
+			PartitionTotal: 10,
+			Key: key.New(key.Options{
+				Namespace:   "abc",
+				PartitionID: 0,
+			}),
+			ReplicaData: replicaData,
+		})
+
+		putLeadershipData(t, client, 0, 10, replicaData)
+		putLeadershipData(t, client, 3, 5, replicaData)
+		putLeadershipData(t, client, 5, 10, replicaData)
+		putLeadershipData(t, client, 8, 8, replicaData)
+
+		ok, err := l.checkLeadershipKeys(context.Background())
+		require.NoError(t, err)
+		assert.False(t, ok)
+	})
+
+	t.Run("old version of leadership value format (non-protobuf), return err", func(t *testing.T) {
+		t.Parallel()
+
+		client := etcd.Embedded(t)
 		l := New(Options{
 			Client:         client,
 			PartitionTotal: 10,
