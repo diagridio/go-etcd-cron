@@ -15,12 +15,14 @@ import (
 	"time"
 
 	"github.com/dapr/kit/concurrency"
-	"github.com/diagridio/go-etcd-cron/internal/api/stored"
+	"github.com/dapr/kit/events/batcher"
+
 	"github.com/go-logr/logr"
 	clientv3 "go.etcd.io/etcd/client/v3"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/anypb"
 
+	"github.com/diagridio/go-etcd-cron/internal/api/stored"
 	"github.com/diagridio/go-etcd-cron/internal/client"
 	"github.com/diagridio/go-etcd-cron/internal/key"
 )
@@ -48,10 +50,11 @@ type Options struct {
 // partition, as well as ensuring that there are no other active partitions
 // which are acting on a different partition total.
 type Leadership struct {
-	log    logr.Logger
-	client client.Interface
-	lock   sync.RWMutex
-	wg     sync.WaitGroup
+	log     logr.Logger
+	client  client.Interface
+	batcher *batcher.Batcher[int, struct{}]
+	lock    sync.RWMutex
+	wg      sync.WaitGroup
 
 	partitionTotal  uint32
 	key             *key.Key
@@ -67,6 +70,7 @@ type Leadership struct {
 func New(opts Options) *Leadership {
 	return &Leadership{
 		log:            opts.Log.WithName("leadership"),
+		batcher:        batcher.New[int, struct{}](0),
 		client:         opts.Client,
 		key:            opts.Key,
 		partitionTotal: opts.PartitionTotal,
@@ -84,8 +88,9 @@ func (l *Leadership) Run(ctx context.Context) error {
 		return errors.New("leadership already running")
 	}
 
-	defer l.wg.Wait()
 	defer close(l.closeCh)
+	defer l.batcher.Close()
+	defer l.wg.Wait()
 
 	// reset closeCh between restarts
 	l.lock.Lock()
@@ -217,6 +222,7 @@ func (l *Leadership) loop(ctx context.Context) error {
 
 			l.readyCh = make(chan struct{})
 			close(l.changeCh)
+			l.batcher.Batch(0, struct{}{})
 			l.changeCh = make(chan struct{})
 
 			return ctx.Err()
@@ -236,7 +242,6 @@ func (l *Leadership) checkLeadershipKeys(ctx context.Context) (bool, error) {
 	if err != nil {
 		return false, err
 	}
-
 	if resp.Kvs == nil {
 		return false, fmt.Errorf("failed to check leaderhship keys. keys are nil")
 	}
@@ -350,4 +355,26 @@ func (l *Leadership) WaitForLeadership(ctx context.Context) (context.Context, er
 	}(ctx)
 
 	return leaderCtx, nil
+}
+
+// Subscribe returns a channel for leadership key space updates, as well as the
+// initial set.
+func (l *Leadership) Subscribe(ctx context.Context) ([]*anypb.Any, chan struct{}) {
+	l.lock.RLock()
+	readyCh := l.readyCh
+	l.lock.RUnlock()
+
+	select {
+	case <-ctx.Done():
+		return nil, make(chan struct{})
+	case <-readyCh:
+	}
+
+	l.lock.RLock()
+	defer l.lock.RUnlock()
+
+	ch := make(chan struct{})
+	l.batcher.Subscribe(ctx, ch)
+
+	return l.allReplicaDatas, ch
 }
