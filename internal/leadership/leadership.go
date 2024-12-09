@@ -222,6 +222,7 @@ func (l *Leadership) loop(ctx context.Context) error {
 
 			l.readyCh = make(chan struct{})
 			close(l.changeCh)
+			l.batcher.Batch(0, struct{}{})
 			l.changeCh = make(chan struct{})
 
 			return ctx.Err()
