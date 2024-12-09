@@ -22,9 +22,9 @@ import (
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/anypb"
 
+	"github.com/diagridio/go-etcd-cron/internal/api/stored"
 	"github.com/diagridio/go-etcd-cron/internal/client"
 	"github.com/diagridio/go-etcd-cron/internal/key"
-	"github.com/diagridio/go-etcd-cron/internal/api/stored"
 )
 
 // Options are the options for the Leadership.
@@ -50,11 +50,11 @@ type Options struct {
 // partition, as well as ensuring that there are no other active partitions
 // which are acting on a different partition total.
 type Leadership struct {
-	log    logr.Logger
-	client client.Interface
+	log     logr.Logger
+	client  client.Interface
 	batcher *batcher.Batcher[int, struct{}]
-	lock   sync.RWMutex
-	wg     sync.WaitGroup
+	lock    sync.RWMutex
+	wg      sync.WaitGroup
 
 	partitionTotal  uint32
 	key             *key.Key
@@ -88,9 +88,9 @@ func (l *Leadership) Run(ctx context.Context) error {
 		return errors.New("leadership already running")
 	}
 
-	defer l.wg.Wait()
 	defer close(l.closeCh)
 	defer l.batcher.Close()
+	defer l.wg.Wait()
 
 	// reset closeCh between restarts
 	l.lock.Lock()
