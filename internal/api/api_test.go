@@ -20,6 +20,7 @@ import (
 	cronapi "github.com/diagridio/go-etcd-cron/api"
 	"github.com/diagridio/go-etcd-cron/internal/garbage"
 	"github.com/diagridio/go-etcd-cron/internal/key"
+	"github.com/diagridio/go-etcd-cron/internal/leadership"
 	"github.com/diagridio/go-etcd-cron/internal/queue"
 	"github.com/diagridio/go-etcd-cron/internal/scheduler"
 	"github.com/diagridio/go-etcd-cron/tests/framework/etcd"
@@ -278,6 +279,21 @@ func Test_DeliverablePrefixes(t *testing.T) {
 	})
 }
 
+func Test_WatchLeadership(t *testing.T) {
+	t.Parallel()
+
+	t.Run("returns change channel", func(t *testing.T) {
+		t.Parallel()
+
+		api := newAPI(t)
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		defer cancel()
+		ch, err := api.WatchLeadership(ctx)
+		assert.NotNil(t, ch)
+		assert.NoError(t, err)
+	})
+}
+
 func newAPI(t *testing.T) *api {
 	t.Helper()
 	api := newAPINotReady(t)
@@ -310,6 +326,14 @@ func newAPINotReady(t *testing.T) *api {
 		Collector: collector,
 	})
 
+	l := leadership.New(leadership.Options{
+		Log:            logr.Discard(),
+		Client:         client,
+		PartitionTotal: 1,
+		Key:            key,
+		ReplicaData:    nil,
+	})
+
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error)
 	t.Cleanup(func() {
@@ -330,5 +354,6 @@ func newAPINotReady(t *testing.T) *api {
 		Key:              key,
 		SchedulerBuilder: schedulerBuilder,
 		Queue:            queue,
+		Leadership:       l,
 	}).(*api)
 }

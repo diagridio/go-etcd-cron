@@ -1545,8 +1545,8 @@ func Test_LeadershipSubscribe(t *testing.T) {
 		_, l2err := l2.WaitForLeadership(ctx2)
 		require.NoError(t, l2err)
 
-		initialLeadershipData1, ch := l1.Subscribe(context.Background())
-		initialLeadershipData2, ch2 := l2.Subscribe(context.Background())
+		initialLeadershipData1, ch := l1.Subscribe(ctx1)
+		initialLeadershipData2, ch2 := l2.Subscribe(ctx2)
 
 		assert.Len(t, initialLeadershipData1, 2)
 		assert.Len(t, initialLeadershipData2, 2)

@@ -302,7 +302,11 @@ func (a *api) WatchLeadership(ctx context.Context) (chan []*anypb.Any, error) {
 		case <-ctx.Done():
 			return
 		case <-subscribeCh:
-			ch <- activeReplicaValues
+			select {
+			case ch <- activeReplicaValues:
+			case <-ctx.Done():
+				return
+			}
 		}
 	}()
 
