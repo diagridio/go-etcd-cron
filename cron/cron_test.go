@@ -148,3 +148,102 @@ func Test_Run(t *testing.T) {
 		}
 	})
 }
+
+func Test_WatchLeadership(t *testing.T) {
+	t.Parallel()
+
+	t.Run("WatchLeadership returns channel when ready", func(t *testing.T) {
+		t.Parallel()
+
+		replicaData, err := anypb.New(wrapperspb.Bytes([]byte("data")))
+		require.NoError(t, err)
+		client := etcd.EmbeddedBareClient(t)
+
+		cronI, err := New(Options{
+			Log:            logr.Discard(),
+			Client:         client,
+			Namespace:      "abc",
+			PartitionID:    0,
+			PartitionTotal: 1,
+			TriggerFn: func(context.Context, *api.TriggerRequest) *api.TriggerResponse {
+				return &api.TriggerResponse{Result: api.TriggerResponseResult_SUCCESS}
+			},
+			ReplicaData: replicaData,
+		})
+		require.NoError(t, err)
+		cron := cronI.(*cron)
+
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+		errCh := make(chan error)
+		t.Cleanup(func() {
+			cancel()
+			select {
+			case <-errCh:
+			case <-time.After(2 * time.Second):
+				t.Fatal("timed out waiting for error")
+			}
+		})
+		go func() {
+			errCh <- cronI.Run(ctx)
+		}()
+
+		// wait until ready
+		select {
+		case <-cron.readyCh:
+		case <-time.After(1 * time.Second):
+			t.Fatal("timed out waiting for cron to become ready")
+		}
+
+		leadershipCh, err := cron.WatchLeadership(ctx)
+		require.NoError(t, err)
+		require.NotNil(t, leadershipCh)
+	})
+
+	t.Run("WatchLeadership returns error if cron is closed", func(t *testing.T) {
+		t.Parallel()
+
+		replicaData, err := anypb.New(wrapperspb.Bytes([]byte("data")))
+		require.NoError(t, err)
+		client := etcd.EmbeddedBareClient(t)
+
+		cronI, err := New(Options{
+			Log:            logr.Discard(),
+			Client:         client,
+			Namespace:      "abc",
+			PartitionID:    0,
+			PartitionTotal: 1,
+			TriggerFn: func(context.Context, *api.TriggerRequest) *api.TriggerResponse {
+				return &api.TriggerResponse{Result: api.TriggerResponseResult_SUCCESS}
+			},
+			ReplicaData: replicaData,
+		})
+		require.NoError(t, err)
+		cron := cronI.(*cron)
+
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+		errCh := make(chan error)
+
+		go func() {
+			errCh <- cronI.Run(ctx)
+		}()
+
+		select {
+		case <-cron.readyCh:
+		case <-time.After(3 * time.Second):
+			t.Fatal("timed out waiting for cron to become ready")
+		}
+		// stop cron to force cron is closed
+		cancel()
+		select {
+		case <-errCh:
+		case <-time.After(2 * time.Second):
+			t.Fatal("timed out waiting for error")
+		}
+
+		leadershipCh, err := cron.WatchLeadership(ctx)
+		require.Error(t, err)
+		require.Nil(t, leadershipCh)
+	})
+}
