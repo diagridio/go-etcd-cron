@@ -16,7 +16,6 @@ import (
 
 	"github.com/dapr/kit/concurrency"
 	"github.com/dapr/kit/events/batcher"
-
 	"github.com/go-logr/logr"
 	clientv3 "go.etcd.io/etcd/client/v3"
 	"google.golang.org/protobuf/proto"
@@ -34,9 +33,6 @@ type Options struct {
 
 	// Client is the etcd client.
 	Client client.Interface
-
-	// PartitionTotal is the total number of partitions.
-	PartitionTotal uint32
 
 	// Key is the ETCD key generator.
 	Key *key.Key
@@ -56,7 +52,7 @@ type Leadership struct {
 	lock    sync.RWMutex
 	wg      sync.WaitGroup
 
-	partitionTotal  uint32
+	partitionTotal  atomic.Uint32
 	key             *key.Key
 	allReplicaDatas []*anypb.Any
 	replicaData     *anypb.Any
@@ -68,17 +64,19 @@ type Leadership struct {
 }
 
 func New(opts Options) *Leadership {
-	return &Leadership{
-		log:            opts.Log.WithName("leadership"),
-		batcher:        batcher.New[int, struct{}](0),
-		client:         opts.Client,
-		key:            opts.Key,
-		partitionTotal: opts.PartitionTotal,
-		replicaData:    opts.ReplicaData,
-		readyCh:        make(chan struct{}),
-		changeCh:       make(chan struct{}),
-		closeCh:        make(chan struct{}),
+	l := &Leadership{
+		log:             opts.Log.WithName("leadership"),
+		batcher:         batcher.New[int, struct{}](0),
+		client:          opts.Client,
+		key:             opts.Key,
+		allReplicaDatas: []*anypb.Any{},
+		replicaData:     opts.ReplicaData,
+		readyCh:         make(chan struct{}),
+		changeCh:        make(chan struct{}),
+		closeCh:         make(chan struct{}),
 	}
+	l.partitionTotal.Store(1)
+	return l
 }
 
 // Run runs the Leadership. Attempts to acquire the partition lease key and
@@ -191,7 +189,7 @@ func (l *Leadership) loop(ctx context.Context) error {
 				}
 			}
 
-			l.log.Info("All partition leadership keys match partition total, leadership is ready")
+			l.log.Info("All partition leadership keys match partition total and are in quorum, leadership is ready")
 			l.lock.Lock()
 			close(l.readyCh)
 			l.lock.Unlock()
@@ -222,6 +220,19 @@ func (l *Leadership) loop(ctx context.Context) error {
 
 			l.readyCh = make(chan struct{})
 			close(l.changeCh)
+
+			// TODO: cassie write tests for this
+			var leader stored.Leadership
+			for _, v := range l.allReplicaDatas {
+				if err = proto.Unmarshal(v.GetValue(), &leader); err != nil {
+					l.log.Error(err, "failed to unmarshall leadership all replica datas. Incorrect format. Skipping...")
+				}
+				if leader.ReplicaData == l.replicaData {
+					// remove this partition since re-looping
+					l.allReplicaDatas = l.allReplicaDatas[:len(l.allReplicaDatas)-1]
+				}
+			}
+
 			l.batcher.Batch(0, struct{}{})
 			l.changeCh = make(chan struct{})
 
@@ -230,29 +241,40 @@ func (l *Leadership) loop(ctx context.Context) error {
 	).Run(ctx)
 }
 
-// checkLeadershipKeys keys will check if all leadership keys are the same as
-// the partition total.
+// checkLeadershipKeys verifies that all leadership keys are consistent with the partition total. Once consistent,
+// it updates the allReplicaDatas value to contain all active instances.
 func (l *Leadership) checkLeadershipKeys(ctx context.Context) (bool, error) {
 	l.lock.Lock()
 	defer l.lock.Unlock()
 
 	getKeyCtx, getKeyCancel := context.WithTimeout(ctx, 5*time.Second)
 	defer getKeyCancel()
+
+	// check individual partition
 	resp, err := l.client.Get(getKeyCtx, l.key.LeadershipKey())
 	if err != nil {
 		return false, err
 	}
+
 	if resp.Kvs == nil {
 		return false, fmt.Errorf("failed to check leaderhship keys. keys are nil")
 	}
 
-	var leader stored.Leadership
-	if err = proto.Unmarshal(resp.Kvs[0].Value, &leader); err != nil {
+	var storedLeaderTotal stored.Leadership
+	if err = proto.Unmarshal(resp.Kvs[0].Value, &storedLeaderTotal); err != nil {
 		return false, fmt.Errorf("failed to unmarshal leadership data: %w", err)
 	}
 
-	if resp.Count == 0 || leader.Total != l.partitionTotal || !proto.Equal(leader.ReplicaData, l.replicaData) {
+	if resp.Count == 0 {
 		return false, errors.New("lost partition leadership key")
+	}
+
+	if storedLeaderTotal.Total != l.partitionTotal.Load() {
+		return false, errors.New("stored leader total is out of sync")
+	}
+
+	if !proto.Equal(storedLeaderTotal.ReplicaData, l.replicaData) {
+		return false, errors.New("leadership data isn't consistent")
 	}
 
 	getNSCtx, getNSCancel := context.WithTimeout(ctx, 5*time.Second)
@@ -266,28 +288,108 @@ func (l *Leadership) checkLeadershipKeys(ctx context.Context) (bool, error) {
 		return false, errors.New("leadership namespace has no keys")
 	}
 
-	l.allReplicaDatas = make([]*anypb.Any, 0, resp.Count)
+	if int(storedLeaderTotal.Total) != len(resp.Kvs) {
+		return false, errors.New("individual leadership partition total doesn't match total stored keys count")
+	}
+
+	if uint32(len(resp.Kvs)) != l.partitionTotal.Load() {
+		return false, errors.New("leadership has incorrect partition total and is not in quorum")
+	}
+
 	// TODO: @joshvanl:
 	// We can be more aggressive starting earlier here by only returning an error
 	// if there is a different partition total which _also_ overlaps with this
 	// partition.
-	for _, kv := range resp.Kvs {
-		var leader stored.Leadership
 
-		if err = proto.Unmarshal(kv.Value, &leader); err != nil {
+	for _, kv := range resp.Kvs {
+		var otherLeader stored.Leadership
+		if err = proto.Unmarshal(kv.Value, &otherLeader); err != nil {
 			return false, fmt.Errorf("failed to unmarshal leadership data: %w", err)
 		}
 
-		if leader.Total != l.partitionTotal {
-			ptotal := strconv.FormatUint(uint64(leader.Total), 10)
+		if otherLeader.Total != l.partitionTotal.Load() {
+			ptotal := strconv.FormatUint(uint64(otherLeader.Total), 10)
 			l.log.WithValues("key", string(kv.Key), "value", ptotal).Info(
 				"leadership key does not match partition total, waiting for leadership to be dropped",
 			)
 			return false, nil
 		}
-		l.allReplicaDatas = append(l.allReplicaDatas, leader.ReplicaData)
+		if storedLeaderTotal.Total != otherLeader.Total {
+			return false, fmt.Errorf("leadership total does not match other partitions") // nil or err????
+		}
+
+		l.allReplicaDatas = append(l.allReplicaDatas, otherLeader.ReplicaData)
 	}
 
+	return true, nil
+}
+
+// watchForLeadershipConsistency monitors the leadership keys for consistency and triggers a leadership refresh if
+// discrepancies are detected. Note: this could be a leadership data (& total) change, count of keys change, or if
+// the partition leadership process goes down and is not found
+func (l *Leadership) watchForLeadershipConsistency(ctx context.Context) (bool, error) {
+	l.lock.Lock()
+	defer l.lock.Unlock()
+
+	getKeyCtx, getKeyCancel := context.WithTimeout(ctx, 5*time.Second)
+	defer getKeyCancel()
+
+	// ensure the individual partition
+	resp, err := l.client.Get(getKeyCtx, l.key.LeadershipKey())
+	if err != nil {
+		return false, err
+	}
+	if resp.Kvs == nil {
+		return false, fmt.Errorf("failed to watch leaderhship keys for consistency. keys are nil")
+	}
+
+	var leader stored.Leadership
+	if err = proto.Unmarshal(resp.Kvs[0].Value, &leader); err != nil {
+		return false, fmt.Errorf("failed to unmarshal leadership data: %w", err)
+	}
+
+	if resp.Count == 0 {
+		return false, errors.New("lost partition leadership key while watching for consistency")
+	}
+
+	if leader.Total != l.partitionTotal.Load() {
+		return false, errors.New("leadership partition totals aren't consistent while watching for consistency")
+	}
+
+	if !proto.Equal(leader.ReplicaData, l.replicaData) {
+		return false, errors.New("leadership data isn't consistent while watching for consistency")
+	}
+
+	getNSCtx, getNSCancel := context.WithTimeout(ctx, 5*time.Second)
+	defer getNSCancel()
+	resp, err = l.client.Get(getNSCtx, l.key.LeadershipNamespace(), clientv3.WithPrefix())
+	if resp == nil || len(resp.Kvs) == 0 {
+		return false, errors.New("no leadership keys in namespace")
+	}
+
+	if resp.Count == 0 {
+		return false, errors.New("leadership was lost")
+	}
+
+	if uint32(len(resp.Kvs)) != l.partitionTotal.Load() {
+		return false, errors.New("leadership has incorrect partition total and is not in quorum")
+	}
+
+	if leader.Total != uint32(len(resp.Kvs)) {
+		return false, errors.New("leadership has incorrect stored partition total and is not in quorum")
+
+	}
+
+	for _, kv := range resp.Kvs {
+		var otherLeader stored.Leadership
+
+		if err = proto.Unmarshal(kv.Value, &otherLeader); err != nil {
+			return false, fmt.Errorf("failed to unmarshal leadership data: %w", err)
+		}
+		if leader.Total != otherLeader.Total {
+			return false, errors.New("leadership doesn't match quorum partition total")
+		}
+	}
 	return true, nil
 }
 
@@ -295,10 +397,25 @@ func (l *Leadership) checkLeadershipKeys(ctx context.Context) (bool, error) {
 // it does not exist.
 // If it does exist, and we successfully wrote the leadership key, it will return true.
 func (l *Leadership) attemptPartitionLeadership(ctx context.Context, leaseID clientv3.LeaseID) (bool, error) {
+	// check if a leader is already running, if so, up the partition total to a new total
+	getNSCtx, getNSCancel := context.WithTimeout(ctx, 5*time.Second)
+	defer getNSCancel()
+	getResp, err := l.client.Get(getNSCtx, l.key.LeadershipNamespace(), clientv3.WithPrefix())
+	if err != nil {
+		return false, err
+	}
+
+	// this is not the first instance to spin up, so
+	// put in the total count of records +1 for the new partition total count
+	if uint32(len(getResp.Kvs)) != l.partitionTotal.Load() {
+		l.partitionTotal.Store(uint32(len(getResp.Kvs) + 1))
+	}
+
 	leaderCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
+
 	leaderBytes, err := proto.Marshal(&stored.Leadership{
-		Total:       l.partitionTotal,
+		Total:       l.partitionTotal.Load(),
 		ReplicaData: l.replicaData,
 	})
 	if err != nil {
@@ -338,7 +455,6 @@ func (l *Leadership) WaitForLeadership(ctx context.Context) (context.Context, er
 		return nil, ctx.Err()
 	case <-readyCh:
 	}
-
 	leaderCtx, cancel := context.WithCancel(ctx)
 
 	l.wg.Add(1)

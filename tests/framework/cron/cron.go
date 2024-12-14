@@ -26,6 +26,7 @@ type Cron struct {
 	api.Interface
 	KV     clientv3.KV
 	Calls  *atomic.Int64
+	ctx    context.Context
 	cancel context.CancelFunc
 }
 
@@ -62,6 +63,7 @@ func (c *Cron) run(t *testing.T) *Cron {
 
 	errCh := make(chan error)
 	ctx, cancel := context.WithCancel(context.Background())
+	c.ctx = ctx
 	c.cancel = cancel
 
 	t.Cleanup(func() {

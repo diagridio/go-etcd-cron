@@ -7,10 +7,12 @@ package etcd
 
 import (
 	"net/url"
+	"strconv"
 	"testing"
 	"time"
 
 	"github.com/go-logr/logr"
+	"github.com/phayes/freeport"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	clientv3 "go.etcd.io/etcd/client/v3"
@@ -33,10 +35,17 @@ func EmbeddedBareClient(t *testing.T) *clientv3.Client {
 	cfg := embed.NewConfig()
 	cfg.LogLevel = "error"
 	cfg.Dir = t.TempDir()
-	lurl, err := url.Parse("http://127.0.0.1:0")
+	peerPort, err := freeport.GetFreePort()
+	clientPort, err := freeport.GetFreePort()
+
+	lpurl, err := url.Parse("http://127.0.0.1:" + strconv.Itoa(peerPort))
 	require.NoError(t, err)
-	cfg.ListenPeerUrls = []url.URL{*lurl}
-	cfg.ListenClientUrls = []url.URL{*lurl}
+	lcurl, err := url.Parse("http://127.0.0.1:" + strconv.Itoa(clientPort))
+	require.NoError(t, err)
+
+	require.NoError(t, err)
+	cfg.ListenPeerUrls = []url.URL{*lpurl}
+	cfg.ListenClientUrls = []url.URL{*lcurl}
 
 	etcd, err := embed.StartEtcd(cfg)
 	require.NoError(t, err)
