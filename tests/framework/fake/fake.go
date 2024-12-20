@@ -13,12 +13,13 @@ import (
 
 // Fake is a fake cron instance used for testing.
 type Fake struct {
-	runFn  func(ctx context.Context) error
-	addFn  func(ctx context.Context, name string, job *api.Job) error
-	getFn  func(ctx context.Context, name string) (*api.Job, error)
-	delFn  func(ctx context.Context, name string) error
-	delPFn func(ctx context.Context, prefixes ...string) error
-	listFn func(ctx context.Context, prefix string) (*api.ListResponse, error)
+	runFn       func(ctx context.Context) error
+	addFn       func(ctx context.Context, name string, job *api.Job) error
+	getFn       func(ctx context.Context, name string) (*api.Job, error)
+	delFn       func(ctx context.Context, name string) error
+	delPFn      func(ctx context.Context, prefixes ...string) error
+	listFn      func(ctx context.Context, prefix string) (*api.ListResponse, error)
+	isElectedFn func() bool
 
 	deliverablePrefixesFn func(ctx context.Context, prefixes ...string) (context.CancelFunc, error)
 }
@@ -46,6 +47,9 @@ func New() *Fake {
 		},
 		deliverablePrefixesFn: func(context.Context, ...string) (context.CancelFunc, error) {
 			return func() {}, nil
+		},
+		isElectedFn: func() bool {
+			return false
 		},
 	}
 }
@@ -85,6 +89,11 @@ func (f *Fake) WithDeliverablePrefixes(fn func(context.Context, ...string) (cont
 	return f
 }
 
+func (f *Fake) WithIsElected(fn func() bool) *Fake {
+	f.isElectedFn = fn
+	return f
+}
+
 func (f *Fake) Run(ctx context.Context) error {
 	return f.runFn(ctx)
 }
@@ -111,4 +120,8 @@ func (f *Fake) List(ctx context.Context, prefix string) (*api.ListResponse, erro
 
 func (f *Fake) DeliverablePrefixes(ctx context.Context, prefixes ...string) (context.CancelFunc, error) {
 	return f.deliverablePrefixesFn(ctx, prefixes...)
+}
+
+func (f *Fake) IsElected() bool {
+	return f.isElectedFn()
 }

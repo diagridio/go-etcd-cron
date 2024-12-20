@@ -55,8 +55,8 @@ func Test_schedule(t *testing.T) {
 		assert.Len(t, resp.Kvs, 2)
 
 		cron := integration.New(t, integration.Options{
-			PartitionTotal: 1,
-			Client:         client,
+			Instances: 1,
+			Client:    client,
 		})
 
 		assert.EventuallyWithT(t, func(c *assert.CollectT) {
@@ -121,8 +121,8 @@ func Test_schedule(t *testing.T) {
 		require.NoError(t, err)
 
 		cron := integration.New(t, integration.Options{
-			PartitionTotal: 1,
-			Client:         client,
+			Instances: 1,
+			Client:    client,
 		})
 
 		assert.EventuallyWithT(t, func(c *assert.CollectT) {
@@ -173,8 +173,8 @@ func Test_schedule(t *testing.T) {
 		require.NoError(t, err)
 
 		cron := integration.New(t, integration.Options{
-			PartitionTotal: 1,
-			Client:         client,
+			Instances: 1,
+			Client:    client,
 		})
 
 		assert.EventuallyWithT(t, func(c *assert.CollectT) {

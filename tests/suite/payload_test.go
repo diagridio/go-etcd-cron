@@ -24,8 +24,8 @@ func Test_payload(t *testing.T) {
 
 	gotCh := make(chan *api.TriggerRequest, 1)
 	cron := integration.New(t, integration.Options{
-		PartitionTotal: 1,
-		GotCh:          gotCh,
+		Instances: 1,
+		GotCh:     gotCh,
 	})
 
 	payload, err := anypb.New(wrapperspb.String("hello"))

@@ -137,8 +137,7 @@ func (q *Queue) Run(ctx context.Context) error {
 	defer q.log.Info("shutting down queue")
 
 	<-ctx.Done()
-	q.queue.Close()
-	return nil
+	return q.queue.Close()
 }
 
 // HandleInformerEvent handles an etcd informed event for the cron queue.

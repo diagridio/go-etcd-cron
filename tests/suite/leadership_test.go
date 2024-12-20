@@ -7,66 +7,222 @@ package suite
 
 import (
 	"context"
-	"fmt"
+	"strconv"
+	"sync"
 	"testing"
 	"time"
 
+	"github.com/dapr/kit/ptr"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	clientv3 "go.etcd.io/etcd/client/v3"
-	"google.golang.org/protobuf/proto"
+	"google.golang.org/protobuf/types/known/anypb"
 
-	"github.com/diagridio/go-etcd-cron/internal/api/stored"
-	"github.com/diagridio/go-etcd-cron/tests/framework/cron"
+	"github.com/diagridio/go-etcd-cron/api"
+	"github.com/diagridio/go-etcd-cron/cron"
+	"github.com/diagridio/go-etcd-cron/tests/framework/etcd"
 )
 
-func Test_single_instance_leadership(t *testing.T) {
+func Test_leadership_scaleup(t *testing.T) {
 	t.Parallel()
 
-	cr := cron.SinglePartitionRun(t)
-	defer cr.Stop(t)
+	client := etcd.EmbeddedBareClient(t)
 
-	leaderBytes, err := proto.Marshal(&stored.Leadership{
-		Total: 1,
+	var lock sync.Mutex
+	called := make(map[string]int)
+	instanceCalled := make(map[int]bool)
+	ch := make(chan []*anypb.Any)
+
+	opts := cron.Options{Client: client}
+
+	crs := make([]api.Interface, 5)
+	var err error
+	for i := range 5 {
+		if i == 0 {
+			opts.WatchLeadership = ch
+		}
+
+		opts.TriggerFn = func(_ context.Context, req *api.TriggerRequest) *api.TriggerResponse {
+			lock.Lock()
+			instanceCalled[i] = true
+			called[req.GetName()]++
+			lock.Unlock()
+			return &api.TriggerResponse{Result: api.TriggerResponseResult_SUCCESS}
+		}
+		opts.ID = strconv.Itoa(i)
+		crs[i], err = cron.New(opts)
+		require.NoError(t, err)
+		opts.WatchLeadership = nil
+	}
+
+	errCh := make(chan error)
+	ctx1, cancel1 := context.WithCancel(context.Background())
+	for i := range 3 {
+		go func() { errCh <- crs[i].Run(ctx1) }()
+	}
+
+	t.Cleanup(func() {
+		cancel1()
+		for range 3 {
+			require.NoError(t, <-errCh)
+		}
 	})
-	require.NoError(t, err)
 
-	_, err = cr.KV.Do(context.Background(), clientv3.OpPut("abc/leadership/0", string(leaderBytes)))
-	require.NoError(t, err, "Failed to write leadership key with one instance")
+	var d []*anypb.Any
+	for len(d) != 3 {
+		select {
+		case <-time.After(time.Second * 5):
+			t.Fatal("timeout waiting for leadership quroum")
+		case d = <-ch:
+		}
+	}
+
+	for i := range 100 {
+		require.NoError(t, crs[0].Add(ctx1, strconv.Itoa(i), &api.Job{
+			Schedule: ptr.Of("@every 1s"),
+			Repeats:  ptr.Of(uint32(5)),
+			DueTime:  ptr.Of("0s"),
+		}))
+	}
 
 	assert.EventuallyWithT(t, func(c *assert.CollectT) {
-		resp, err := cr.KV.Do(context.Background(), clientv3.OpGet("abc/leadership/0"))
-		require.NoError(t, err)
-		require.NotNil(t, resp)
-	}, 4*time.Second, 10*time.Millisecond)
+		lock.Lock()
+		assert.Len(c, called, 100)
+		lock.Unlock()
+	}, time.Second*5, time.Millisecond*10)
+
+	lock.Lock()
+	assert.Len(t, instanceCalled, 3)
+	lock.Unlock()
+
+	ctx2, cancel2 := context.WithCancel(context.Background())
+	for i := range 2 {
+		go func() { errCh <- crs[i+3].Run(ctx2) }()
+	}
+
+	t.Cleanup(func() {
+		cancel2()
+		for range 2 {
+			require.NoError(t, <-errCh)
+		}
+	})
+
+	for len(d) != 5 {
+		select {
+		case <-time.After(time.Second * 5):
+			t.Fatal("timeout waiting for leadership quroum")
+		case d = <-ch:
+		}
+	}
+
+	assert.EventuallyWithT(t, func(c *assert.CollectT) {
+		lock.Lock()
+		for _, k := range called {
+			assert.Equal(c, 5, k)
+		}
+		lock.Unlock()
+	}, time.Second*10, time.Millisecond*10)
+
+	assert.Len(t, instanceCalled, 5)
 }
 
-func Test_three_instances_leadership(t *testing.T) {
+func Test_leadership_scaledown(t *testing.T) {
 	t.Parallel()
 
-	cluster := cron.TripplePartitionRun(t)
-	defer func() {
-		for _, cr := range cluster.Crons {
-			cr.Stop(t)
+	client := etcd.EmbeddedBareClient(t)
+
+	var lock sync.Mutex
+	called := make(map[string]int)
+	instanceCalled := make(map[int]bool)
+	ch := make(chan []*anypb.Any)
+
+	opts := cron.Options{Client: client}
+
+	crs := make([]api.Interface, 5)
+	var err error
+	for i := range 5 {
+		if i == 0 {
+			opts.WatchLeadership = ch
 		}
-	}()
 
-	leaderBytes, err := proto.Marshal(&stored.Leadership{
-		Total: 3,
+		opts.TriggerFn = func(_ context.Context, req *api.TriggerRequest) *api.TriggerResponse {
+			lock.Lock()
+			instanceCalled[i] = true
+			called[req.GetName()]++
+			lock.Unlock()
+			return &api.TriggerResponse{Result: api.TriggerResponseResult_SUCCESS}
+		}
+		opts.ID = strconv.Itoa(i)
+		crs[i], err = cron.New(opts)
+		require.NoError(t, err)
+		opts.WatchLeadership = nil
+	}
+
+	errCh := make(chan error)
+	ctx1, cancel1 := context.WithCancel(context.Background())
+	for i := range 3 {
+		go func() { errCh <- crs[i].Run(ctx1) }()
+	}
+
+	ctx2, cancel2 := context.WithCancel(context.Background())
+	for i := range 2 {
+		go func() { errCh <- crs[i+3].Run(ctx2) }()
+	}
+
+	t.Cleanup(func() {
+		cancel1()
+		cancel2()
+		for range 5 {
+			require.NoError(t, <-errCh)
+		}
 	})
-	require.NoError(t, err)
 
-	for i, cr := range cluster.Crons {
-		_, err := cr.KV.Do(context.Background(), clientv3.OpPut(fmt.Sprintf("abc/leadership/%d", i), string(leaderBytes)))
-		require.NoError(t, err, "Failed to write leadership key for instance %d", i)
+	var d []*anypb.Any
+	for len(d) != 5 {
+		select {
+		case <-time.After(time.Second * 5):
+			t.Fatal("timeout waiting for leadership quroum")
+		case d = <-ch:
+		}
 	}
 
-	// Ensure leadership key is active
-	for i, cr := range cluster.Crons {
-		assert.EventuallyWithT(t, func(c *assert.CollectT) {
-			resp, err := cr.KV.Do(context.Background(), clientv3.OpGet(fmt.Sprintf("abc/leadership/%d", i)))
-			require.NoError(t, err, "Failed to retrieve leadership key for instance %d", i)
-			require.NotNil(t, resp, "Leadership key for instance %d should exist", i)
-		}, 4*time.Second, 10*time.Millisecond)
+	for i := range 100 {
+		require.NoError(t, crs[0].Add(ctx1, strconv.Itoa(i), &api.Job{
+			Schedule: ptr.Of("@every 1s"),
+			Repeats:  ptr.Of(uint32(5)),
+			DueTime:  ptr.Of("0s"),
+		}))
 	}
+
+	assert.EventuallyWithT(t, func(c *assert.CollectT) {
+		lock.Lock()
+		assert.Len(c, called, 100)
+		lock.Unlock()
+	}, time.Second*5, time.Millisecond*10)
+
+	lock.Lock()
+	assert.Len(t, instanceCalled, 5)
+	lock.Unlock()
+
+	cancel2()
+	for len(d) != 3 {
+		select {
+		case <-time.After(time.Second * 5):
+			t.Fatal("timeout waiting for leadership quroum")
+		case d = <-ch:
+		}
+	}
+
+	lock.Lock()
+	clear(instanceCalled)
+	lock.Unlock()
+
+	assert.EventuallyWithT(t, func(c *assert.CollectT) {
+		lock.Lock()
+		for _, k := range called {
+			assert.Equal(c, 5, k)
+		}
+		lock.Unlock()
+	}, time.Second*10, time.Millisecond*10)
+
+	assert.Len(t, instanceCalled, 3)
 }

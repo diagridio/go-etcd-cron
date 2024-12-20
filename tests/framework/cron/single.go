@@ -13,7 +13,7 @@ import (
 
 func SinglePartition(t *testing.T) *Cron {
 	t.Helper()
-	return newCron(t, etcd.EmbeddedBareClient(t), 1, 0)
+	return newCron(t, etcd.EmbeddedBareClient(t), "0")
 }
 
 func SinglePartitionRun(t *testing.T) *Cron {

@@ -297,7 +297,11 @@ func newAPINotReady(t *testing.T) *api {
 	})
 	require.NoError(t, err)
 
-	key := key.New(key.Options{})
+	key, err := key.New(key.Options{
+		Namespace: "test",
+		ID:        "test",
+	})
+	require.NoError(t, err)
 	schedulerBuilder := scheduler.NewBuilder()
 	queue := queue.New(queue.Options{
 		Log:              logr.Discard(),

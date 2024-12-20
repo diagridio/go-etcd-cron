@@ -32,11 +32,13 @@ func Test_partition(t *testing.T) {
 		require.NoError(t, cron.AllCrons()[i].Add(cron.Context(), "test-"+strconv.Itoa(i), job))
 	}
 
-	assert.Eventually(t, func() bool {
-		return cron.Triggered() == 100
-	}, 5*time.Second, 1*time.Second)
+	assert.EventuallyWithT(t, func(c *assert.CollectT) {
+		assert.Equal(c, 100, cron.Triggered())
+	}, time.Second*10, time.Millisecond*10)
 
-	resp, err := cron.Client().Get(context.Background(), "abc/jobs", clientv3.WithPrefix())
-	require.NoError(t, err)
-	assert.Empty(t, resp.Kvs)
+	assert.EventuallyWithT(t, func(c *assert.CollectT) {
+		resp, err := cron.Client().Get(context.Background(), "abc/jobs", clientv3.WithPrefix())
+		require.NoError(t, err)
+		assert.Empty(c, resp.Kvs)
+	}, time.Second*3, time.Millisecond*10)
 }

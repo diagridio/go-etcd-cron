@@ -18,7 +18,7 @@ message Job {
   // partion_id is an identifier for the job, used for distinguishing jobs with
   // the same name and assigning the job to a partition.
   // Doesn't need to be globally unique.
-  uint32 partition_id = 1;
+  uint64 partition_id = 1;
 
   // begin is the beginning time of the job.
   oneof begin {

@@ -92,10 +92,16 @@ func newQueue(t *testing.T, triggerFn api.TriggerFunction) *Queue {
 	collector, err := garbage.New(garbage.Options{Client: client})
 	require.NoError(t, err)
 
+	key, err := key.New(key.Options{
+		Namespace: "abc",
+		ID:        "0",
+	})
+	require.NoError(t, err)
+
 	queue := New(Options{
 		Log:              logr.Discard(),
 		Client:           client,
-		Key:              key.New(key.Options{Namespace: "abc"}),
+		Key:              key,
 		SchedulerBuilder: scheduler.NewBuilder(),
 		Collector:        collector,
 		TriggerFn:        triggerFn,

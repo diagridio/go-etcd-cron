@@ -9,10 +9,14 @@ package partitioner
 // the index of this partition in the total number of partitions (modulo
 // total).
 type modulo struct {
-	id    uint32
-	total uint32
+	id    uint64
+	total uint64
 }
 
-func (m *modulo) IsJobManaged(partitionID uint32) bool {
+func (m *modulo) IsJobManaged(partitionID uint64) bool {
 	return partitionID%m.total == m.id
+}
+
+func (m *modulo) Total() uint64 {
+	return m.total
 }

@@ -96,7 +96,7 @@ func (c *collector) Run(ctx context.Context) error {
 	for {
 		select {
 		case <-ctx.Done():
-			c.log.Info("Shutting down garbage collector")
+			c.log.Info("shutting down garbage collector")
 			return c.collect()
 
 		case <-c.soonerCh:
@@ -140,11 +140,11 @@ func (c *collector) collect() error {
 
 	if len(c.keys) == 0 {
 		//nolint:gomnd
-		c.log.V(3).Info("No keys to collect, skipping collection")
+		c.log.V(3).Info("no keys to collect, skipping collection")
 		return nil
 	}
 
-	c.log.Info("Collecting garbage", "keys", len(c.keys))
+	c.log.Info("collecting garbage", "keys", len(c.keys))
 
 	keyList := make([]string, 0, len(c.keys))
 	for key := range c.keys {
@@ -155,7 +155,7 @@ func (c *collector) collect() error {
 		return fmt.Errorf("failed to delete garbage counters (%d): %w", len(keyList), err)
 	}
 
-	c.log.Info("Garbage collection complete", "keys", len(c.keys))
+	c.log.Info("garbage collection complete", "keys", len(c.keys))
 	c.keys = make(map[string]struct{})
 
 	return nil

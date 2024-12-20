@@ -105,7 +105,7 @@ func (b *Builder) Parse(job *api.Job) (*stored.Job, error) {
 	storedJob := &stored.Job{
 		// PartionId has no need to be crypto random.
 		//nolint:gosec
-		PartitionId: rand.Uint32(),
+		PartitionId: rand.Uint64(),
 		Job:         job,
 	}
 

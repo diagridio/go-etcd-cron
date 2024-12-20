@@ -8,7 +8,6 @@ package cron
 import (
 	"context"
 	"errors"
-	"fmt"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -27,7 +26,7 @@ import (
 	"github.com/diagridio/go-etcd-cron/internal/engine"
 	"github.com/diagridio/go-etcd-cron/internal/key"
 	"github.com/diagridio/go-etcd-cron/internal/leadership"
-	"github.com/diagridio/go-etcd-cron/internal/partitioner"
+	"github.com/diagridio/go-etcd-cron/internal/leadership/elector"
 )
 
 // Options are the options for creating a new cron instance.
@@ -41,12 +40,10 @@ type Options struct {
 	// Namespace is the etcd namespace to use for storing cron entries.
 	Namespace string
 
-	// PartitionID is the partition ID to use for storing cron entries.
-	PartitionID uint32
-
-	// PartitionTotal is the total number of partitions to use for storing cron
-	// entries.
-	PartitionTotal uint32
+	// ID is the unique ID which is associated with this replica. Duplicate IDs
+	// will cause only one random replica to be active, with the rest being
+	// dormant.
+	ID string
 
 	// TriggerFn is the function to call when a cron job is triggered.
 	TriggerFn api.TriggerFunction
@@ -63,24 +60,33 @@ type Options struct {
 	CounterGarbageCollectionInterval *time.Duration
 
 	// ReplicaData is custom data associated with the replica, for example,
-	// host + port for the active replica. This data will be written to the leadership keyspace, with the latest cluster values being returned from `WatchLeadership`. Useful for consumer coordination.
+	// host + port for the active replica. This data will be written to the
+	// leadership keyspace, with the latest cluster values being returned from
+	// `WatchLeadership`. Useful for consumer coordination.
 	ReplicaData *anypb.Any
+
+	// WatchLeadership is an optional channel that will be written with all
+	// leader replica data every time there is leadership quorum. Useful for
+	// consumer coordination. Failing to read from this channel will cause the
+	// replica to fail to start the cron engine.
+	WatchLeadership chan<- []*anypb.Any
 }
 
 // cron is the implementation of the cron interface.
 type cron struct {
 	log logr.Logger
-	wg  sync.WaitGroup
 
 	key         *key.Key
-	leadership  *leadership.Leadership
 	client      client.Interface
-	part        partitioner.Interface
 	triggerFn   api.TriggerFunction
 	gcgInterval *time.Duration
+	replicaData *anypb.Any
+
+	engine    atomic.Pointer[engine.Engine]
+	elected   atomic.Bool
+	wleaderCh chan<- []*anypb.Any
 
 	lock    sync.RWMutex
-	engine  atomic.Pointer[engine.Engine]
 	running atomic.Bool
 	readyCh chan struct{}
 	closeCh chan struct{}
@@ -96,6 +102,14 @@ func New(opts Options) (api.Interface, error) {
 		return nil, errors.New("client is required")
 	}
 
+	key, err := key.New(key.Options{
+		Namespace: opts.Namespace,
+		ID:        opts.ID,
+	})
+	if err != nil {
+		return nil, err
+	}
+
 	log := opts.Log
 	if log.GetSink() == nil {
 		sink, err := logutil.CreateDefaultZapLogger(zap.InfoLevel)
@@ -105,41 +119,21 @@ func New(opts Options) (api.Interface, error) {
 		log = zapr.NewLogger(sink)
 		log = log.WithName("diagrid-cron")
 	}
-
-	part, err := partitioner.New(partitioner.Options{
-		ID:    opts.PartitionID,
-		Total: opts.PartitionTotal,
-	})
-	if err != nil {
-		return nil, fmt.Errorf("failed to create partitioner: %w", err)
-	}
+	log = log.WithValues("id", opts.ID)
 
 	client := client.New(client.Options{
 		Log:    opts.Log,
 		Client: opts.Client,
 	})
 
-	key := key.New(key.Options{
-		Namespace:   opts.Namespace,
-		PartitionID: opts.PartitionID,
-	})
-
-	leadership := leadership.New(leadership.Options{
-		Log:            log,
-		Client:         client,
-		PartitionTotal: opts.PartitionTotal,
-		Key:            key,
-	})
-
 	return &cron{
 		log:         log,
-		wg:          sync.WaitGroup{},
 		key:         key,
+		replicaData: opts.ReplicaData,
 		client:      client,
-		part:        part,
 		triggerFn:   opts.TriggerFn,
 		gcgInterval: opts.CounterGarbageCollectionInterval,
-		leadership:  leadership,
+		wleaderCh:   opts.WatchLeadership,
 		readyCh:     make(chan struct{}),
 		closeCh:     make(chan struct{}),
 	}, nil
@@ -152,47 +146,45 @@ func (c *cron) Run(ctx context.Context) error {
 	}
 
 	defer close(c.closeCh)
+	defer c.log.Info("cron instance shutdown")
+
+	leadership := leadership.New(leadership.Options{
+		Log:         c.log,
+		Client:      c.client,
+		Key:         c.key,
+		ReplicaData: c.replicaData,
+	})
 
 	return concurrency.NewRunnerManager(
-		c.leadership.Run,
+		leadership.Run,
 		func(ctx context.Context) error {
+			ectx, elected, err := leadership.Elect(ctx)
+			if err != nil {
+				return err
+			}
+
+			if err := c.runEngine(ectx, elected); err != nil {
+				return err
+			}
+
+			c.log.Info("engine restarting due to leadership rebalance")
+
 			for {
-				engine, err := engine.New(engine.Options{
-					Log:         c.log,
-					Key:         c.key,
-					Partitioner: c.part,
-					Client:      c.client,
-					TriggerFn:   c.triggerFn,
-
-					CounterGarbageCollectionInterval: c.gcgInterval,
-				})
-				if err != nil {
-					return err
-				}
-
-				c.engine.Store(engine)
-
-				leadershipCtx, err := c.leadership.WaitForLeadership(ctx)
-				if err != nil {
-					return err
-				}
-
-				c.lock.Lock()
-				close(c.readyCh)
-				c.lock.Unlock()
-
-				err = engine.Run(leadershipCtx)
-
-				c.lock.Lock()
-				c.readyCh = make(chan struct{})
-				c.lock.Unlock()
-
+				ectx, elected, err := leadership.Reelect(ctx)
 				if ctx.Err() != nil {
-					c.log.Info("cron shutdown gracefully")
+					c.log.Error(err, "cron instance shutting down during leadership re-election")
+					return ctx.Err()
+				}
+
+				if err != nil {
 					return err
 				}
 
-				c.log.Info("Restarting engine due to leadership change")
+				c.log.Info("starting engine after re-election")
+
+				if err := c.runEngine(ectx, elected); err != nil {
+					return err
+				}
 			}
 		},
 	).Run(ctx)
@@ -258,6 +250,12 @@ func (c *cron) DeliverablePrefixes(ctx context.Context, prefixes ...string) (con
 	return api.DeliverablePrefixes(ctx, prefixes...)
 }
 
+// IsElected returns true if cron is currently elected for leadership of its
+// partition.
+func (c *cron) IsElected() bool {
+	return c.elected.Load()
+}
+
 func (c *cron) waitAPIReady(ctx context.Context) (internalapi.Interface, error) {
 	c.lock.Lock()
 	readyCh := c.readyCh
@@ -271,4 +269,50 @@ func (c *cron) waitAPIReady(ctx context.Context) (internalapi.Interface, error) 
 	case <-ctx.Done():
 		return nil, ctx.Err()
 	}
+}
+
+// runEngine runs the cron engine with the given elected leadership.
+func (c *cron) runEngine(ctx context.Context, elected *elector.Elected) error {
+	c.elected.Store(true)
+
+	engine, err := engine.New(engine.Options{
+		Log:         c.log,
+		Key:         c.key,
+		Partitioner: elected.Partitioner,
+		Client:      c.client,
+		TriggerFn:   c.triggerFn,
+
+		CounterGarbageCollectionInterval: c.gcgInterval,
+	})
+	if err != nil {
+		return err
+	}
+
+	c.engine.Store(engine)
+	c.lock.Lock()
+	close(c.readyCh)
+	c.lock.Unlock()
+
+	if c.wleaderCh != nil {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case c.wleaderCh <- elected.LeadershipData:
+		}
+	}
+
+	err = engine.Run(ctx)
+	c.elected.Store(false)
+
+	c.lock.Lock()
+	c.readyCh = make(chan struct{})
+	c.lock.Unlock()
+
+	if err != nil || ctx.Err() != nil {
+		return err
+	}
+
+	c.log.Info("engine restarting due to leadership rebalance")
+
+	return nil
 }

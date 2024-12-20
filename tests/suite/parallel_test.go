@@ -24,7 +24,7 @@ func Test_parallel(t *testing.T) {
 
 	for _, test := range []struct {
 		name  string
-		total uint32
+		total uint64
 	}{
 		{"1 queue", 1},
 		{"multi queue", 50},
@@ -37,7 +37,7 @@ func Test_parallel(t *testing.T) {
 			var waiting atomic.Int32
 			var done atomic.Int32
 			cron := integration.New(t, integration.Options{
-				PartitionTotal: total,
+				Instances: total,
 				TriggerFn: func(*api.TriggerRequest) *api.TriggerResponse {
 					waiting.Add(1)
 					<-releaseCh

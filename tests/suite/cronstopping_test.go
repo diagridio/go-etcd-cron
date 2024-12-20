@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	clientv3 "go.etcd.io/etcd/client/v3"
 
@@ -20,29 +21,26 @@ func Test_cron_stopping(t *testing.T) {
 	t.Parallel()
 
 	cr := cron.SinglePartitionRun(t)
-	defer cr.Stop(t)
-
 	cr.Stop(t)
-	time.Sleep(time.Second)
 
-	resp, err := cr.KV.Do(context.Background(), clientv3.OpGet("abc/leadership/0"))
-	require.Empty(t, resp.Get().Kvs)
-	require.Equal(t, 0, int(resp.Get().Count))
-	require.NoError(t, err)
+	assert.EventuallyWithT(t, func(c *assert.CollectT) {
+		resp, err := cr.KV.Get(context.Background(), "abc/leadership", clientv3.WithPrefix())
+		require.NoError(t, err)
+		assert.Empty(c, resp.Kvs)
+		assert.Equal(c, 0, int(resp.Count))
+	}, time.Second*5, time.Millisecond*10)
 }
 
 func Test_cron_cluster_stopping(t *testing.T) {
 	t.Parallel()
 
 	cr := cron.TripplePartitionRun(t)
-
-	defer cr.Stop(t)
-
 	cr.Stop(t)
-	time.Sleep(time.Second)
 
-	resp, err := cr.Cron.KV.Do(context.Background(), clientv3.OpGet("abc/leadership/0"))
-	require.Empty(t, resp.Get().Kvs)
-	require.Equal(t, 0, int(resp.Get().Count))
-	require.NoError(t, err)
+	assert.EventuallyWithT(t, func(c *assert.CollectT) {
+		resp, err := cr.KV.Get(context.Background(), "abc/leadership", clientv3.WithPrefix())
+		require.NoError(t, err)
+		assert.Empty(c, resp.Kvs)
+		assert.Equal(c, 0, int(resp.Count))
+	}, time.Second*5, time.Millisecond*10)
 }
