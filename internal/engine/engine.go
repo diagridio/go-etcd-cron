@@ -24,7 +24,7 @@ import (
 	"github.com/diagridio/go-etcd-cron/internal/grave"
 	"github.com/diagridio/go-etcd-cron/internal/informer"
 	"github.com/diagridio/go-etcd-cron/internal/key"
-	"github.com/diagridio/go-etcd-cron/internal/partitioner"
+	"github.com/diagridio/go-etcd-cron/internal/leadership/partitioner"
 	"github.com/diagridio/go-etcd-cron/internal/queue"
 	"github.com/diagridio/go-etcd-cron/internal/scheduler"
 )

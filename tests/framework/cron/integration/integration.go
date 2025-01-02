@@ -7,6 +7,7 @@ package integration
 
 import (
 	"context"
+	"strconv"
 	"sync"
 	"testing"
 	"time"
@@ -16,6 +17,7 @@ import (
 	"github.com/go-logr/logr"
 	"github.com/stretchr/testify/require"
 	clientv3 "go.etcd.io/etcd/client/v3"
+	"google.golang.org/protobuf/types/known/anypb"
 
 	"github.com/diagridio/go-etcd-cron/api"
 	"github.com/diagridio/go-etcd-cron/cron"
@@ -24,10 +26,10 @@ import (
 )
 
 type Options struct {
-	PartitionTotal uint32
-	GotCh          chan *api.TriggerRequest
-	TriggerFn      func(*api.TriggerRequest) *api.TriggerResponse
-	Client         *clientv3.Client
+	Instances uint64
+	GotCh     chan *api.TriggerRequest
+	TriggerFn func(*api.TriggerRequest) *api.TriggerResponse
+	Client    *clientv3.Client
 }
 
 type Integration struct {
@@ -39,32 +41,32 @@ type Integration struct {
 	triggered slice.Slice[string]
 }
 
-func NewBase(t *testing.T, partitionTotal uint32) *Integration {
+func NewBase(t *testing.T, instances uint64) *Integration {
 	t.Helper()
 	return New(t, Options{
-		PartitionTotal: partitionTotal,
+		Instances: instances,
 	})
 }
 
 func New(t *testing.T, opts Options) *Integration {
 	t.Helper()
 
-	require.Positive(t, opts.PartitionTotal)
 	cl := opts.Client
 	if cl == nil {
 		cl = etcd.EmbeddedBareClient(t)
 	}
 
+	wleader := make(chan []*anypb.Any)
 	triggered := slice.String()
-	var a api.Interface
-	allCrns := make([]api.Interface, opts.PartitionTotal)
-	for i := range opts.PartitionTotal {
-		c, err := cron.New(cron.Options{
-			Log:            logr.Discard(),
-			Client:         cl,
-			Namespace:      "abc",
-			PartitionID:    i,
-			PartitionTotal: opts.PartitionTotal,
+	allCrns := make([]api.Interface, opts.Instances)
+
+	var err error
+	for i := range opts.Instances {
+		opts := cron.Options{
+			Log:       logr.Discard(),
+			Client:    cl,
+			Namespace: "abc",
+			ID:        strconv.FormatUint(i, 10),
 			TriggerFn: func(_ context.Context, req *api.TriggerRequest) *api.TriggerResponse {
 				defer triggered.Append(req.GetName())
 
@@ -78,20 +80,24 @@ func New(t *testing.T, opts Options) *Integration {
 			},
 
 			CounterGarbageCollectionInterval: ptr.Of(time.Millisecond * 300),
-		})
-		require.NoError(t, err)
-		allCrns[i] = c
-		if i == 0 {
-			a = c
 		}
+
+		if i == 0 {
+			opts.WatchLeadership = wleader
+		}
+
+		allCrns[i], err = cron.New(opts)
+		require.NoError(t, err)
 	}
 
-	errCh := make(chan error, opts.PartitionTotal)
+	a := allCrns[0]
+
+	errCh := make(chan error, opts.Instances)
 	ctx, cancel := context.WithCancel(context.Background())
 
 	closeOnce := sync.OnceFunc(func() {
 		cancel()
-		for range opts.PartitionTotal {
+		for range opts.Instances {
 			select {
 			case err := <-errCh:
 				require.NoError(t, err)
@@ -101,11 +107,13 @@ func New(t *testing.T, opts Options) *Integration {
 		}
 	})
 	t.Cleanup(closeOnce)
-	for i := range opts.PartitionTotal {
-		go func(i uint32) {
+	for i := range opts.Instances {
+		go func(i uint64) {
 			errCh <- allCrns[i].Run(ctx)
 		}(i)
 	}
+
+	waitForQuorum(t, wleader, opts.Instances)
 
 	return &Integration{
 		ctx:       ctx,
@@ -114,6 +122,21 @@ func New(t *testing.T, opts Options) *Integration {
 		allCrons:  allCrns,
 		triggered: triggered,
 		closeCron: closeOnce,
+	}
+}
+
+func waitForQuorum(t *testing.T, ch <-chan []*anypb.Any, exp uint64) {
+	t.Helper()
+
+	for {
+		select {
+		case <-time.After(time.Second * 10):
+			t.Fatal("failed to get leadership quorum in time")
+		case d := <-ch:
+			if uint64(len(d)) == exp {
+				return
+			}
+		}
 	}
 }
 

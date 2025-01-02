@@ -36,7 +36,7 @@ func Test_undeliverable(t *testing.T) {
 		var lock sync.Mutex
 		ret := api.TriggerResponseResult_UNDELIVERABLE
 		cron := integration.New(t, integration.Options{
-			PartitionTotal: 1,
+			Instances: 1,
 			TriggerFn: func(req *api.TriggerRequest) *api.TriggerResponse {
 				lock.Lock()
 				defer lock.Unlock()
@@ -81,7 +81,7 @@ func Test_undeliverable(t *testing.T) {
 		var lock sync.Mutex
 		ret := api.TriggerResponseResult_UNDELIVERABLE
 		cron := integration.New(t, integration.Options{
-			PartitionTotal: 4,
+			Instances: 4,
 			TriggerFn: func(req *api.TriggerRequest) *api.TriggerResponse {
 				lock.Lock()
 				defer lock.Unlock()
@@ -128,7 +128,7 @@ func Test_undeliverable(t *testing.T) {
 		var lock sync.Mutex
 		ret := api.TriggerResponseResult_UNDELIVERABLE
 		cron := integration.New(t, integration.Options{
-			PartitionTotal: 1,
+			Instances: 1,
 			TriggerFn: func(req *api.TriggerRequest) *api.TriggerResponse {
 				lock.Lock()
 				defer lock.Unlock()
@@ -174,7 +174,7 @@ func Test_undeliverable(t *testing.T) {
 		var lock sync.Mutex
 		ret := api.TriggerResponseResult_UNDELIVERABLE
 		cron := integration.New(t, integration.Options{
-			PartitionTotal: 4,
+			Instances: 4,
 			TriggerFn: func(req *api.TriggerRequest) *api.TriggerResponse {
 				lock.Lock()
 				defer lock.Unlock()
@@ -223,7 +223,7 @@ func Test_undeliverable(t *testing.T) {
 		var ret atomic.Value
 		ret.Store(api.TriggerResponseResult_UNDELIVERABLE)
 		cron := integration.New(t, integration.Options{
-			PartitionTotal: 1,
+			Instances: 1,
 			TriggerFn: func(*api.TriggerRequest) *api.TriggerResponse {
 				inTrigger.Add(1)
 				<-cntCh
@@ -266,7 +266,7 @@ func Test_undeliverable(t *testing.T) {
 		t.Parallel()
 
 		cron := integration.New(t, integration.Options{
-			PartitionTotal: 1,
+			Instances: 1,
 			TriggerFn: func(*api.TriggerRequest) *api.TriggerResponse {
 				return &api.TriggerResponse{Result: api.TriggerResponseResult_SUCCESS}
 			},
@@ -297,7 +297,7 @@ func Test_undeliverable(t *testing.T) {
 		t.Parallel()
 
 		cron := integration.New(t, integration.Options{
-			PartitionTotal: 1,
+			Instances: 1,
 			TriggerFn: func(*api.TriggerRequest) *api.TriggerResponse {
 				return &api.TriggerResponse{Result: api.TriggerResponseResult_FAILED}
 			},
@@ -341,8 +341,8 @@ func Test_undeliverable(t *testing.T) {
 		var ret atomic.Value
 		ret.Store(api.TriggerResponseResult_UNDELIVERABLE)
 		cron := integration.New(t, integration.Options{
-			PartitionTotal: 1,
-			Client:         client,
+			Instances: 1,
+			Client:    client,
 			TriggerFn: func(*api.TriggerRequest) *api.TriggerResponse {
 				inTrigger.Add(1)
 				<-cntCh
@@ -389,8 +389,8 @@ func Test_undeliverable(t *testing.T) {
 		var ret atomic.Value
 		ret.Store(api.TriggerResponseResult_UNDELIVERABLE)
 		cron := integration.New(t, integration.Options{
-			PartitionTotal: 5,
-			Client:         client,
+			Instances: 5,
+			Client:    client,
 			TriggerFn: func(*api.TriggerRequest) *api.TriggerResponse {
 				inTrigger.Add(1)
 				<-cntCh
@@ -430,7 +430,7 @@ func Test_undeliverable(t *testing.T) {
 		var ret atomic.Value
 		ret.Store(api.TriggerResponseResult_UNDELIVERABLE)
 		cron := integration.New(t, integration.Options{
-			PartitionTotal: 1,
+			Instances: 1,
 			TriggerFn: func(*api.TriggerRequest) *api.TriggerResponse {
 				inTrigger.Add(1)
 				<-cntCh
@@ -463,7 +463,7 @@ func Test_undeliverable(t *testing.T) {
 
 		triggered := slice.String()
 		cron := integration.New(t, integration.Options{
-			PartitionTotal: 1,
+			Instances: 1,
 			TriggerFn: func(req *api.TriggerRequest) *api.TriggerResponse {
 				if triggered.Append(req.GetName()) <= 2 {
 					return &api.TriggerResponse{Result: api.TriggerResponseResult_UNDELIVERABLE}
@@ -497,7 +497,7 @@ func Test_undeliverable(t *testing.T) {
 
 		triggered := slice.String()
 		cron := integration.New(t, integration.Options{
-			PartitionTotal: 1,
+			Instances: 1,
 			TriggerFn: func(req *api.TriggerRequest) *api.TriggerResponse {
 				triggered.Append(req.GetName())
 				if req.GetName() == "abc1" || req.GetName() == "def1" {
@@ -542,7 +542,7 @@ func Test_undeliverable(t *testing.T) {
 		ret.Store(api.TriggerResponseResult_UNDELIVERABLE)
 
 		cron := integration.New(t, integration.Options{
-			PartitionTotal: 1,
+			Instances: 1,
 			TriggerFn: func(*api.TriggerRequest) *api.TriggerResponse {
 				triggered.Add(1)
 				return &api.TriggerResponse{Result: ret.Load().(api.TriggerResponseResult)}
@@ -577,7 +577,7 @@ func Test_undeliverable(t *testing.T) {
 		ret.Store(api.TriggerResponseResult_UNDELIVERABLE)
 
 		cron := integration.New(t, integration.Options{
-			PartitionTotal: 1,
+			Instances: 1,
 			TriggerFn: func(*api.TriggerRequest) *api.TriggerResponse {
 				triggered.Add(1)
 				return &api.TriggerResponse{Result: ret.Load().(api.TriggerResponseResult)}

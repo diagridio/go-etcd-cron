@@ -9,6 +9,10 @@ package partitioner
 // of keys.
 type zero struct{}
 
-func (*zero) IsJobManaged(uint32) bool {
+func (*zero) IsJobManaged(uint64) bool {
 	return true
+}
+
+func (*zero) Total() uint64 {
+	return 1
 }

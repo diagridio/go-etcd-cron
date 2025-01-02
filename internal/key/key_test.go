@@ -10,44 +10,46 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func Test_JobKey(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
-		namespace   string
-		partitionID uint32
-		jobName     string
-		expJobKey   string
+		namespace string
+		id        string
+		jobName   string
+		expJobKey string
 	}{
 		{
-			namespace:   "",
-			jobName:     "abc",
-			partitionID: 0,
-			expJobKey:   "jobs/abc",
+			namespace: "",
+			jobName:   "abc",
+			id:        "0",
+			expJobKey: "jobs/abc",
 		},
 		{
-			namespace:   "123",
-			jobName:     "abc",
-			partitionID: 0,
-			expJobKey:   "123/jobs/abc",
+			namespace: "123",
+			jobName:   "abc",
+			id:        "0",
+			expJobKey: "123/jobs/abc",
 		},
 		{
-			namespace:   "/123",
-			jobName:     "def",
-			partitionID: 1,
-			expJobKey:   "/123/jobs/def",
+			namespace: "/123",
+			jobName:   "def",
+			id:        "1",
+			expJobKey: "/123/jobs/def",
 		},
 	}
 
 	for _, test := range tests {
 		t.Run(test.namespace+"/"+test.jobName, func(t *testing.T) {
 			t.Parallel()
-			key := New(Options{
-				Namespace:   test.namespace,
-				PartitionID: test.partitionID,
+			key, err := New(Options{
+				Namespace: test.namespace,
+				ID:        test.id,
 			})
+			require.NoError(t, err)
 			assert.Equal(t, test.expJobKey, key.JobKey(test.jobName))
 		})
 	}
@@ -58,26 +60,26 @@ func Test_CounterKey(t *testing.T) {
 
 	tests := []struct {
 		namespace     string
-		partitionID   uint32
+		id            string
 		jobName       string
 		expCounterKey string
 	}{
 		{
 			namespace:     "",
 			jobName:       "abc",
-			partitionID:   0,
+			id:            "0",
 			expCounterKey: "counters/abc",
 		},
 		{
 			namespace:     "123",
 			jobName:       "abc",
-			partitionID:   0,
+			id:            "0",
 			expCounterKey: "123/counters/abc",
 		},
 		{
 			namespace:     "/123",
 			jobName:       "def",
-			partitionID:   1,
+			id:            "1",
 			expCounterKey: "/123/counters/def",
 		},
 	}
@@ -85,10 +87,11 @@ func Test_CounterKey(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.namespace+"/"+test.jobName, func(t *testing.T) {
 			t.Parallel()
-			key := New(Options{
-				Namespace:   test.namespace,
-				PartitionID: test.partitionID,
+			key, err := New(Options{
+				Namespace: test.namespace,
+				ID:        test.id,
 			})
+			require.NoError(t, err)
 			assert.Equal(t, test.expCounterKey, key.CounterKey(test.jobName))
 		})
 	}
@@ -118,10 +121,11 @@ func Test_LeadershipNamespace(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.namespace, func(t *testing.T) {
 			t.Parallel()
-			key := New(Options{
-				Namespace:   test.namespace,
-				PartitionID: 123,
+			key, err := New(Options{
+				Namespace: test.namespace,
+				ID:        "123",
 			})
+			require.NoError(t, err)
 			assert.Equal(t, test.expLeadershipNS, key.LeadershipNamespace())
 		})
 	}
@@ -132,33 +136,34 @@ func Test_LeadershipKey(t *testing.T) {
 
 	tests := []struct {
 		namespace        string
-		partitionID      uint32
+		id               string
 		expLeadershipKey string
 	}{
 		{
 			namespace:        "",
-			partitionID:      0,
+			id:               "0",
 			expLeadershipKey: "leadership/0",
 		},
 		{
 			namespace:        "123",
-			partitionID:      0,
+			id:               "0",
 			expLeadershipKey: "123/leadership/0",
 		},
 		{
 			namespace:        "/123/abc",
-			partitionID:      3,
+			id:               "3",
 			expLeadershipKey: "/123/abc/leadership/3",
 		},
 	}
 
 	for _, test := range tests {
-		t.Run(fmt.Sprintf("%s/%d", test.namespace, test.partitionID), func(t *testing.T) {
+		t.Run(fmt.Sprintf("%s/%s", test.namespace, test.id), func(t *testing.T) {
 			t.Parallel()
-			key := New(Options{
-				Namespace:   test.namespace,
-				PartitionID: test.partitionID,
+			key, err := New(Options{
+				Namespace: test.namespace,
+				ID:        test.id,
 			})
+			require.NoError(t, err)
 			assert.Equal(t, test.expLeadershipKey, key.LeadershipKey())
 		})
 	}
@@ -188,10 +193,11 @@ func Test_JobNamespace(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.namespace, func(t *testing.T) {
 			t.Parallel()
-			key := New(Options{
-				Namespace:   test.namespace,
-				PartitionID: 123,
+			key, err := New(Options{
+				Namespace: test.namespace,
+				ID:        "123",
 			})
+			require.NoError(t, err)
 			assert.Equal(t, test.expJobNS, key.JobNamespace())
 		})
 	}
@@ -221,10 +227,11 @@ func Test_JobName(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.key, func(t *testing.T) {
 			t.Parallel()
-			key := New(Options{
-				Namespace:   "/123",
-				PartitionID: 123,
+			key, err := New(Options{
+				Namespace: "/123",
+				ID:        "123",
 			})
+			require.NoError(t, err)
 			assert.Equal(t, test.expJobName, key.JobName([]byte(test.key)))
 		})
 	}

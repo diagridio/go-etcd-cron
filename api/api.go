@@ -38,7 +38,8 @@ type Interface interface {
 	Delete(ctx context.Context, name string) error
 
 	// DeletePrefixes deletes all jobs with the given prefixes from the cron
-	// instance.
+	// instance. Consumers likely want to call this API to all replicas in a
+	// cluster.
 	DeletePrefixes(ctx context.Context, prefixes ...string) error
 
 	// List lists all jobs under a given job name prefix.
@@ -54,4 +55,8 @@ type Interface interface {
 	// the prefix is still active if there is at least one DeliverablePrefixes
 	// call that has not been unregistered.
 	DeliverablePrefixes(ctx context.Context, prefixes ...string) (context.CancelFunc, error)
+
+	// IsElected returns true if cron is currently elected for leadership of its
+	// partition.
+	IsElected() bool
 }

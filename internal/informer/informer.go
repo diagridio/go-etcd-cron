@@ -20,7 +20,7 @@ import (
 	"github.com/diagridio/go-etcd-cron/internal/garbage"
 	"github.com/diagridio/go-etcd-cron/internal/grave"
 	"github.com/diagridio/go-etcd-cron/internal/key"
-	"github.com/diagridio/go-etcd-cron/internal/partitioner"
+	"github.com/diagridio/go-etcd-cron/internal/leadership/partitioner"
 )
 
 // Options are the options for the Informer.

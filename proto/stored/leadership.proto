@@ -16,8 +16,14 @@ option go_package = "github.com/diagridio/go-etcd-cron/internal/api/stored";
 message Leadership {
   // total is this replicas understanding of the total number of partition
   // replicas.
-  uint32 total = 1;
-  // replica_data is custom data that is associated with this leader (replica). All leader
-  // data will be sent to library consumer on leadership table updates.
-  optional google.protobuf.Any replica_data = 2;
+  uint64 total = 1;
+
+  // uid is a unique identifier for this replica. Ensures a single replica
+  // is the leader for a given partition.
+  uint64 uid = 2;
+
+  // replica_data is custom data that is associated with this leader (replica).
+  // All leader data will be sent to library consumer on leadership table
+  // updates.
+  optional google.protobuf.Any replica_data = 3;
 }

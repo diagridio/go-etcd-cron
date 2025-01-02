@@ -29,18 +29,17 @@ type Cron struct {
 	cancel context.CancelFunc
 }
 
-func newCron(t *testing.T, client *clientv3.Client, total, id uint32) *Cron {
+func newCron(t *testing.T, client *clientv3.Client, id string) *Cron {
 	t.Helper()
 
 	replicaData, err := anypb.New(wrapperspb.Bytes([]byte("data")))
 	require.NoError(t, err)
 	var calls atomic.Int64
 	cron, err := cron.New(cron.Options{
-		Log:            logr.Discard(),
-		Client:         client,
-		Namespace:      "abc",
-		PartitionID:    id,
-		PartitionTotal: total,
+		Log:       logr.Discard(),
+		Client:    client,
+		Namespace: "abc",
+		ID:        id,
 		TriggerFn: func(context.Context, *api.TriggerRequest) *api.TriggerResponse {
 			calls.Add(1)
 			return &api.TriggerResponse{Result: api.TriggerResponseResult_SUCCESS}

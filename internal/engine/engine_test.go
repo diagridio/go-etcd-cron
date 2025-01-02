@@ -11,11 +11,12 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"go.etcd.io/etcd/api/v3/mvccpb"
 
 	"github.com/diagridio/go-etcd-cron/api"
 	internalapi "github.com/diagridio/go-etcd-cron/internal/api"
 	"github.com/diagridio/go-etcd-cron/internal/key"
-	"github.com/diagridio/go-etcd-cron/internal/partitioner"
+	"github.com/diagridio/go-etcd-cron/internal/leadership/partitioner"
 	"github.com/diagridio/go-etcd-cron/tests/framework/etcd"
 )
 
@@ -23,15 +24,18 @@ func Test_New(t *testing.T) {
 	t.Parallel()
 
 	t.Run("success", func(t *testing.T) {
+		t.Parallel()
+
 		client := etcd.Embedded(t)
-		key := key.New(key.Options{
-			Namespace:   "test-ns",
-			PartitionID: 0,
+		key, err := key.New(key.Options{
+			Namespace: "test-ns",
+			ID:        "0",
 		})
+		require.NoError(t, err)
 
 		part, err := partitioner.New(partitioner.Options{
-			ID:    0,
-			Total: 1,
+			Key:     key,
+			Leaders: []*mvccpb.KeyValue{{Key: []byte("test-ns/leader/0")}},
 		})
 		require.NoError(t, err)
 
@@ -39,7 +43,7 @@ func Test_New(t *testing.T) {
 			Key:         key,
 			Partitioner: part,
 			Client:      client,
-			TriggerFn: func(ctx context.Context, request *api.TriggerRequest) *api.TriggerResponse {
+			TriggerFn: func(context.Context, *api.TriggerRequest) *api.TriggerResponse {
 				return nil
 			},
 		})
@@ -56,14 +60,15 @@ func Test_Run(t *testing.T) {
 		t.Parallel()
 
 		client := etcd.Embedded(t)
-		key := key.New(key.Options{
-			Namespace:   "test-ns",
-			PartitionID: 0,
+		key, err := key.New(key.Options{
+			Namespace: "test-ns",
+			ID:        "0",
 		})
+		require.NoError(t, err)
 
 		part, err := partitioner.New(partitioner.Options{
-			ID:    0,
-			Total: 1,
+			Key:     key,
+			Leaders: []*mvccpb.KeyValue{{Key: []byte("test-ns/leader/0")}},
 		})
 		require.NoError(t, err)
 
@@ -71,7 +76,7 @@ func Test_Run(t *testing.T) {
 			Key:         key,
 			Partitioner: part,
 			Client:      client,
-			TriggerFn: func(ctx context.Context, request *api.TriggerRequest) *api.TriggerResponse {
+			TriggerFn: func(context.Context, *api.TriggerRequest) *api.TriggerResponse {
 				return nil
 			},
 		})
@@ -95,14 +100,15 @@ func Test_Run(t *testing.T) {
 		t.Parallel()
 
 		client := etcd.Embedded(t)
-		key := key.New(key.Options{
-			Namespace:   "test-ns",
-			PartitionID: 0,
+		key, err := key.New(key.Options{
+			Namespace: "test-ns",
+			ID:        "0",
 		})
+		require.NoError(t, err)
 
 		part, err := partitioner.New(partitioner.Options{
-			ID:    0,
-			Total: 1,
+			Key:     key,
+			Leaders: []*mvccpb.KeyValue{{Key: []byte("test-ns/leader/0")}},
 		})
 		require.NoError(t, err)
 
@@ -110,7 +116,7 @@ func Test_Run(t *testing.T) {
 			Key:         key,
 			Partitioner: part,
 			Client:      client,
-			TriggerFn: func(ctx context.Context, request *api.TriggerRequest) *api.TriggerResponse {
+			TriggerFn: func(context.Context, *api.TriggerRequest) *api.TriggerResponse {
 				return nil
 			},
 		})
@@ -127,7 +133,6 @@ func Test_Run(t *testing.T) {
 		require.Error(t, <-errCh)
 		cancel()
 		require.NoError(t, <-errCh)
-
 	})
 }
 
@@ -135,14 +140,15 @@ func Test_API(t *testing.T) {
 	t.Parallel()
 
 	client := etcd.Embedded(t)
-	key := key.New(key.Options{
-		Namespace:   "test-ns",
-		PartitionID: 0,
+	key, err := key.New(key.Options{
+		Namespace: "test-ns",
+		ID:        "0",
 	})
+	require.NoError(t, err)
 
 	part, err := partitioner.New(partitioner.Options{
-		ID:    0,
-		Total: 1,
+		Key:     key,
+		Leaders: []*mvccpb.KeyValue{{Key: []byte("test-ns/leader/0")}},
 	})
 	require.NoError(t, err)
 
@@ -150,7 +156,7 @@ func Test_API(t *testing.T) {
 		Key:         key,
 		Partitioner: part,
 		Client:      client,
-		TriggerFn: func(ctx context.Context, request *api.TriggerRequest) *api.TriggerResponse {
+		TriggerFn: func(context.Context, *api.TriggerRequest) *api.TriggerResponse {
 			return nil
 		},
 	})

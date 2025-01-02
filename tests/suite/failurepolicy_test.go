@@ -30,8 +30,8 @@ func Test_FailurePolicy(t *testing.T) {
 		gotCh := make(chan *api.TriggerRequest, 1)
 		var got atomic.Uint32
 		cron := integration.New(t, integration.Options{
-			PartitionTotal: 1,
-			Client:         etcd.EmbeddedBareClient(t),
+			Instances: 1,
+			Client:    etcd.EmbeddedBareClient(t),
 			TriggerFn: func(*api.TriggerRequest) *api.TriggerResponse {
 				assert.GreaterOrEqual(t, uint32(8), got.Add(1))
 				return &api.TriggerResponse{Result: api.TriggerResponseResult_FAILED}
@@ -69,8 +69,8 @@ func Test_FailurePolicy(t *testing.T) {
 		gotCh := make(chan *api.TriggerRequest, 1)
 		var got atomic.Uint32
 		cron := integration.New(t, integration.Options{
-			PartitionTotal: 1,
-			Client:         etcd.EmbeddedBareClient(t),
+			Instances: 1,
+			Client:    etcd.EmbeddedBareClient(t),
 			TriggerFn: func(*api.TriggerRequest) *api.TriggerResponse {
 				assert.GreaterOrEqual(t, uint32(2), got.Add(1))
 				return &api.TriggerResponse{Result: api.TriggerResponseResult_FAILED}
@@ -111,8 +111,8 @@ func Test_FailurePolicy(t *testing.T) {
 		gotCh := make(chan *api.TriggerRequest, 1)
 		var got atomic.Uint32
 		cron := integration.New(t, integration.Options{
-			PartitionTotal: 1,
-			Client:         etcd.EmbeddedBareClient(t),
+			Instances: 1,
+			Client:    etcd.EmbeddedBareClient(t),
 			TriggerFn: func(*api.TriggerRequest) *api.TriggerResponse {
 				assert.GreaterOrEqual(t, uint32(5), got.Add(1))
 				if got.Load() == 3 {
@@ -160,8 +160,8 @@ func Test_FailurePolicy(t *testing.T) {
 		gotCh := make(chan *api.TriggerRequest, 1)
 		var got atomic.Uint32
 		cron := integration.New(t, integration.Options{
-			PartitionTotal: 1,
-			Client:         etcd.EmbeddedBareClient(t),
+			Instances: 1,
+			Client:    etcd.EmbeddedBareClient(t),
 			TriggerFn: func(*api.TriggerRequest) *api.TriggerResponse {
 				assert.GreaterOrEqual(t, uint32(100), got.Add(1))
 				if got.Load() == 100 {

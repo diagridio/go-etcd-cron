@@ -33,11 +33,10 @@ func Test_Run(t *testing.T) {
 		client := etcd.EmbeddedBareClient(t)
 		var triggered atomic.Int64
 		cronI, err := New(Options{
-			Log:            logr.Discard(),
-			Client:         client,
-			Namespace:      "abc",
-			PartitionID:    0,
-			PartitionTotal: 1,
+			Log:       logr.Discard(),
+			Client:    client,
+			Namespace: "abc",
+			ID:        "0",
 			TriggerFn: func(context.Context, *api.TriggerRequest) *api.TriggerResponse {
 				triggered.Add(1)
 				return &api.TriggerResponse{Result: api.TriggerResponseResult_SUCCESS}
@@ -89,11 +88,10 @@ func Test_Run(t *testing.T) {
 		client := etcd.EmbeddedBareClient(t)
 
 		cronI, err := New(Options{
-			Log:            logr.Discard(),
-			Client:         client,
-			Namespace:      "abc",
-			PartitionID:    0,
-			PartitionTotal: 10,
+			Log:       logr.Discard(),
+			Client:    client,
+			Namespace: "abc",
+			ID:        "0",
 			TriggerFn: func(context.Context, *api.TriggerRequest) *api.TriggerResponse {
 				return &api.TriggerResponse{Result: api.TriggerResponseResult_SUCCESS}
 			},

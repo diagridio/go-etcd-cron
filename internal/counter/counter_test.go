@@ -73,13 +73,15 @@ func Test_New(t *testing.T) {
 
 		yard := grave.New()
 		yard.Deleted("abc/jobs/1")
+		key, err := key.New(key.Options{
+			Namespace: "abc",
+			ID:        "0",
+		})
+		require.NoError(t, err)
 		c, ok, err := New(context.Background(), Options{
-			Name: "1",
-			Key: key.New(key.Options{
-				Namespace:   "abc",
-				PartitionID: 0,
-			}),
+			Name:      "1",
 			Client:    client,
+			Key:       key,
 			Schedule:  sched,
 			Job:       job,
 			Yard:      yard,
@@ -150,12 +152,15 @@ func Test_New(t *testing.T) {
 			errCh <- collector.Run(ctx)
 		}()
 
+		key, err := key.New(key.Options{
+			Namespace: "abc",
+			ID:        "0",
+		})
+		require.NoError(t, err)
+
 		c, ok, err := New(context.Background(), Options{
-			Name: "1",
-			Key: key.New(key.Options{
-				Namespace:   "abc",
-				PartitionID: 0,
-			}),
+			Name:      "1",
+			Key:       key,
 			Client:    client,
 			Schedule:  sched,
 			Job:       job,
@@ -236,12 +241,14 @@ func Test_New(t *testing.T) {
 			errCh <- collector.Run(ctx)
 		}()
 
+		key, err := key.New(key.Options{
+			Namespace: "abc",
+			ID:        "0",
+		})
+		require.NoError(t, err)
 		c, ok, err := New(context.Background(), Options{
-			Name: "1",
-			Key: key.New(key.Options{
-				Namespace:   "abc",
-				PartitionID: 0,
-			}),
+			Name:      "1",
+			Key:       key,
 			Client:    client,
 			Schedule:  sched,
 			Job:       job,
@@ -327,12 +334,14 @@ func Test_New(t *testing.T) {
 			errCh <- collector.Run(ctx)
 		}()
 
+		key, err := key.New(key.Options{
+			Namespace: "abc",
+			ID:        "0",
+		})
+		require.NoError(t, err)
 		c, ok, err := New(context.Background(), Options{
-			Name: "1",
-			Key: key.New(key.Options{
-				Namespace:   "abc",
-				PartitionID: 0,
-			}),
+			Name:      "1",
+			Key:       key,
 			Client:    client,
 			Schedule:  sched,
 			Job:       job,
@@ -399,12 +408,14 @@ func Test_New(t *testing.T) {
 			errCh <- collector.Run(ctx)
 		}()
 
+		key, err := key.New(key.Options{
+			Namespace: "abc",
+			ID:        "0",
+		})
+		require.NoError(t, err)
 		counter, ok, err := New(context.Background(), Options{
-			Name: "1",
-			Key: key.New(key.Options{
-				Namespace:   "abc",
-				PartitionID: 0,
-			}),
+			Name:      "1",
+			Key:       key,
 			Client:    client,
 			Schedule:  sched,
 			Job:       job,

@@ -24,7 +24,7 @@ func Test_retry(t *testing.T) {
 	ok := api.TriggerResponseResult_FAILED
 	var lock sync.Mutex
 	cron := integration.New(t, integration.Options{
-		PartitionTotal: 1,
+		Instances: 1,
 		TriggerFn: func(*api.TriggerRequest) *api.TriggerResponse {
 			lock.Lock()
 			defer lock.Unlock()

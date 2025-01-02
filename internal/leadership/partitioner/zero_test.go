@@ -20,7 +20,7 @@ func Test_zero(t *testing.T) {
 		z := new(zero)
 		for range 100 {
 			//nolint:gosec
-			assert.True(t, z.IsJobManaged(rand.Uint32()))
+			assert.True(t, z.IsJobManaged(rand.Uint64()))
 		}
 	})
 }

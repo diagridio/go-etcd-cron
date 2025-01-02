@@ -23,16 +23,25 @@ import (
 	"github.com/diagridio/go-etcd-cron/internal/garbage/fake"
 	"github.com/diagridio/go-etcd-cron/internal/grave"
 	"github.com/diagridio/go-etcd-cron/internal/key"
-	"github.com/diagridio/go-etcd-cron/internal/partitioner"
+	"github.com/diagridio/go-etcd-cron/internal/leadership/partitioner"
 	"github.com/diagridio/go-etcd-cron/tests/framework/etcd"
 )
 
 func Test_Run(t *testing.T) {
 	t.Parallel()
 
+	key, err := key.New(key.Options{
+		Namespace: "abc",
+		ID:        "0",
+	})
+	require.NoError(t, err)
+
 	part, err := partitioner.New(partitioner.Options{
-		ID:    0,
-		Total: 2,
+		Key: key,
+		Leaders: []*mvccpb.KeyValue{
+			{Key: []byte("abc/leader/0")},
+			{Key: []byte("abc/leader/1")},
+		},
 	})
 	require.NoError(t, err)
 
@@ -47,10 +56,7 @@ func Test_Run(t *testing.T) {
 			Client:      client,
 			Collector:   collector,
 			Yard:        grave.New(),
-			Key: key.New(key.Options{
-				Namespace:   "abc",
-				PartitionID: 0,
-			}),
+			Key:         key,
 		})
 
 		ctx, cancel := context.WithCancel(context.Background())
@@ -110,10 +116,7 @@ func Test_Run(t *testing.T) {
 			Client:      client,
 			Collector:   collector,
 			Yard:        grave.New(),
-			Key: key.New(key.Options{
-				Namespace:   "abc",
-				PartitionID: 0,
-			}),
+			Key:         key,
 		})
 
 		errCh := make(chan error, 1)
@@ -188,10 +191,7 @@ func Test_Run(t *testing.T) {
 			Client:      client,
 			Collector:   collector,
 			Yard:        grave.New(),
-			Key: key.New(key.Options{
-				Namespace:   "abc",
-				PartitionID: 0,
-			}),
+			Key:         key,
 		})
 
 		errCh := make(chan error, 1)
@@ -343,9 +343,19 @@ func Test_handleEvent(t *testing.T) {
 		testInLoop := test
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
+
+			key, err := key.New(key.Options{
+				Namespace: "abc",
+				ID:        "0",
+			})
+			require.NoError(t, err)
+
 			part, err := partitioner.New(partitioner.Options{
-				ID:    0,
-				Total: 2,
+				Key: key,
+				Leaders: []*mvccpb.KeyValue{
+					{Key: []byte("abc/leader/0")},
+					{Key: []byte("abc/leader/1")},
+				},
 			})
 			require.NoError(t, err)
 
@@ -360,10 +370,7 @@ func Test_handleEvent(t *testing.T) {
 				Partitioner: part,
 				Collector:   collector,
 				Yard:        yard,
-				Key: key.New(key.Options{
-					Namespace:   "abc",
-					PartitionID: 0,
-				}),
+				Key:         key,
 			})
 			gotEvent, err := i.handleEvent(testInLoop.ev)
 			assert.Equal(t, testInLoop.expEvent, gotEvent)

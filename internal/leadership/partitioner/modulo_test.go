@@ -15,9 +15,9 @@ func Test_parter(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
-		id          uint32
-		total       uint32
-		partitionID uint32
+		id          uint64
+		total       uint64
+		partitionID uint64
 		exp         bool
 	}{
 		{

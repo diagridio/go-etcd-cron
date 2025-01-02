@@ -2,6 +2,7 @@
 
 This package implements a distributed and fault tolerant cron scheduler, using etcd as a backend.
 It is designed to be used in a distributed environment (such as Kubernetes), where multiple instances of the same process can run concurrently acting on a shared set of cron jobs.
+Cron can be dynamically scaled up or down, and job execution will be balanced across the instances.
 
 Jobs are scheduled on a distributed queue, where only one of the instances will trigger the job.
 This ensures that the job is executed only (at least*) once.
@@ -20,10 +21,9 @@ import (
 
 func main() {
   cron, err := cron.New(cron.Options{
-    Client:         client,
-    Namespace:      "abc",
-    PartitionID:    0,
-    PartitionTotal: 1,
+    Client:    client,
+    Namespace: "abc",
+    ID:        "helloworld",
     TriggerFn: func(context.Context, *api.TriggerRequest) *api.TriggerResponse {
       // Do something with your trigger here.
       // Return SUCCESS if the trigger was successful, FAILED if the trigger
@@ -97,13 +97,12 @@ Jobs whose name match these prefixes will be re-enqueued for delivery.
 
 ## Leadership
 
-The cron scheduler uses a partition key ownership model to ensure that only one partition instance of the scheduler is running at any given time.
-At boot, the replica attempts to claim its partition key.
-If it is successful, it will ensure that there are no other schedulers running with a different _partition total_ value.
-Once both pass, the scheduler will begin to process jobs.
+Leadership is fully dynamic, meaning that crons can be added or removed from a cluster at any time, and the running crons will self organize rebalancing the jobs between them.
 
-It is paramount that all replicas have the same _partition total_ value.
-If this is not the case, the scheduler will not start until leadership of partitions with differnet _partition total_ values are resolved.
+The cron scheduler uses a partition key ownership model to ensure that only one partition instance of the scheduler is running at any given time.
+At boot, the replica attempts to claim its partition key; a user provided string ID.
+If it is successful, it will ensure that there are no other schedulers running with a different _partition total_ value.
+Once a leadership event occurs (a cron is added or removed from the cluster), crons will dynamically rebalance the partitions between them.
 
 Leadership keys are associated with an ETCD lease of 20s TTL to prevent stale leadership keys persisting forever in the event of an (unlikely) crash.
 

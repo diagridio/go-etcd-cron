@@ -12,6 +12,10 @@ import (
 	"strings"
 	"sync/atomic"
 
+	"github.com/go-logr/logr"
+	clientv3 "go.etcd.io/etcd/client/v3"
+	"google.golang.org/protobuf/proto"
+
 	cronapi "github.com/diagridio/go-etcd-cron/api"
 	"github.com/diagridio/go-etcd-cron/internal/api/stored"
 	"github.com/diagridio/go-etcd-cron/internal/api/validator"
@@ -20,9 +24,6 @@ import (
 	"github.com/diagridio/go-etcd-cron/internal/key"
 	"github.com/diagridio/go-etcd-cron/internal/queue"
 	"github.com/diagridio/go-etcd-cron/internal/scheduler"
-	"github.com/go-logr/logr"
-	clientv3 "go.etcd.io/etcd/client/v3"
-	"google.golang.org/protobuf/proto"
 )
 
 type Options struct {

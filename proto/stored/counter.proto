@@ -17,7 +17,7 @@ message Counter {
   // Prevents an updated job from inheriting the counter of a previous job with
   // the same name.
   // Doesn't need to be globally unique.
-  uint32 job_partition_id = 1;
+  uint64 job_partition_id = 1;
 
   // count is the number of times the job has been triggered.
   uint32 count = 2;
