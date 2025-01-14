@@ -6,48 +6,70 @@ Licensed under the MIT License.
 package suite
 
 import (
-	"sync"
+	"context"
+	"errors"
+	"strconv"
 	"testing"
 	"time"
 
 	"github.com/dapr/kit/ptr"
-	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
 	"github.com/diagridio/go-etcd-cron/api"
-	"github.com/diagridio/go-etcd-cron/tests/framework/cron/integration"
+	"github.com/diagridio/go-etcd-cron/cron"
+	"github.com/diagridio/go-etcd-cron/tests/framework/etcd"
 )
 
-func Test_retry(t *testing.T) {
+func Test_leadership_retry(t *testing.T) {
 	t.Parallel()
 
-	ok := api.TriggerResponseResult_FAILED
-	var lock sync.Mutex
-	cron := integration.New(t, integration.Options{
-		Instances: 1,
-		TriggerFn: func(*api.TriggerRequest) *api.TriggerResponse {
-			lock.Lock()
-			defer lock.Unlock()
-			return &api.TriggerResponse{Result: ok}
-		},
+	t.Run("a API call should never fail during leadership changes", func(t *testing.T) {
+		t.Parallel()
+
+		client := etcd.EmbeddedBareClient(t)
+		cron1, err := cron.New(cron.Options{
+			Client:    client,
+			ID:        "123",
+			TriggerFn: func(context.Context, *api.TriggerRequest) *api.TriggerResponse { return nil },
+		})
+		require.NoError(t, err)
+
+		errCh := make(chan error)
+		ctx1, cancel1 := context.WithCancel(context.Background())
+		go func() { errCh <- cron1.Run(ctx1) }()
+
+		t.Cleanup(func() {
+			cancel1()
+			require.NoError(t, <-errCh)
+		})
+
+		ierrCh := make(chan error, 10*2)
+		go func() {
+			for range 10 {
+				ctx, cancel := context.WithTimeout(context.Background(), time.Millisecond*500)
+				c, err := cron.New(cron.Options{
+					Client:    client,
+					ID:        "456",
+					TriggerFn: func(context.Context, *api.TriggerRequest) *api.TriggerResponse { return nil },
+				})
+				ierrCh <- err
+				if err := c.Run(ctx); errors.Is(err, context.DeadlineExceeded) {
+					ierrCh <- nil
+				} else {
+					ierrCh <- err
+				}
+				cancel()
+			}
+		}()
+
+		for i := range 5000 {
+			require.NoError(t, cron1.Add(context.Background(), strconv.Itoa(i), &api.Job{
+				DueTime: ptr.Of("100000s"),
+			}))
+		}
+
+		for range 10 * 2 {
+			require.NoError(t, <-ierrCh)
+		}
 	})
-
-	job := &api.Job{
-		DueTime: ptr.Of(time.Now().Format(time.RFC3339)),
-	}
-	require.NoError(t, cron.API().Add(cron.Context(), "yoyo", job))
-
-	assert.EventuallyWithT(t, func(c *assert.CollectT) {
-		assert.Greater(c, cron.Triggered(), 1)
-	}, 5*time.Second, 10*time.Millisecond)
-	lock.Lock()
-	triggered := cron.Triggered()
-	triggered++
-	ok = api.TriggerResponseResult_SUCCESS
-	lock.Unlock()
-	assert.EventuallyWithT(t, func(c *assert.CollectT) {
-		assert.Equal(c, triggered, cron.Triggered())
-	}, time.Second*10, time.Millisecond*10)
-	<-time.After(3 * time.Second)
-	assert.Equal(t, triggered, cron.Triggered())
 }

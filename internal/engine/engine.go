@@ -58,7 +58,12 @@ type Options struct {
 	CounterGarbageCollectionInterval *time.Duration
 }
 
-type Engine struct {
+type Interface interface {
+	Run(ctx context.Context) error
+	API() internalapi.Interface
+}
+
+type engine struct {
 	log       logr.Logger
 	collector garbage.Interface
 	queue     *queue.Queue
@@ -68,7 +73,7 @@ type Engine struct {
 	wg        sync.WaitGroup
 }
 
-func New(opts Options) (*Engine, error) {
+func New(opts Options) (Interface, error) {
 	collector, err := garbage.New(garbage.Options{
 		Log:                opts.Log,
 		Client:             opts.Client,
@@ -108,7 +113,7 @@ func New(opts Options) (*Engine, error) {
 		Log:              opts.Log,
 	})
 
-	return &Engine{
+	return &engine{
 		log:       opts.Log.WithName("engine"),
 		collector: collector,
 		queue:     queue,
@@ -118,7 +123,7 @@ func New(opts Options) (*Engine, error) {
 	}, nil
 }
 
-func (e *Engine) Run(ctx context.Context) error {
+func (e *engine) Run(ctx context.Context) error {
 	if !e.running.CompareAndSwap(false, true) {
 		return errors.New("engine is already running")
 	}
@@ -152,6 +157,6 @@ func (e *Engine) Run(ctx context.Context) error {
 	).Run(ctx)
 }
 
-func (e *Engine) API() internalapi.Interface {
+func (e *engine) API() internalapi.Interface {
 	return e.api
 }
