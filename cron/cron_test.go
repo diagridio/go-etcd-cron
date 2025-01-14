@@ -11,8 +11,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/dapr/kit/ptr"
 	"github.com/go-logr/logr"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/anypb"
@@ -54,11 +54,9 @@ func Test_Run(t *testing.T) {
 			errCh1 <- cronI.Run(ctx)
 		}()
 
-		select {
-		case <-cron.readyCh:
-		case <-time.After(1 * time.Second):
-			t.Fatal("timed out waiting for cron to be ready")
-		}
+		assert.EventuallyWithT(t, func(c *assert.CollectT) {
+			assert.True(c, cron.IsElected())
+		}, time.Second*5, 100*time.Millisecond)
 
 		go func() {
 			errCh2 <- cronI.Run(ctx)
@@ -80,7 +78,7 @@ func Test_Run(t *testing.T) {
 		}
 	})
 
-	t.Run("cron engine remains ready after leadership change that keeps partition total the same", func(t *testing.T) {
+	t.Run("cron instance fatal errors when leadership is overwritten", func(t *testing.T) {
 		t.Parallel()
 
 		replicaData, err := anypb.New(wrapperspb.Bytes([]byte("data")))
@@ -109,11 +107,9 @@ func Test_Run(t *testing.T) {
 		}()
 
 		// wait until ready
-		select {
-		case <-cron.readyCh:
-		case <-time.After(1 * time.Second):
-			t.Fatal("timed out waiting for cron to be ready")
-		}
+		assert.EventuallyWithT(t, func(c *assert.CollectT) {
+			assert.True(c, cron.IsElected())
+		}, time.Second*5, 100*time.Millisecond)
 
 		leadershipData, err := proto.Marshal(&stored.Leadership{
 			Total:       10,
@@ -124,18 +120,9 @@ func Test_Run(t *testing.T) {
 		_, err = client.Put(context.Background(), "abc/leadership/1", string(leadershipData))
 		require.NoError(t, err, "failed to insert leadership data into etcd")
 
-		// wait until ready
-		select {
-		case <-cron.readyCh:
-		case <-time.After(1 * time.Second):
-			t.Fatal("timed out waiting for cron to be ready")
-		}
-
-		// confirm cron is ready
-		err = cronI.Add(context.Background(), "a123", &api.Job{
-			DueTime: ptr.Of("10s"),
-		})
-		require.NoError(t, err)
+		assert.EventuallyWithT(t, func(c *assert.CollectT) {
+			assert.False(c, cron.IsElected())
+		}, time.Second*5, 100*time.Millisecond)
 
 		cancel()
 		select {

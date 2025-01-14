@@ -26,6 +26,10 @@ import (
 	"github.com/diagridio/go-etcd-cron/internal/scheduler"
 )
 
+var (
+	ErrClosed = errors.New("api is closed")
+)
+
 type Options struct {
 	Log              logr.Logger
 	Client           client.Interface
@@ -277,7 +281,7 @@ func (a *api) DeliverablePrefixes(ctx context.Context, prefixes ...string) (cont
 func (a *api) waitReady(ctx context.Context) error {
 	select {
 	case <-a.closeCh:
-		return errors.New("api is closed")
+		return ErrClosed
 	case <-a.readyCh:
 		return nil
 	case <-ctx.Done():

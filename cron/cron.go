@@ -8,7 +8,6 @@ package cron
 import (
 	"context"
 	"errors"
-	"sync"
 	"sync/atomic"
 	"time"
 
@@ -21,9 +20,9 @@ import (
 	"google.golang.org/protobuf/types/known/anypb"
 
 	"github.com/diagridio/go-etcd-cron/api"
-	internalapi "github.com/diagridio/go-etcd-cron/internal/api"
 	"github.com/diagridio/go-etcd-cron/internal/client"
 	"github.com/diagridio/go-etcd-cron/internal/engine"
+	"github.com/diagridio/go-etcd-cron/internal/engine/retry"
 	"github.com/diagridio/go-etcd-cron/internal/key"
 	"github.com/diagridio/go-etcd-cron/internal/leadership"
 	"github.com/diagridio/go-etcd-cron/internal/leadership/elector"
@@ -82,14 +81,11 @@ type cron struct {
 	gcgInterval *time.Duration
 	replicaData *anypb.Any
 
-	engine    atomic.Pointer[engine.Engine]
+	api       *retry.Retry
 	elected   atomic.Bool
 	wleaderCh chan<- []*anypb.Any
 
-	lock    sync.RWMutex
 	running atomic.Bool
-	readyCh chan struct{}
-	closeCh chan struct{}
 }
 
 // New creates a new cron instance.
@@ -134,8 +130,7 @@ func New(opts Options) (api.Interface, error) {
 		triggerFn:   opts.TriggerFn,
 		gcgInterval: opts.CounterGarbageCollectionInterval,
 		wleaderCh:   opts.WatchLeadership,
-		readyCh:     make(chan struct{}),
-		closeCh:     make(chan struct{}),
+		api:         retry.New(),
 	}, nil
 }
 
@@ -145,7 +140,7 @@ func (c *cron) Run(ctx context.Context) error {
 		return errors.New("cron already running")
 	}
 
-	defer close(c.closeCh)
+	defer c.api.Close()
 	defer c.log.Info("cron instance shutdown")
 
 	leadership := leadership.New(leadership.Options{
@@ -167,9 +162,9 @@ func (c *cron) Run(ctx context.Context) error {
 				return err
 			}
 
-			c.log.Info("engine restarting due to leadership rebalance")
-
 			for {
+				c.log.Info("engine restarting due to leadership rebalance")
+
 				ectx, elected, err := leadership.Reelect(ctx)
 				if ctx.Err() != nil {
 					c.log.Error(err, "cron instance shutting down during leadership re-election")
@@ -192,83 +187,38 @@ func (c *cron) Run(ctx context.Context) error {
 
 // Add forwards the call to the embedded API.
 func (c *cron) Add(ctx context.Context, name string, job *api.Job) error {
-	api, err := c.waitAPIReady(ctx)
-	if err != nil {
-		return err
-	}
-
-	return api.Add(ctx, name, job)
+	return c.api.Add(ctx, name, job)
 }
 
 // Get forwards the call to the embedded API.
 func (c *cron) Get(ctx context.Context, name string) (*api.Job, error) {
-	api, err := c.waitAPIReady(ctx)
-	if err != nil {
-		return nil, err
-	}
-
-	return api.Get(ctx, name)
+	return c.api.Get(ctx, name)
 }
 
 // Delete forwards the call to the embedded API.
 func (c *cron) Delete(ctx context.Context, name string) error {
-	api, err := c.waitAPIReady(ctx)
-	if err != nil {
-		return err
-	}
-
-	return api.Delete(ctx, name)
+	return c.api.Delete(ctx, name)
 }
 
 // DeletePrefixes forwards the call to the embedded API.
 func (c *cron) DeletePrefixes(ctx context.Context, prefixes ...string) error {
-	api, err := c.waitAPIReady(ctx)
-	if err != nil {
-		return err
-	}
-
-	return api.DeletePrefixes(ctx, prefixes...)
+	return c.api.DeletePrefixes(ctx, prefixes...)
 }
 
 // List forwards the call to the embedded API.
 func (c *cron) List(ctx context.Context, prefix string) (*api.ListResponse, error) {
-	api, err := c.waitAPIReady(ctx)
-	if err != nil {
-		return nil, err
-	}
-
-	return api.List(ctx, prefix)
+	return c.api.List(ctx, prefix)
 }
 
 // DeliverablePrefixes forwards the call to the embedded API.
 func (c *cron) DeliverablePrefixes(ctx context.Context, prefixes ...string) (context.CancelFunc, error) {
-	api, err := c.waitAPIReady(ctx)
-	if err != nil {
-		return nil, err
-	}
-
-	return api.DeliverablePrefixes(ctx, prefixes...)
+	return c.api.DeliverablePrefixes(ctx, prefixes...)
 }
 
 // IsElected returns true if cron is currently elected for leadership of its
 // partition.
 func (c *cron) IsElected() bool {
 	return c.elected.Load()
-}
-
-func (c *cron) waitAPIReady(ctx context.Context) (internalapi.Interface, error) {
-	c.lock.Lock()
-	readyCh := c.readyCh
-	c.lock.Unlock()
-
-	select {
-	case <-readyCh:
-		return c.engine.Load().API(), nil
-	case <-c.closeCh:
-		return nil, errors.New("cron is closed")
-	case <-ctx.Done():
-		return nil, ctx.Err()
-	}
 }
 
 // runEngine runs the cron engine with the given elected leadership.
@@ -288,10 +238,7 @@ func (c *cron) runEngine(ctx context.Context, elected *elector.Elected) error {
 		return err
 	}
 
-	c.engine.Store(engine)
-	c.lock.Lock()
-	close(c.readyCh)
-	c.lock.Unlock()
+	c.api.Ready(engine)
 
 	if c.wleaderCh != nil {
 		select {
@@ -304,9 +251,7 @@ func (c *cron) runEngine(ctx context.Context, elected *elector.Elected) error {
 	err = engine.Run(ctx)
 	c.elected.Store(false)
 
-	c.lock.Lock()
-	c.readyCh = make(chan struct{})
-	c.lock.Unlock()
+	c.api.NotReady()
 
 	if err != nil || ctx.Err() != nil {
 		return err
