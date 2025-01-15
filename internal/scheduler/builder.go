@@ -26,12 +26,24 @@ type Builder struct {
 	// clock is the clock used to get the current time. Used for manipulating
 	// time in tests.
 	clock clock.Clock
+
+	// parser parses job schedules.
+	parser cron.Parser
 }
 
 // NewBuilder creates a new scheduler builder.
 func NewBuilder() *Builder {
 	return &Builder{
 		clock: clock.RealClock{},
+		parser: cron.NewParser(
+			cron.Second |
+				cron.Minute |
+				cron.Hour |
+				cron.Dom |
+				cron.Month |
+				cron.Dow |
+				cron.Descriptor,
+		),
 	}
 }
 
@@ -43,7 +55,8 @@ func (b *Builder) Schedule(job *stored.Job) (Interface, error) {
 		}, nil
 	}
 
-	cronSched, err := cron.ParseStandard(job.GetJob().GetSchedule())
+	cronSched, err := b.parser.Parse(job.GetJob().GetSchedule())
+	//cronSched, err := cron.ParseStandard(job.GetJob().GetSchedule())
 	if err != nil {
 		return nil, err
 	}
