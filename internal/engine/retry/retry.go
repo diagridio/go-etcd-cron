@@ -50,7 +50,10 @@ func (r *Retry) Get(ctx context.Context, name string) (*api.Job, error) {
 		job, err = a.Get(ctx, name)
 		return err
 	})
-	return job, err
+	if err != nil {
+		return nil, err
+	}
+	return job, nil
 }
 
 func (r *Retry) Delete(ctx context.Context, name string) error {
@@ -72,7 +75,10 @@ func (r *Retry) List(ctx context.Context, prefix string) (*api.ListResponse, err
 		resp, err = a.List(ctx, prefix)
 		return err
 	})
-	return resp, err
+	if err != nil {
+		return nil, err
+	}
+	return resp, nil
 }
 
 func (r *Retry) DeliverablePrefixes(ctx context.Context, prefixes ...string) (context.CancelFunc, error) {
@@ -82,7 +88,10 @@ func (r *Retry) DeliverablePrefixes(ctx context.Context, prefixes ...string) (co
 		cancel, err = a.DeliverablePrefixes(ctx, prefixes...)
 		return err
 	})
-	return cancel, err
+	if err != nil {
+		return nil, err
+	}
+	return cancel, nil
 }
 
 func (r *Retry) handle(ctx context.Context, fn func(internalapi.Interface) error) error {
