@@ -162,8 +162,11 @@ func (q *Queue) HandleInformerEvent(ctx context.Context, e *informer.Event) erro
 	}
 
 	if _, ok := q.counterCache.LoadAndDelete(string(e.Key)); ok {
-		q.collector.Push(q.key.CounterKey(jobName))
 		q.queue.Dequeue(string(e.Key))
+
+		if e.Job != nil {
+			q.collector.Push(q.key.CounterKey(jobName))
+		}
 	}
 
 	return nil

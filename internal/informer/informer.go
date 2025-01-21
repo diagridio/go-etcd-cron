@@ -172,7 +172,11 @@ func (i *Informer) handleEvent(ev *clientv3.Event) (*Event, error) {
 	}
 
 	if !i.part.IsJobManaged(job.GetPartitionId()) {
-		return nil, nil
+		return &Event{
+			IsPut: false,
+			Key:   kv.Key,
+			Job:   nil,
+		}, nil
 	}
 
 	if !isPut && ev.Kv != nil {
