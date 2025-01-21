@@ -140,6 +140,14 @@ func Test_Run(t *testing.T) {
 		for i := range 2 {
 			select {
 			case ev := <-ch:
+				assert.False(t, ev.IsPut)
+				assert.Nil(t, ev.Job)
+			case <-time.After(time.Second):
+				t.Fatalf("timed out waiting for event %d", i)
+			}
+
+			select {
+			case ev := <-ch:
 				assert.True(t, ev.IsPut)
 				//nolint:govet
 				assert.Equal(t, jobs[i], *ev.Job)
@@ -224,9 +232,13 @@ func Test_Run(t *testing.T) {
 		require.NoError(t, err)
 
 		expEvents := []*Event{
+			{IsPut: false, Job: nil, Key: []byte("abc/jobs/1")},
 			{IsPut: true, Job: &jobs[0], Key: []byte("abc/jobs/2")},
+			{IsPut: false, Job: nil, Key: []byte("abc/jobs/3")},
 			{IsPut: true, Job: &jobs[1], Key: []byte("abc/jobs/4")},
+			{IsPut: false, Job: nil, Key: []byte("abc/jobs/1")},
 			{IsPut: false, Job: &jobs[0], Key: []byte("abc/jobs/2")},
+			{IsPut: false, Job: nil, Key: []byte("abc/jobs/5")},
 			{IsPut: true, Job: &jobs[2], Key: []byte("abc/jobs/6")},
 			{IsPut: false, Job: &jobs[1], Key: []byte("abc/jobs/4")},
 		}
@@ -243,7 +255,7 @@ func Test_Run(t *testing.T) {
 		select {
 		case ev := <-ch:
 			t.Fatalf("unexpected event: %v", ev)
-		default:
+		case <-time.After(time.Second):
 		}
 	})
 }
@@ -285,7 +297,7 @@ func Test_handleEvent(t *testing.T) {
 			expEvent:         nil,
 			expErr:           true,
 		},
-		"if job is for different partition, return nil": {
+		"if job is for different partition, return delete event": {
 			ev: &clientv3.Event{
 				Type: clientv3.EventTypePut,
 				Kv: &mvccpb.KeyValue{
@@ -294,8 +306,11 @@ func Test_handleEvent(t *testing.T) {
 				},
 			},
 			expCollectorPops: []string{"abc/counters/2"},
-			expEvent:         nil,
-			expErr:           false,
+			expEvent: &Event{
+				IsPut: false,
+				Key:   []byte("abc/jobs/2"),
+			},
+			expErr: false,
 		},
 		"if job is for partition, return job on PUT": {
 			ev: &clientv3.Event{
