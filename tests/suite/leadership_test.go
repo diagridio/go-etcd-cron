@@ -13,8 +13,10 @@ import (
 	"time"
 
 	"github.com/dapr/kit/ptr"
+	"github.com/go-logr/logr"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	clientv3 "go.etcd.io/etcd/client/v3"
 	"google.golang.org/protobuf/types/known/anypb"
 
 	"github.com/diagridio/go-etcd-cron/api"
@@ -225,4 +227,56 @@ func Test_leadership_scaledown(t *testing.T) {
 	}, time.Second*10, time.Millisecond*10)
 
 	assert.Len(t, instanceCalled, 3)
+}
+
+func Test_leadership_wait_free(t *testing.T) {
+	t.Parallel()
+
+	client := etcd.EmbeddedBareClient(t)
+	opts := cron.Options{
+		Client: client,
+		Log:    logr.Discard(),
+		ID:     "123",
+		TriggerFn: func(_ context.Context, req *api.TriggerRequest) *api.TriggerResponse {
+			return &api.TriggerResponse{Result: api.TriggerResponseResult_SUCCESS}
+		},
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+
+	_, err := client.Put(ctx, "leadership/456", "123")
+	require.NoError(t, err)
+
+	cr, err := cron.New(opts)
+	require.NoError(t, err)
+
+	errCh := make(chan error)
+	go func() { errCh <- cr.Run(ctx) }()
+
+	t.Cleanup(func() {
+		cancel()
+		select {
+		case <-time.After(time.Second * 5):
+			t.Fatal("timeout waiting for cron return")
+		case err := <-errCh:
+			require.NoError(t, err)
+		}
+	})
+
+	select {
+	case err := <-errCh:
+		t.Fatal(err)
+	case <-time.After(time.Second * 5):
+	}
+
+	_, err = client.Delete(ctx, "leadership/456")
+	require.NoError(t, err)
+
+	assert.EventuallyWithT(t, func(c *assert.CollectT) {
+		assert.True(c, cr.IsElected())
+	}, time.Second*10, time.Millisecond*10)
+
+	resp, err := client.Get(ctx, "", clientv3.WithPrefix())
+	require.NoError(t, err)
+	require.Len(t, resp.Kvs, 1)
 }
