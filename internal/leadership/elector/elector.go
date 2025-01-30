@@ -128,7 +128,11 @@ func (e *Elector) Elect(ctx context.Context) (context.Context, *Elected, error) 
 	for {
 		ldata, ok, err = e.quorumReconcile(ctx, resp)
 		if err != nil {
-			return nil, nil, fmt.Errorf("failed to reconcile to leadership quorum: %w", err)
+			e.log.Error(err, "failed to reconcile to leadership quorum")
+		}
+
+		if ctx.Err() != nil {
+			return nil, nil, err
 		}
 
 		if ok {
@@ -191,7 +195,11 @@ func (e *Elector) Reelect(ctx context.Context) (context.Context, *Elected, error
 	for {
 		ldata, ok, err = e.quorumReconcile(ctx, resp)
 		if err != nil {
-			return nil, nil, fmt.Errorf("failed to reconcile to leadership quorum: %w", err)
+			e.log.Error(err, "failed to reconcile to leadership quorum")
+		}
+
+		if ctx.Err() != nil {
+			return nil, nil, err
 		}
 
 		if ok {
