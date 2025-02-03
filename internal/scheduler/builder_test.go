@@ -27,9 +27,7 @@ func Test_Schedule(t *testing.T) {
 	now := time.Now().UTC().Truncate(time.Second)
 	clock := clocktesting.NewFakeClock(now)
 
-	cronSched, err := cron.ParseStandard("@every 1h")
-	require.NoError(t, err)
-	cronSched2, err := cron.NewParser(
+	parser := cron.NewParser(
 		cron.Second |
 			cron.Minute |
 			cron.Hour |
@@ -37,7 +35,11 @@ func Test_Schedule(t *testing.T) {
 			cron.Month |
 			cron.Dow |
 			cron.Descriptor,
-	).Parse("1 2 3 4 5 6")
+	)
+
+	cronSched, err := parser.Parse("@every 1h")
+	require.NoError(t, err)
+	cronSched2, err := parser.Parse("1 2 3 4 5 6")
 	require.NoError(t, err)
 
 	tests := map[string]struct {
@@ -412,7 +414,8 @@ func Test_Parse(t *testing.T) {
 		testInLoop := test
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
-			builder := &Builder{clock: clock}
+			builder := NewBuilder()
+			builder.clock = clock
 			gotStored, gotErr := builder.Parse(testInLoop.job)
 			if gotStored != nil {
 				assert.NotEqual(t, uint32(0), gotStored.GetPartitionId())
