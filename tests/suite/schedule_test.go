@@ -189,3 +189,15 @@ func Test_schedule(t *testing.T) {
 		assert.Equal(t, 0, cron.Triggered())
 	})
 }
+
+func Test_schedule_six(t *testing.T) {
+	t.Parallel()
+
+	cron := integration.NewBase(t, 1)
+
+	job := &api.Job{
+		Schedule: ptr.Of("1 2 3 4 5 6"),
+	}
+
+	require.NoError(t, cron.API().Add(cron.Context(), "def", job))
+}

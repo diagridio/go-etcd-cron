@@ -7,6 +7,7 @@ package scheduler
 
 import (
 	"errors"
+	"fmt"
 	"math/rand"
 	"time"
 
@@ -35,14 +36,13 @@ type Builder struct {
 func NewBuilder() *Builder {
 	return &Builder{
 		clock: clock.RealClock{},
-		parser: cron.NewParser(
-			cron.Second |
-				cron.Minute |
-				cron.Hour |
-				cron.Dom |
-				cron.Month |
-				cron.Dow |
-				cron.Descriptor,
+		parser: cron.NewParser(cron.Second |
+			cron.Minute |
+			cron.Hour |
+			cron.Dom |
+			cron.Month |
+			cron.Dow |
+			cron.Descriptor,
 		),
 	}
 }
@@ -56,9 +56,8 @@ func (b *Builder) Schedule(job *stored.Job) (Interface, error) {
 	}
 
 	cronSched, err := b.parser.Parse(job.GetJob().GetSchedule())
-	//cronSched, err := cron.ParseStandard(job.GetJob().GetSchedule())
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf(">>ERROR HERE: %w", err)
 	}
 
 	//nolint:protogetter
@@ -97,9 +96,9 @@ func (b *Builder) Parse(job *api.Job) (*stored.Job, error) {
 	}
 
 	if job.Schedule != nil {
-		_, err := cron.ParseStandard(job.GetSchedule())
+		_, err := b.parser.Parse(job.GetSchedule())
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf(">>HERE2: %w", err)
 		}
 	}
 
