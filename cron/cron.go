@@ -154,7 +154,7 @@ func (c *cron) Run(ctx context.Context) error {
 		leadership.Run,
 		func(ctx context.Context) error {
 			ectx, elected, err := leadership.Elect(ctx)
-			if err != nil {
+			if err != nil || elected == nil {
 				return err
 			}
 
