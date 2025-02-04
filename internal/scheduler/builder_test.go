@@ -27,7 +27,19 @@ func Test_Schedule(t *testing.T) {
 	now := time.Now().UTC().Truncate(time.Second)
 	clock := clocktesting.NewFakeClock(now)
 
-	cronSched, err := cron.ParseStandard("@every 1h")
+	parser := cron.NewParser(
+		cron.Second |
+			cron.Minute |
+			cron.Hour |
+			cron.Dom |
+			cron.Month |
+			cron.Dow |
+			cron.Descriptor,
+	)
+
+	cronSched, err := parser.Parse("@every 1h")
+	require.NoError(t, err)
+	cronSched2, err := parser.Parse("1 2 3 4 5 6")
 	require.NoError(t, err)
 
 	tests := map[string]struct {
@@ -82,6 +94,25 @@ func Test_Schedule(t *testing.T) {
 			},
 			expErr: false,
 		},
+		"if schedule with cron, expect repeats with exp nil": {
+			job: &stored.Job{
+				Begin: &stored.Job_Start{
+					Start: timestamppb.New(now),
+				},
+				Expiration: nil,
+				Job: &api.Job{
+					Schedule: ptr.Of("1 2 3 4 5 6"),
+					Repeats:  ptr.Of(uint32(100)),
+				},
+			},
+			expScheduler: &repeats{
+				start: ptr.Of(now),
+				exp:   nil,
+				cron:  cronSched2,
+				total: ptr.Of(uint32(100)),
+			},
+			expErr: false,
+		},
 		"if bad schedule string, expect error": {
 			job: &stored.Job{
 				Begin: &stored.Job_Start{
@@ -102,7 +133,8 @@ func Test_Schedule(t *testing.T) {
 		testInLoop := test
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
-			builder := &Builder{clock: clock}
+			builder := NewBuilder()
+			builder.clock = clock
 			gotScheduler, gotErr := builder.Schedule(testInLoop.job)
 			assert.Equal(t, testInLoop.expScheduler, gotScheduler)
 			assert.Equal(t, testInLoop.expErr, gotErr != nil, "%v", gotErr)
@@ -382,7 +414,8 @@ func Test_Parse(t *testing.T) {
 		testInLoop := test
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
-			builder := &Builder{clock: clock}
+			builder := NewBuilder()
+			builder.clock = clock
 			gotStored, gotErr := builder.Parse(testInLoop.job)
 			if gotStored != nil {
 				assert.NotEqual(t, uint32(0), gotStored.GetPartitionId())
