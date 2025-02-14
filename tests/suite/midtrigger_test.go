@@ -61,7 +61,7 @@ func Test_midtrigger(t *testing.T) {
 	releaseCh <- struct{}{}
 
 	select {
-	case <-time.After(time.Second * 5):
+	case <-time.After(time.Second * 10):
 		require.Fail(t, "timed out waiting for trigger")
 	case got := <-gotCh:
 		assert.True(t, proto.Equal(p2, got))

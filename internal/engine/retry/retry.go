@@ -12,6 +12,8 @@ import (
 	"sync/atomic"
 	"time"
 
+	"go.etcd.io/etcd/server/v3/etcdserver"
+
 	"github.com/diagridio/go-etcd-cron/api"
 	internalapi "github.com/diagridio/go-etcd-cron/internal/api"
 	"github.com/diagridio/go-etcd-cron/internal/engine"
@@ -102,7 +104,7 @@ func (r *Retry) handle(ctx context.Context, fn func(internalapi.Interface) error
 		}
 
 		err = fn(a)
-		if err == nil || !errors.Is(err, internalapi.ErrClosed) {
+		if !r.handleShouldRetry(err) {
 			return err
 		}
 
@@ -113,6 +115,35 @@ func (r *Retry) handle(ctx context.Context, fn func(internalapi.Interface) error
 		case <-ctx.Done():
 			return ctx.Err()
 		}
+	}
+}
+
+// handleShouldRetry returns true if the error returned from the handle
+// function should be retried.
+func (r *Retry) handleShouldRetry(err error) bool {
+	switch {
+	case err == nil:
+		return false
+	case errors.Is(err, internalapi.ErrClosed):
+		return true
+	case errors.Is(err, etcdserver.ErrTimeout):
+		return true
+	case errors.Is(err, etcdserver.ErrTimeoutDueToLeaderFail):
+		return true
+	case errors.Is(err, etcdserver.ErrTimeoutDueToConnectionLost):
+		return true
+	case errors.Is(err, etcdserver.ErrTimeoutLeaderTransfer):
+		return true
+	case errors.Is(err, etcdserver.ErrTimeoutWaitAppliedIndex):
+		return true
+	case errors.Is(err, etcdserver.ErrLeaderChanged):
+		return true
+	case errors.Is(err, etcdserver.ErrNotEnoughStartedMembers):
+		return true
+	case errors.Is(err, etcdserver.ErrTooManyRequests):
+		return true
+	default:
+		return false
 	}
 }
 
