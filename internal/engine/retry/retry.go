@@ -136,6 +136,12 @@ func (r *Retry) handleShouldRetry(err error) bool {
 		return true
 	case errors.Is(err, etcdserver.ErrTimeoutWaitAppliedIndex):
 		return true
+	case errors.Is(err, etcdserver.ErrLeaderChanged):
+		return true
+	case errors.Is(err, etcdserver.ErrNotEnoughStartedMembers):
+		return true
+	case errors.Is(err, etcdserver.ErrTooManyRequests):
+		return true
 	default:
 		return false
 	}
