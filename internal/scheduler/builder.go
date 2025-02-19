@@ -7,7 +7,6 @@ package scheduler
 
 import (
 	"errors"
-	"fmt"
 	"math/rand"
 	"time"
 
@@ -57,7 +56,7 @@ func (b *Builder) Schedule(job *stored.Job) (Interface, error) {
 
 	cronSched, err := b.parser.Parse(job.GetJob().GetSchedule())
 	if err != nil {
-		return nil, fmt.Errorf(">>ERROR HERE: %w", err)
+		return nil, err
 	}
 
 	//nolint:protogetter
@@ -98,7 +97,7 @@ func (b *Builder) Parse(job *api.Job) (*stored.Job, error) {
 	if job.Schedule != nil {
 		_, err := b.parser.Parse(job.GetSchedule())
 		if err != nil {
-			return nil, fmt.Errorf(">>HERE2: %w", err)
+			return nil, err
 		}
 	}
 
