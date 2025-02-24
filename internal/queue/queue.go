@@ -13,6 +13,7 @@ import (
 
 	"github.com/dapr/kit/concurrency/cmap"
 	"github.com/dapr/kit/concurrency/fifo"
+	"github.com/dapr/kit/concurrency/lock"
 	"github.com/dapr/kit/events/queue"
 	"github.com/go-logr/logr"
 	"k8s.io/utils/clock"
@@ -68,7 +69,7 @@ type Queue struct {
 	yard         *grave.Yard
 	collector    garbage.Interface
 	queue        *queue.Processor[string, counter.Interface]
-	eventsLock   *fifo.Mutex
+	eventsLock   *lock.Context
 
 	// counterLock prevents an informed schedule from overwriting a job as it is
 	// being triggered, i.e. prevent a PUT and mid-trigger race condition.
@@ -111,7 +112,7 @@ func New(opts Options) *Queue {
 		triggerFn:           opts.TriggerFn,
 		collector:           opts.Collector,
 		schedBuilder:        opts.SchedulerBuilder,
-		eventsLock:          fifo.New(),
+		eventsLock:          lock.NewContext(),
 		counterLock:         fifo.NewMap[string](),
 		counterCache:        cmap.NewMap[string, struct{}](),
 		yard:                opts.Yard,
@@ -148,7 +149,10 @@ func (q *Queue) HandleInformerEvent(ctx context.Context, e *informer.Event) erro
 	case <-q.readyCh:
 	}
 
-	q.eventsLock.Lock()
+	// Attempt lock until context cancel (top level runner lock).
+	if err := q.eventsLock.Lock(ctx); err != nil {
+		return err
+	}
 	defer q.eventsLock.Unlock()
 
 	q.counterLock.Lock(string(e.Key))
