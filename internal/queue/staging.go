@@ -47,6 +47,8 @@ func (q *Queue) DeliverablePrefixes(ctx context.Context, prefixes ...string) (co
 	}
 
 	return func() {
+		// Must lock.
+		//nolint:errcheck
 		q.eventsLock.Lock(context.Background())
 		defer q.eventsLock.Unlock()
 
@@ -66,6 +68,7 @@ func (q *Queue) DeliverablePrefixes(ctx context.Context, prefixes ...string) (co
 // the current count.
 func (q *Queue) stage(counter counter.Interface) bool {
 	// Must lock.
+	//nolint:errcheck
 	q.eventsLock.Lock(context.Background())
 	defer q.eventsLock.Unlock()
 

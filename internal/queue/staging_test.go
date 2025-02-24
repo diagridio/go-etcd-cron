@@ -120,6 +120,7 @@ func Test_DeliverablePrefixes(t *testing.T) {
 			staged:              make(map[string]counter.Interface),
 			queue: queue.NewProcessor[string, counter.Interface](
 				func(counter counter.Interface) {
+					//nolint:errcheck
 					lock.Lock(context.Background())
 					defer lock.Unlock()
 					triggered = append(triggered, counter.JobName())
@@ -144,6 +145,7 @@ func Test_DeliverablePrefixes(t *testing.T) {
 		t.Cleanup(cancel)
 		assert.Equal(t, map[string]counter.Interface{"def123": counter3, "def234": counter4}, q.staged)
 		assert.EventuallyWithT(t, func(c *assert.CollectT) {
+			//nolint:errcheck
 			lock.Lock(context.Background())
 			defer lock.Unlock()
 			assert.ElementsMatch(c, []string{"abc123", "abc234", "xyz123", "xyz234"}, triggered)
@@ -154,6 +156,7 @@ func Test_DeliverablePrefixes(t *testing.T) {
 		t.Cleanup(cancel)
 		assert.Empty(t, q.staged)
 		assert.EventuallyWithT(t, func(c *assert.CollectT) {
+			//nolint:errcheck
 			lock.Lock(context.Background())
 			defer lock.Unlock()
 			assert.ElementsMatch(c, []string{"abc123", "abc234", "xyz123", "xyz234", "def123", "def234"}, triggered)
