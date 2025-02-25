@@ -19,8 +19,11 @@ import (
 // longer be delivered. Multiple of the same prefix can be added and are
 // tracked as a pool, meaning the prefix is still active if at least one
 // instance is still registered.
-func (q *Queue) DeliverablePrefixes(prefixes ...string) context.CancelFunc {
-	q.eventsLock.Lock()
+func (q *Queue) DeliverablePrefixes(ctx context.Context, prefixes ...string) (context.CancelFunc, error) {
+	// Attempt lock until context cancel.
+	if err := q.eventsLock.Lock(ctx); err != nil {
+		return nil, err
+	}
 	defer q.eventsLock.Unlock()
 
 	var toEnqueue []counter.Interface
@@ -44,7 +47,9 @@ func (q *Queue) DeliverablePrefixes(prefixes ...string) context.CancelFunc {
 	}
 
 	return func() {
-		q.eventsLock.Lock()
+		// Must lock.
+		//nolint:errcheck
+		q.eventsLock.Lock(context.Background())
 		defer q.eventsLock.Unlock()
 
 		for _, prefix := range prefixes {
@@ -54,7 +59,7 @@ func (q *Queue) DeliverablePrefixes(prefixes ...string) context.CancelFunc {
 				}
 			}
 		}
-	}
+	}, nil
 }
 
 // stage adds the counter (job) to the staging queue. Accounting for race
@@ -62,7 +67,9 @@ func (q *Queue) DeliverablePrefixes(prefixes ...string) context.CancelFunc {
 // on the current deliverable prefixes and should be immediately re-queued at
 // the current count.
 func (q *Queue) stage(counter counter.Interface) bool {
-	q.eventsLock.Lock()
+	// Must lock.
+	//nolint:errcheck
+	q.eventsLock.Lock(context.Background())
 	defer q.eventsLock.Unlock()
 
 	jobName := counter.JobName()

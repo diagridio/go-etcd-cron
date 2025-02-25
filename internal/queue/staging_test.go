@@ -6,14 +6,15 @@ Licensed under the MIT License.
 package queue
 
 import (
-	"sync"
+	"context"
 	"sync/atomic"
 	"testing"
 	"time"
 
-	"github.com/dapr/kit/concurrency/fifo"
+	"github.com/dapr/kit/concurrency/lock"
 	"github.com/dapr/kit/events/queue"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
 	"github.com/diagridio/go-etcd-cron/internal/counter"
 	"github.com/diagridio/go-etcd-cron/internal/counter/fake"
@@ -27,11 +28,12 @@ func Test_DeliverablePrefixes(t *testing.T) {
 
 		q := &Queue{
 			deliverablePrefixes: make(map[string]*atomic.Int32),
-			eventsLock:          fifo.New(),
+			eventsLock:          lock.NewContext(),
 		}
 		assert.Empty(t, q.deliverablePrefixes)
 
-		cancel := q.DeliverablePrefixes()
+		cancel, err := q.DeliverablePrefixes(context.Background())
+		require.NoError(t, err)
 		assert.Empty(t, q.deliverablePrefixes)
 		cancel()
 		assert.Empty(t, q.deliverablePrefixes)
@@ -42,11 +44,12 @@ func Test_DeliverablePrefixes(t *testing.T) {
 
 		q := &Queue{
 			deliverablePrefixes: make(map[string]*atomic.Int32),
-			eventsLock:          fifo.New(),
+			eventsLock:          lock.NewContext(),
 		}
 		assert.Empty(t, q.deliverablePrefixes)
 
-		cancel := q.DeliverablePrefixes("abc")
+		cancel, err := q.DeliverablePrefixes(context.Background(), "abc")
+		require.NoError(t, err)
 		assert.Len(t, q.deliverablePrefixes, 1)
 		cancel()
 		assert.Empty(t, q.deliverablePrefixes)
@@ -57,13 +60,15 @@ func Test_DeliverablePrefixes(t *testing.T) {
 
 		q := &Queue{
 			deliverablePrefixes: make(map[string]*atomic.Int32),
-			eventsLock:          fifo.New(),
+			eventsLock:          lock.NewContext(),
 		}
 		assert.Empty(t, q.deliverablePrefixes)
 
-		cancel1 := q.DeliverablePrefixes("abc")
+		cancel1, err := q.DeliverablePrefixes(context.Background(), "abc")
+		require.NoError(t, err)
 		assert.Len(t, q.deliverablePrefixes, 1)
-		cancel2 := q.DeliverablePrefixes("abc")
+		cancel2, err := q.DeliverablePrefixes(context.Background(), "abc")
+		require.NoError(t, err)
 		assert.Len(t, q.deliverablePrefixes, 1)
 
 		cancel1()
@@ -77,17 +82,21 @@ func Test_DeliverablePrefixes(t *testing.T) {
 
 		q := &Queue{
 			deliverablePrefixes: make(map[string]*atomic.Int32),
-			eventsLock:          fifo.New(),
+			eventsLock:          lock.NewContext(),
 		}
 		assert.Empty(t, q.deliverablePrefixes)
 
-		cancel1 := q.DeliverablePrefixes("abc")
+		cancel1, err := q.DeliverablePrefixes(context.Background(), "abc")
+		require.NoError(t, err)
 		assert.Len(t, q.deliverablePrefixes, 1)
-		cancel2 := q.DeliverablePrefixes("abc")
+		cancel2, err := q.DeliverablePrefixes(context.Background(), "abc")
+		require.NoError(t, err)
 		assert.Len(t, q.deliverablePrefixes, 1)
-		cancel3 := q.DeliverablePrefixes("def")
+		cancel3, err := q.DeliverablePrefixes(context.Background(), "def")
+		require.NoError(t, err)
 		assert.Len(t, q.deliverablePrefixes, 2)
-		cancel4 := q.DeliverablePrefixes("def")
+		cancel4, err := q.DeliverablePrefixes(context.Background(), "def")
+		require.NoError(t, err)
 		assert.Len(t, q.deliverablePrefixes, 2)
 
 		cancel1()
@@ -103,15 +112,16 @@ func Test_DeliverablePrefixes(t *testing.T) {
 	t.Run("staged counters should be enqueued if they match an added prefix", func(t *testing.T) {
 		t.Parallel()
 
-		var lock sync.Mutex
+		lock := lock.NewContext()
 		var triggered []string
 		q := &Queue{
 			deliverablePrefixes: make(map[string]*atomic.Int32),
-			eventsLock:          fifo.New(),
+			eventsLock:          lock,
 			staged:              make(map[string]counter.Interface),
 			queue: queue.NewProcessor[string, counter.Interface](
 				func(counter counter.Interface) {
-					lock.Lock()
+					//nolint:errcheck
+					lock.Lock(context.Background())
 					defer lock.Unlock()
 					triggered = append(triggered, counter.JobName())
 				},
@@ -130,20 +140,24 @@ func Test_DeliverablePrefixes(t *testing.T) {
 			"xyz123": counter5, "xyz234": counter6,
 		}
 
-		cancel := q.DeliverablePrefixes("abc", "xyz")
+		cancel, err := q.DeliverablePrefixes(context.Background(), "abc", "xyz")
+		require.NoError(t, err)
 		t.Cleanup(cancel)
 		assert.Equal(t, map[string]counter.Interface{"def123": counter3, "def234": counter4}, q.staged)
 		assert.EventuallyWithT(t, func(c *assert.CollectT) {
-			lock.Lock()
+			//nolint:errcheck
+			lock.Lock(context.Background())
 			defer lock.Unlock()
 			assert.ElementsMatch(c, []string{"abc123", "abc234", "xyz123", "xyz234"}, triggered)
 		}, time.Second*10, time.Millisecond*10)
 
-		cancel = q.DeliverablePrefixes("d")
+		cancel, err = q.DeliverablePrefixes(context.Background(), "d")
+		require.NoError(t, err)
 		t.Cleanup(cancel)
 		assert.Empty(t, q.staged)
 		assert.EventuallyWithT(t, func(c *assert.CollectT) {
-			lock.Lock()
+			//nolint:errcheck
+			lock.Lock(context.Background())
 			defer lock.Unlock()
 			assert.ElementsMatch(c, []string{"abc123", "abc234", "xyz123", "xyz234", "def123", "def234"}, triggered)
 		}, time.Second*10, time.Millisecond*10)
@@ -196,7 +210,7 @@ func Test_stage(t *testing.T) {
 
 			q := &Queue{
 				deliverablePrefixes: make(map[string]*atomic.Int32),
-				eventsLock:          fifo.New(),
+				eventsLock:          lock.NewContext(),
 				staged:              make(map[string]counter.Interface),
 			}
 
