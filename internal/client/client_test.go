@@ -19,7 +19,7 @@ import (
 	"github.com/diagridio/go-etcd-cron/internal/client/fake"
 )
 
-func Test_Delete(t *testing.T) {
+func Test_CRUD(t *testing.T) {
 	t.Parallel()
 
 	tests := map[string]func(*client) error{
@@ -37,6 +37,10 @@ func Test_Delete(t *testing.T) {
 		},
 		"DeleteMulti": func(c *client) error {
 			return c.DeleteMulti("123")
+		},
+		"PutIfNotExists": func(c *client) error {
+			_, err := c.PutIfNotExists(context.Background(), "123", "abc")
+			return err
 		},
 	}
 

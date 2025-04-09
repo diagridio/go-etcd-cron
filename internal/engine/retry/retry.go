@@ -15,6 +15,7 @@ import (
 	"go.etcd.io/etcd/server/v3/etcdserver"
 
 	"github.com/diagridio/go-etcd-cron/api"
+	apierrors "github.com/diagridio/go-etcd-cron/api/errors"
 	internalapi "github.com/diagridio/go-etcd-cron/internal/api"
 	"github.com/diagridio/go-etcd-cron/internal/engine"
 )
@@ -42,6 +43,12 @@ func New() *Retry {
 func (r *Retry) Add(ctx context.Context, name string, job *api.Job) error {
 	return r.handle(ctx, func(a internalapi.Interface) error {
 		return a.Add(ctx, name, job)
+	})
+}
+
+func (r *Retry) AddIfNotExists(ctx context.Context, name string, job *api.Job) error {
+	return r.handle(ctx, func(a internalapi.Interface) error {
+		return a.AddIfNotExists(ctx, name, job)
 	})
 }
 
@@ -122,7 +129,7 @@ func (r *Retry) handle(ctx context.Context, fn func(internalapi.Interface) error
 // function should be retried.
 func (r *Retry) handleShouldRetry(err error) bool {
 	switch {
-	case err == nil:
+	case err == nil, apierrors.IsJobAlreadyExists(err):
 		return false
 	case errors.Is(err, internalapi.ErrClosed):
 		return true

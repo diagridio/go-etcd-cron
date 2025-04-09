@@ -49,7 +49,7 @@ func main() {
   meta, _ := anypb.New(wrapperspb.String("world"))
   tt := time.Now().Add(time.Second).Format(time.RFC3339)
 
-  err = cron.Add(context.TODO(), "my-job", &api.Job{
+  err = cron.AddIfNotExists(context.TODO(), "my-job", &api.Job{
     DueTime:  &tt,
     Payload:  payload,
     Metadata: meta,

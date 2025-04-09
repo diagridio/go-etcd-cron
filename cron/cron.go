@@ -190,6 +190,13 @@ func (c *cron) Add(ctx context.Context, name string, job *api.Job) error {
 	return c.api.Add(ctx, name, job)
 }
 
+// AddIfNotExists forwards the call to the embedded API. If the Job already
+// exists, then an error is returned.
+// Error can be checked against `JobAlreadyExists` in `/api/errors/exists`.
+func (c *cron) AddIfNotExists(ctx context.Context, name string, job *api.Job) error {
+	return c.api.AddIfNotExists(ctx, name, job)
+}
+
 // Get forwards the call to the embedded API.
 func (c *cron) Get(ctx context.Context, name string) (*api.Job, error) {
 	return c.api.Get(ctx, name)

@@ -15,6 +15,8 @@ import (
 	"go.etcd.io/etcd/api/v3/v3rpc/rpctypes"
 	clientv3 "go.etcd.io/etcd/client/v3"
 	"k8s.io/utils/clock"
+
+	clienterrors "github.com/diagridio/go-etcd-cron/internal/client/errors"
 )
 
 type Interface interface {
@@ -23,6 +25,7 @@ type Interface interface {
 	clientv3.Watcher
 
 	DeleteMulti(keys ...string) error
+	PutIfNotExists(context.Context, string, string, ...clientv3.OpOption) (*clientv3.PutResponse, error)
 }
 
 type Options struct {
@@ -52,6 +55,25 @@ func New(opts Options) Interface {
 
 func (c *client) Put(ctx context.Context, key, val string, opts ...clientv3.OpOption) (*clientv3.PutResponse, error) {
 	return genericPP[string, string, clientv3.OpOption, clientv3.PutResponse](ctx, c.log, c, c.kv.Put, key, val, opts...)
+}
+
+func (c *client) PutIfNotExists(ctx context.Context, key, val string, opts ...clientv3.OpOption) (*clientv3.PutResponse, error) {
+	fn := func(ctx context.Context, key, val string, opts ...clientv3.OpOption) (*clientv3.PutResponse, error) {
+		tif := clientv3.Compare(clientv3.CreateRevision(key), "=", 0)
+		tthen := clientv3.OpPut(key, val, opts...)
+		gresp, err := c.kv.Txn(ctx).If(tif).Then(tthen).Commit()
+		if err != nil {
+			return nil, err
+		}
+
+		if gresp == nil || !gresp.Succeeded {
+			return nil, clienterrors.NewKeyAlreadyExists(key)
+		}
+
+		return gresp.OpResponse().Put(), nil
+	}
+
+	return genericPP[string, string, clientv3.OpOption, clientv3.PutResponse](ctx, c.log, c, fn, key, val, opts...)
 }
 
 func (c *client) Get(ctx context.Context, key string, opts ...clientv3.OpOption) (*clientv3.GetResponse, error) {

@@ -22,6 +22,8 @@ type Fake struct {
 	isElectedFn func() bool
 
 	deliverablePrefixesFn func(ctx context.Context, prefixes ...string) (context.CancelFunc, error)
+
+	addIfNotExistsFn func(ctx context.Context, name string, job *api.Job) error
 }
 
 func New() *Fake {
@@ -47,6 +49,9 @@ func New() *Fake {
 		},
 		deliverablePrefixesFn: func(context.Context, ...string) (context.CancelFunc, error) {
 			return func() {}, nil
+		},
+		addIfNotExistsFn: func(context.Context, string, *api.Job) error {
+			return nil
 		},
 		isElectedFn: func() bool {
 			return false
@@ -94,6 +99,11 @@ func (f *Fake) WithIsElected(fn func() bool) *Fake {
 	return f
 }
 
+func (f *Fake) WithAddIfNotExists(fn func(context.Context, string, *api.Job) error) *Fake {
+	f.addIfNotExistsFn = fn
+	return f
+}
+
 func (f *Fake) Run(ctx context.Context) error {
 	return f.runFn(ctx)
 }
@@ -124,4 +134,8 @@ func (f *Fake) DeliverablePrefixes(ctx context.Context, prefixes ...string) (con
 
 func (f *Fake) IsElected() bool {
 	return f.isElectedFn()
+}
+
+func (f *Fake) AddIfNotExists(ctx context.Context, name string, job *api.Job) error {
+	return f.addIfNotExistsFn(ctx, name, job)
 }
