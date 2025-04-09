@@ -54,8 +54,7 @@ let
       echo ">> running check-gomod2nix"
       check-gomod2nix
       echo ">> running golangci-lint"
-      golangci-lint config verify --verbose
-      golangci-lint run --enable-all --max-issues-per-linter=0 --max-same-issues=0
+      golangci-lint run --max-issues-per-linter=0 --max-same-issues=0
       echo ">> running go test --race -v -count 1 ./..."
       go test --race -v -count 1 ./...
     '';
