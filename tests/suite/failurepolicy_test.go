@@ -6,7 +6,6 @@ Licensed under the MIT License.
 package suite
 
 import (
-	"context"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -39,14 +38,14 @@ func Test_FailurePolicy(t *testing.T) {
 			GotCh: gotCh,
 		})
 
-		require.NoError(t, cron.API().Add(context.Background(), "test", &api.Job{
+		require.NoError(t, cron.API().Add(t.Context(), "test", &api.Job{
 			DueTime:  ptr.Of(time.Now().Format(time.RFC3339)),
 			Schedule: ptr.Of("@every 1s"),
 			Repeats:  ptr.Of(uint32(2)),
 		}))
 
 		for range 8 {
-			resp, err := cron.API().Get(context.Background(), "test")
+			resp, err := cron.API().Get(t.Context(), "test")
 			require.NoError(t, err)
 			assert.NotNil(t, resp)
 			select {
@@ -57,7 +56,7 @@ func Test_FailurePolicy(t *testing.T) {
 		}
 
 		assert.EventuallyWithT(t, func(c *assert.CollectT) {
-			resp, err := cron.API().Get(context.Background(), "test")
+			resp, err := cron.API().Get(t.Context(), "test")
 			assert.NoError(c, err)
 			assert.Nil(c, resp)
 		}, time.Second*5, time.Millisecond*10)
@@ -78,7 +77,7 @@ func Test_FailurePolicy(t *testing.T) {
 			GotCh: gotCh,
 		})
 
-		require.NoError(t, cron.API().Add(context.Background(), "test", &api.Job{
+		require.NoError(t, cron.API().Add(t.Context(), "test", &api.Job{
 			DueTime:  ptr.Of(time.Now().Format(time.RFC3339)),
 			Schedule: ptr.Of("@every 1s"),
 			Repeats:  ptr.Of(uint32(2)),
@@ -88,7 +87,7 @@ func Test_FailurePolicy(t *testing.T) {
 		}))
 
 		for range 2 {
-			resp, err := cron.API().Get(context.Background(), "test")
+			resp, err := cron.API().Get(t.Context(), "test")
 			require.NoError(t, err)
 			assert.NotNil(t, resp)
 			select {
@@ -99,7 +98,7 @@ func Test_FailurePolicy(t *testing.T) {
 		}
 
 		assert.EventuallyWithT(t, func(c *assert.CollectT) {
-			resp, err := cron.API().Get(context.Background(), "test")
+			resp, err := cron.API().Get(t.Context(), "test")
 			assert.NoError(c, err)
 			assert.Nil(c, resp)
 		}, time.Second*5, time.Millisecond*10)
@@ -123,7 +122,7 @@ func Test_FailurePolicy(t *testing.T) {
 			GotCh: gotCh,
 		})
 
-		require.NoError(t, cron.API().Add(context.Background(), "test", &api.Job{
+		require.NoError(t, cron.API().Add(t.Context(), "test", &api.Job{
 			DueTime:  ptr.Of(time.Now().Format(time.RFC3339)),
 			Schedule: ptr.Of("@every 1s"),
 			Repeats:  ptr.Of(uint32(3)),
@@ -137,7 +136,7 @@ func Test_FailurePolicy(t *testing.T) {
 		}))
 
 		for range 5 {
-			resp, err := cron.API().Get(context.Background(), "test")
+			resp, err := cron.API().Get(t.Context(), "test")
 			require.NoError(t, err)
 			assert.NotNil(t, resp)
 			select {
@@ -148,7 +147,7 @@ func Test_FailurePolicy(t *testing.T) {
 		}
 
 		assert.EventuallyWithT(t, func(c *assert.CollectT) {
-			resp, err := cron.API().Get(context.Background(), "test")
+			resp, err := cron.API().Get(t.Context(), "test")
 			assert.NoError(c, err)
 			assert.Nil(c, resp)
 		}, time.Second*5, time.Millisecond*10)
@@ -172,7 +171,7 @@ func Test_FailurePolicy(t *testing.T) {
 			GotCh: gotCh,
 		})
 
-		require.NoError(t, cron.API().Add(context.Background(), "test", &api.Job{
+		require.NoError(t, cron.API().Add(t.Context(), "test", &api.Job{
 			DueTime: ptr.Of(time.Now().Format(time.RFC3339)),
 			FailurePolicy: &api.FailurePolicy{
 				Policy: &api.FailurePolicy_Constant{
@@ -184,7 +183,7 @@ func Test_FailurePolicy(t *testing.T) {
 		}))
 
 		for range 100 {
-			resp, err := cron.API().Get(context.Background(), "test")
+			resp, err := cron.API().Get(t.Context(), "test")
 			require.NoError(t, err)
 			assert.NotNil(t, resp)
 			select {
@@ -195,7 +194,7 @@ func Test_FailurePolicy(t *testing.T) {
 		}
 
 		assert.EventuallyWithT(t, func(c *assert.CollectT) {
-			resp, err := cron.API().Get(context.Background(), "test")
+			resp, err := cron.API().Get(t.Context(), "test")
 			assert.NoError(c, err)
 			assert.Nil(c, resp)
 		}, time.Second*5, time.Millisecond*10)

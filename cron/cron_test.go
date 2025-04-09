@@ -46,7 +46,7 @@ func Test_Run(t *testing.T) {
 		require.NoError(t, err)
 		cron := cronI.(*cron)
 
-		ctx, cancel := context.WithCancel(context.Background())
+		ctx, cancel := context.WithCancel(t.Context())
 		errCh1 := make(chan error)
 		errCh2 := make(chan error)
 
@@ -98,7 +98,7 @@ func Test_Run(t *testing.T) {
 		require.NoError(t, err)
 		cron := cronI.(*cron)
 
-		ctx, cancel := context.WithCancel(context.Background())
+		ctx, cancel := context.WithCancel(t.Context())
 		defer cancel()
 		errCh := make(chan error)
 
@@ -117,7 +117,7 @@ func Test_Run(t *testing.T) {
 		})
 		require.NoError(t, err, "failed to marshal leadership data")
 
-		_, err = client.Put(context.Background(), "abc/leadership/1", string(leadershipData))
+		_, err = client.Put(t.Context(), "abc/leadership/1", string(leadershipData))
 		require.NoError(t, err, "failed to insert leadership data into etcd")
 
 		assert.EventuallyWithT(t, func(c *assert.CollectT) {

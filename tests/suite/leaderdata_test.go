@@ -48,7 +48,7 @@ func Test_leaderdata(t *testing.T) {
 
 	errCh := make(chan error)
 
-	ctx1, cancel1 := context.WithCancel(context.Background())
+	ctx1, cancel1 := context.WithCancel(t.Context())
 	t.Cleanup(func() { cancel1(); require.NoError(t, <-errCh) })
 	go func() { errCh <- crs[0].Run(ctx1) }()
 	select {
@@ -58,7 +58,7 @@ func Test_leaderdata(t *testing.T) {
 		assert.True(t, proto.Equal(&anypb.Any{Value: []byte("0")}, ds[0]), ds)
 	}
 
-	ctx2, cancel2 := context.WithCancel(context.Background())
+	ctx2, cancel2 := context.WithCancel(t.Context())
 	t.Cleanup(func() { cancel2(); require.NoError(t, <-errCh) })
 	go func() { errCh <- crs[1].Run(ctx2) }()
 	select {
@@ -69,7 +69,7 @@ func Test_leaderdata(t *testing.T) {
 		assert.True(t, proto.Equal(&anypb.Any{Value: []byte("1")}, ds[1]), ds)
 	}
 
-	ctx3, cancel3 := context.WithCancel(context.Background())
+	ctx3, cancel3 := context.WithCancel(t.Context())
 	t.Cleanup(func() { cancel3(); require.NoError(t, <-errCh) })
 	go func() { errCh <- crs[2].Run(ctx3) }()
 	select {

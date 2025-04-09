@@ -6,7 +6,6 @@ Licensed under the MIT License.
 package suite
 
 import (
-	"context"
 	"testing"
 	"time"
 
@@ -37,7 +36,7 @@ func Test_upsert(t *testing.T) {
 		return cron.Triggered() == 1
 	}, 5*time.Second, 1*time.Second)
 
-	resp, err := cron.Client().Get(context.Background(), "abc/jobs/def")
+	resp, err := cron.Client().Get(t.Context(), "abc/jobs/def")
 	require.NoError(t, err)
 	assert.Empty(t, resp.Kvs)
 }

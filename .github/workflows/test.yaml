@@ -8,8 +8,8 @@ jobs:
     steps:
     - uses: actions/checkout@v4
     - uses: actions/setup-go@v5
-    - uses: golangci/golangci-lint-action@v3.7.0
+    - uses: golangci/golangci-lint-action@v7
       with:
-        version: v1.61.0
+        version: v1.64.6
         skip-cache: true
     - run: go test -v --race ./...

@@ -6,7 +6,6 @@ Licensed under the MIT License.
 package suite
 
 import (
-	"context"
 	"strconv"
 	"testing"
 	"time"
@@ -37,7 +36,7 @@ func Test_partition(t *testing.T) {
 	}, time.Second*10, time.Millisecond*10)
 
 	assert.EventuallyWithT(t, func(c *assert.CollectT) {
-		resp, err := cron.Client().Get(context.Background(), "abc/jobs", clientv3.WithPrefix())
+		resp, err := cron.Client().Get(t.Context(), "abc/jobs", clientv3.WithPrefix())
 		require.NoError(t, err)
 		assert.Empty(c, resp.Kvs)
 	}, time.Second*3, time.Millisecond*10)

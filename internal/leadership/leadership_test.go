@@ -40,12 +40,12 @@ func Test_Relect(t *testing.T) {
 			ReplicaData: replicaData,
 		})
 
-		ctx, cancel := context.WithCancel(context.Background())
+		ctx, cancel := context.WithCancel(t.Context())
 
 		errCh := make(chan error)
 		go func() { errCh <- leader.Run(ctx) }()
 
-		_, _, err = leader.Elect(context.Background())
+		_, _, err = leader.Elect(t.Context())
 		require.NoError(t, err)
 
 		cancel()
@@ -56,7 +56,7 @@ func Test_Relect(t *testing.T) {
 			require.NoError(t, err)
 		}
 
-		_, _, err = leader.Reelect(context.Background())
+		_, _, err = leader.Reelect(t.Context())
 		require.Error(t, err)
 	})
 
@@ -78,7 +78,7 @@ func Test_Relect(t *testing.T) {
 			ReplicaData: replicaData,
 		})
 
-		_, _, err = leader.Reelect(context.Background())
+		_, _, err = leader.Reelect(t.Context())
 		require.Error(t, err)
 	})
 
@@ -100,7 +100,7 @@ func Test_Relect(t *testing.T) {
 			ReplicaData: replicaData,
 		})
 
-		ctx, cancel := context.WithCancel(context.Background())
+		ctx, cancel := context.WithCancel(t.Context())
 		t.Cleanup(cancel)
 
 		errCh := make(chan error)
@@ -140,7 +140,7 @@ func Test_Relect(t *testing.T) {
 			ReplicaData: replicaData,
 		})
 
-		ctx, cancel := context.WithCancel(context.Background())
+		ctx, cancel := context.WithCancel(t.Context())
 		t.Cleanup(cancel)
 
 		errCh := make(chan error)
@@ -209,11 +209,11 @@ func Test_Elect(t *testing.T) {
 			ReplicaData: replicaData,
 		})
 
-		ctx, cancel := context.WithCancel(context.Background())
+		ctx, cancel := context.WithCancel(t.Context())
 		cancel()
 		require.Error(t, leader.Run(ctx))
 
-		_, _, err = leader.Elect(context.Background())
+		_, _, err = leader.Elect(t.Context())
 		require.Error(t, err)
 	})
 
@@ -235,7 +235,7 @@ func Test_Elect(t *testing.T) {
 			ReplicaData: replicaData,
 		})
 
-		ctx, cancel := context.WithCancel(context.Background())
+		ctx, cancel := context.WithCancel(t.Context())
 		cancel()
 		_, _, err = leader.Elect(ctx)
 		require.Error(t, err)
@@ -259,7 +259,7 @@ func Test_Elect(t *testing.T) {
 			ReplicaData: replicaData,
 		})
 
-		ctx, cancel := context.WithCancel(context.Background())
+		ctx, cancel := context.WithCancel(t.Context())
 		t.Cleanup(cancel)
 
 		errCh := make(chan error)
@@ -296,7 +296,7 @@ func Test_Elect(t *testing.T) {
 			ReplicaData: replicaData,
 		})
 
-		ctx, cancel := context.WithCancel(context.Background())
+		ctx, cancel := context.WithCancel(t.Context())
 		t.Cleanup(cancel)
 
 		errCh := make(chan error)

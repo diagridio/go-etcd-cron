@@ -73,7 +73,7 @@ func Test_Run(t *testing.T) {
 		c := coll.(*collector)
 		c.clock = clocktesting.NewFakeClock(time.Now())
 
-		ctx, cancel := context.WithCancel(context.Background())
+		ctx, cancel := context.WithCancel(t.Context())
 		cancel()
 		errCh := make(chan error, 1)
 
@@ -99,7 +99,7 @@ func Test_Run(t *testing.T) {
 		c := coll.(*collector)
 		c.clock = clocktesting.NewFakeClock(time.Now())
 
-		ctx, cancel := context.WithCancel(context.Background())
+		ctx, cancel := context.WithCancel(t.Context())
 		cancel()
 		require.NoError(t, c.Run(ctx))
 
@@ -121,7 +121,7 @@ func Test_Run(t *testing.T) {
 		c := coll.(*collector)
 		c.clock = clocktesting.NewFakeClock(time.Now())
 
-		ctx, cancel := context.WithCancel(context.Background())
+		ctx, cancel := context.WithCancel(t.Context())
 
 		errCh := make(chan error, 1)
 		go func() {
@@ -130,12 +130,12 @@ func Test_Run(t *testing.T) {
 
 		for i := range 100 {
 			key := fmt.Sprintf("test-%d", i)
-			_, err := client.Put(context.Background(), key, "value")
+			_, err := client.Put(t.Context(), key, "value")
 			require.NoError(t, err)
 			c.Push(key)
 		}
 
-		resp, err := client.Get(context.Background(), "test", clientv3.WithPrefix())
+		resp, err := client.Get(t.Context(), "test", clientv3.WithPrefix())
 		require.NoError(t, err)
 		assert.Len(t, resp.Kvs, 100)
 		assert.Equal(t, int64(100), resp.Count)
@@ -148,7 +148,7 @@ func Test_Run(t *testing.T) {
 			require.NoError(t, err)
 		}
 
-		resp, err = client.Get(context.Background(), "test", clientv3.WithPrefix())
+		resp, err = client.Get(t.Context(), "test", clientv3.WithPrefix())
 		require.NoError(t, err)
 		assert.Empty(t, resp.Kvs)
 		assert.Equal(t, int64(0), resp.Count)
@@ -166,7 +166,7 @@ func Test_Run(t *testing.T) {
 		c.clock = clocktesting.NewFakeClock(time.Now())
 		c.garbageLimit = 100
 
-		ctx, cancel := context.WithCancel(context.Background())
+		ctx, cancel := context.WithCancel(t.Context())
 
 		errCh := make(chan error, 1)
 		go func() {
@@ -175,18 +175,18 @@ func Test_Run(t *testing.T) {
 
 		for i := range 100 - 1 {
 			key := fmt.Sprintf("test-%d", i)
-			_, err := client.Put(context.Background(), key, "value")
+			_, err := client.Put(t.Context(), key, "value")
 			require.NoError(t, err)
 			c.Push(key)
 		}
 
 		key := "test-100"
-		_, err = client.Put(context.Background(), key, "value")
+		_, err = client.Put(t.Context(), key, "value")
 		require.NoError(t, err)
 		c.Push(key)
 
 		assert.EventuallyWithT(t, func(c *assert.CollectT) {
-			resp, err := client.Get(context.Background(), "test", clientv3.WithPrefix())
+			resp, err := client.Get(t.Context(), "test", clientv3.WithPrefix())
 			if assert.NoError(c, err) {
 				assert.Empty(c, resp.Kvs)
 				assert.Equal(c, int64(0), resp.Count)
@@ -218,7 +218,7 @@ func Test_Run(t *testing.T) {
 		c := coll.(*collector)
 		c.clock = clock
 
-		ctx, cancel := context.WithCancel(context.Background())
+		ctx, cancel := context.WithCancel(t.Context())
 
 		errCh := make(chan error, 1)
 		go func() {
@@ -227,7 +227,7 @@ func Test_Run(t *testing.T) {
 
 		for i := range 10 {
 			key := fmt.Sprintf("test-%d", i)
-			_, err := client.Put(context.Background(), key, "value")
+			_, err := client.Put(t.Context(), key, "value")
 			require.NoError(t, err)
 			c.Push(key)
 		}
@@ -238,7 +238,7 @@ func Test_Run(t *testing.T) {
 		clock.Step(1)
 
 		assert.EventuallyWithT(t, func(c *assert.CollectT) {
-			resp, err := client.Get(context.Background(), "test", clientv3.WithPrefix())
+			resp, err := client.Get(t.Context(), "test", clientv3.WithPrefix())
 			if assert.NoError(c, err) {
 				assert.Empty(c, resp.Kvs)
 				assert.Equal(c, int64(0), resp.Count)
@@ -267,7 +267,7 @@ func Test_Run(t *testing.T) {
 		c := coll.(*collector)
 		c.clock = clock
 
-		ctx, cancel := context.WithCancel(context.Background())
+		ctx, cancel := context.WithCancel(t.Context())
 
 		errCh := make(chan error, 1)
 		go func() {
@@ -276,7 +276,7 @@ func Test_Run(t *testing.T) {
 
 		for i := range 10 {
 			key := fmt.Sprintf("test-%d", i)
-			_, err := client.Put(context.Background(), key, "value")
+			_, err := client.Put(t.Context(), key, "value")
 			require.NoError(t, err)
 			c.Push(key)
 		}
@@ -287,7 +287,7 @@ func Test_Run(t *testing.T) {
 		clock.Step(1)
 
 		assert.EventuallyWithT(t, func(c *assert.CollectT) {
-			resp, err := client.Get(context.Background(), "test", clientv3.WithPrefix())
+			resp, err := client.Get(t.Context(), "test", clientv3.WithPrefix())
 			if assert.NoError(c, err) {
 				assert.Empty(c, resp.Kvs)
 				assert.Equal(c, int64(0), resp.Count)
@@ -418,13 +418,13 @@ func Test_collect(t *testing.T) {
 		c := coll.(*collector)
 
 		for i := range 10 {
-			_, err := client.Put(context.Background(), fmt.Sprintf("/test/%d", i), "value")
+			_, err := client.Put(t.Context(), fmt.Sprintf("/test/%d", i), "value")
 			require.NoError(t, err)
 			c.keys[fmt.Sprintf("/test/%d", i)] = struct{}{}
 		}
 
 		for i := range 10 {
-			resp, err := client.Get(context.Background(), fmt.Sprintf("/test/%d", i))
+			resp, err := client.Get(t.Context(), fmt.Sprintf("/test/%d", i))
 			require.NoError(t, err)
 			require.Len(t, resp.Kvs, 1)
 			assert.Equal(t, fmt.Sprintf("/test/%d", i), string(resp.Kvs[0].Key))
@@ -435,7 +435,7 @@ func Test_collect(t *testing.T) {
 		assert.Empty(t, c.keys)
 
 		for i := range 10 {
-			resp, err := client.Get(context.Background(), fmt.Sprintf("/test/%d", i))
+			resp, err := client.Get(t.Context(), fmt.Sprintf("/test/%d", i))
 			require.NoError(t, err)
 			require.Empty(t, resp.Kvs)
 		}
@@ -452,18 +452,18 @@ func Test_collect(t *testing.T) {
 		c := coll.(*collector)
 
 		for i := range 10 {
-			_, err := client.Put(context.Background(), fmt.Sprintf("/test/%d", i), "value")
+			_, err := client.Put(t.Context(), fmt.Sprintf("/test/%d", i), "value")
 			require.NoError(t, err)
 			c.keys[fmt.Sprintf("/test/%d", i)] = struct{}{}
 		}
 
 		for i := 10; i < 20; i++ {
-			_, err := client.Put(context.Background(), fmt.Sprintf("/test/%d", i), "value")
+			_, err := client.Put(t.Context(), fmt.Sprintf("/test/%d", i), "value")
 			require.NoError(t, err)
 		}
 
 		for i := range 20 {
-			resp, err := client.Get(context.Background(), fmt.Sprintf("/test/%d", i))
+			resp, err := client.Get(t.Context(), fmt.Sprintf("/test/%d", i))
 			require.NoError(t, err)
 			require.Len(t, resp.Kvs, 1)
 			assert.Equal(t, fmt.Sprintf("/test/%d", i), string(resp.Kvs[0].Key))
@@ -474,12 +474,12 @@ func Test_collect(t *testing.T) {
 		assert.Empty(t, c.keys)
 
 		for i := range 10 {
-			resp, err := client.Get(context.Background(), fmt.Sprintf("/test/%d", i))
+			resp, err := client.Get(t.Context(), fmt.Sprintf("/test/%d", i))
 			require.NoError(t, err)
 			require.Empty(t, resp.Kvs)
 		}
 		for i := 10; i < 20; i++ {
-			resp, err := client.Get(context.Background(), fmt.Sprintf("/test/%d", i))
+			resp, err := client.Get(t.Context(), fmt.Sprintf("/test/%d", i))
 			require.NoError(t, err)
 			require.Len(t, resp.Kvs, 1)
 			assert.Equal(t, fmt.Sprintf("/test/%d", i), string(resp.Kvs[0].Key))

@@ -6,7 +6,6 @@ Licensed under the MIT License.
 package suite
 
 import (
-	"context"
 	"testing"
 	"time"
 
@@ -24,7 +23,7 @@ func Test_cron_stopping(t *testing.T) {
 	cr.Stop(t)
 
 	assert.EventuallyWithT(t, func(c *assert.CollectT) {
-		resp, err := cr.KV.Get(context.Background(), "abc/leadership", clientv3.WithPrefix())
+		resp, err := cr.KV.Get(t.Context(), "abc/leadership", clientv3.WithPrefix())
 		require.NoError(t, err)
 		assert.Empty(c, resp.Kvs)
 		assert.Equal(c, 0, int(resp.Count))
@@ -38,7 +37,7 @@ func Test_cron_cluster_stopping(t *testing.T) {
 	cr.Stop(t)
 
 	assert.EventuallyWithT(t, func(c *assert.CollectT) {
-		resp, err := cr.KV.Get(context.Background(), "abc/leadership", clientv3.WithPrefix())
+		resp, err := cr.KV.Get(t.Context(), "abc/leadership", clientv3.WithPrefix())
 		require.NoError(t, err)
 		assert.Empty(c, resp.Kvs)
 		assert.Equal(c, 0, int(resp.Count))

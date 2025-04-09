@@ -60,7 +60,7 @@ func (c *Cron) run(t *testing.T) *Cron {
 	t.Helper()
 
 	errCh := make(chan error)
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(t.Context())
 	c.cancel = cancel
 
 	t.Cleanup(func() {
@@ -93,7 +93,7 @@ func (c *Cron) Counters(t *testing.T) *clientv3.GetResponse {
 func (c *Cron) get(t *testing.T, prefix string) *clientv3.GetResponse {
 	t.Helper()
 
-	resp, err := c.KV.Get(context.Background(), prefix, clientv3.WithPrefix())
+	resp, err := c.KV.Get(t.Context(), prefix, clientv3.WithPrefix())
 	require.NoError(t, err)
 
 	return resp

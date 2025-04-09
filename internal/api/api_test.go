@@ -35,19 +35,23 @@ func Test_CRUD(t *testing.T) {
 
 	now := time.Now()
 
-	resp, err := api.Get(context.Background(), "def")
+	resp, err := api.Get(t.Context(), "def")
 	require.NoError(t, err)
 	assert.Nil(t, resp)
 
-	require.NoError(t, api.AddIfNotExists(context.Background(), "def", &cronapi.Job{
+	require.NoError(t, api.AddIfNotExists(t.Context(), "def", &cronapi.Job{
 		DueTime: ptr.Of(now.Add(time.Hour).Format(time.RFC3339)),
 	}))
 
-	require.Error(t, api.AddIfNotExists(context.Background(), "def", &cronapi.Job{
+	require.Error(t, api.AddIfNotExists(t.Context(), "def", &cronapi.Job{
 		DueTime: ptr.Of(now.Add(time.Hour).Format(time.RFC3339)),
 	}))
 
-	resp, err = api.Get(context.Background(), "def")
+	require.NoError(t, api.Add(t.Context(), "def", &cronapi.Job{
+		DueTime: ptr.Of(now.Add(time.Hour).Format(time.RFC3339)),
+	}))
+
+	resp, err = api.Get(t.Context(), "def")
 	require.NoError(t, err)
 	assert.Equal(t, &cronapi.Job{
 		DueTime: ptr.Of(now.Add(time.Hour).Format(time.RFC3339)),
@@ -59,7 +63,7 @@ func Test_CRUD(t *testing.T) {
 	}, resp)
 
 	newNow := time.Now()
-	require.NoError(t, api.Add(context.Background(), "def", &cronapi.Job{
+	require.NoError(t, api.Add(t.Context(), "def", &cronapi.Job{
 		DueTime: ptr.Of(newNow.Add(time.Hour).Format(time.RFC3339)),
 		FailurePolicy: &cronapi.FailurePolicy{Policy: &cronapi.FailurePolicy_Constant{
 			Constant: &cronapi.FailurePolicyConstant{
@@ -67,7 +71,7 @@ func Test_CRUD(t *testing.T) {
 			},
 		}},
 	}))
-	resp, err = api.Get(context.Background(), "def")
+	resp, err = api.Get(t.Context(), "def")
 	require.NoError(t, err)
 	assert.Equal(t, &cronapi.Job{
 		DueTime: ptr.Of(newNow.Add(time.Hour).Format(time.RFC3339)),
@@ -78,13 +82,13 @@ func Test_CRUD(t *testing.T) {
 		}},
 	}, resp)
 
-	require.NoError(t, api.Delete(context.Background(), "def"))
+	require.NoError(t, api.Delete(t.Context(), "def"))
 
-	resp, err = api.Get(context.Background(), "def")
+	resp, err = api.Get(t.Context(), "def")
 	require.NoError(t, err)
 	assert.Nil(t, resp)
 
-	require.NoError(t, api.Add(context.Background(), "def", &cronapi.Job{
+	require.NoError(t, api.Add(t.Context(), "def", &cronapi.Job{
 		DueTime: ptr.Of(now.Add(time.Hour).Format(time.RFC3339)),
 		FailurePolicy: &cronapi.FailurePolicy{Policy: &cronapi.FailurePolicy_Constant{
 			Constant: &cronapi.FailurePolicyConstant{
@@ -93,7 +97,7 @@ func Test_CRUD(t *testing.T) {
 		}},
 	}))
 
-	resp, err = api.Get(context.Background(), "def")
+	resp, err = api.Get(t.Context(), "def")
 	require.NoError(t, err)
 	assert.Equal(t, &cronapi.Job{
 		DueTime: ptr.Of(now.Add(time.Hour).Format(time.RFC3339)),
@@ -111,7 +115,7 @@ func Test_Add(t *testing.T) {
 	t.Run("returns context error if api not ready in time", func(t *testing.T) {
 		t.Parallel()
 
-		ctx, cancel := context.WithCancelCause(context.Background())
+		ctx, cancel := context.WithCancelCause(t.Context())
 		cancel(errCancel)
 		assert.Equal(t, errCancel, newAPINotReady(t).Add(ctx, "def", &cronapi.Job{
 			DueTime: ptr.Of(time.Now().Format(time.RFC3339)),
@@ -123,7 +127,7 @@ func Test_Add(t *testing.T) {
 
 		api := newAPINotReady(t)
 		close(api.closeCh)
-		assert.Equal(t, errors.New("api is closed"), api.Add(context.Background(), "def", &cronapi.Job{
+		assert.Equal(t, errors.New("api is closed"), api.Add(t.Context(), "def", &cronapi.Job{
 			DueTime: ptr.Of(time.Now().Format(time.RFC3339)),
 		}))
 	})
@@ -133,7 +137,7 @@ func Test_Add(t *testing.T) {
 
 		api := newAPI(t)
 
-		require.Error(t, api.Add(context.Background(), "./.", &cronapi.Job{
+		require.Error(t, api.Add(t.Context(), "./.", &cronapi.Job{
 			DueTime: ptr.Of(time.Now().Format(time.RFC3339)),
 		}))
 	})
@@ -143,7 +147,7 @@ func Test_Add(t *testing.T) {
 
 		api := newAPI(t)
 
-		require.Error(t, api.Add(context.Background(), "def", nil))
+		require.Error(t, api.Add(t.Context(), "def", nil))
 	})
 }
 
@@ -209,7 +213,7 @@ func Test_Get(t *testing.T) {
 	t.Run("returns context error if cron not ready in time", func(t *testing.T) {
 		t.Parallel()
 
-		ctx, cancel := context.WithCancelCause(context.Background())
+		ctx, cancel := context.WithCancelCause(t.Context())
 		cancel(errCancel)
 		resp, err := newAPINotReady(t).Get(ctx, "def")
 		assert.Equal(t, errCancel, err)
@@ -221,7 +225,7 @@ func Test_Get(t *testing.T) {
 
 		api := newAPINotReady(t)
 		close(api.closeCh)
-		resp, err := api.Get(context.Background(), "def")
+		resp, err := api.Get(t.Context(), "def")
 		assert.Equal(t, errors.New("api is closed"), err)
 		assert.Nil(t, resp)
 	})
@@ -231,7 +235,7 @@ func Test_Get(t *testing.T) {
 
 		api := newAPI(t)
 
-		resp, err := api.Get(context.Background(), "./.")
+		resp, err := api.Get(t.Context(), "./.")
 		require.Error(t, err)
 		assert.Nil(t, resp)
 	})
@@ -243,7 +247,7 @@ func Test_Delete(t *testing.T) {
 	t.Run("returns context error if cron not ready in time", func(t *testing.T) {
 		t.Parallel()
 
-		ctx, cancel := context.WithCancelCause(context.Background())
+		ctx, cancel := context.WithCancelCause(t.Context())
 		cancel(errCancel)
 		assert.Equal(t, errCancel, newAPINotReady(t).Delete(ctx, "def"))
 		require.Error(t, newAPINotReady(t).Delete(ctx, "def"))
@@ -254,13 +258,13 @@ func Test_Delete(t *testing.T) {
 
 		api := newAPINotReady(t)
 		close(api.closeCh)
-		assert.Equal(t, errors.New("api is closed"), api.Delete(context.Background(), "def"))
+		assert.Equal(t, errors.New("api is closed"), api.Delete(t.Context(), "def"))
 	})
 
 	t.Run("invalid name should error", func(t *testing.T) {
 		t.Parallel()
 		api := newAPI(t)
-		require.Error(t, api.Delete(context.Background(), "./."))
+		require.Error(t, api.Delete(t.Context(), "./."))
 	})
 }
 
@@ -270,7 +274,7 @@ func Test_DeletePrefixes(t *testing.T) {
 	t.Run("returns context error if cron not ready in time", func(t *testing.T) {
 		t.Parallel()
 
-		ctx, cancel := context.WithCancelCause(context.Background())
+		ctx, cancel := context.WithCancelCause(t.Context())
 		cancel(errCancel)
 		require.Error(t, newAPINotReady(t).DeletePrefixes(ctx, "foobar"))
 	})
@@ -280,14 +284,14 @@ func Test_DeletePrefixes(t *testing.T) {
 
 		api := newAPINotReady(t)
 		close(api.closeCh)
-		assert.Equal(t, errors.New("api is closed"), api.DeletePrefixes(context.Background(), "foobar"))
+		assert.Equal(t, errors.New("api is closed"), api.DeletePrefixes(t.Context(), "foobar"))
 	})
 
 	t.Run("invalid name should error", func(t *testing.T) {
 		t.Parallel()
 
 		api := newAPI(t)
-		require.Error(t, api.DeletePrefixes(context.Background(), "./."))
+		require.Error(t, api.DeletePrefixes(t.Context(), "./."))
 	})
 }
 
@@ -297,7 +301,7 @@ func Test_List(t *testing.T) {
 	t.Run("returns context error if cron not ready in time", func(t *testing.T) {
 		t.Parallel()
 
-		ctx, cancel := context.WithCancelCause(context.Background())
+		ctx, cancel := context.WithCancelCause(t.Context())
 		cancel(errCancel)
 		resp, err := newAPINotReady(t).List(ctx, "")
 		assert.Equal(t, errCancel, err)
@@ -309,7 +313,7 @@ func Test_List(t *testing.T) {
 
 		api := newAPINotReady(t)
 		close(api.closeCh)
-		resp, err := api.List(context.Background(), "")
+		resp, err := api.List(t.Context(), "")
 		assert.Equal(t, errors.New("api is closed"), err)
 		assert.Nil(t, resp)
 	})
@@ -321,7 +325,7 @@ func Test_DeliverablePrefixes(t *testing.T) {
 	t.Run("returns context error if cron not ready in time", func(t *testing.T) {
 		t.Parallel()
 
-		ctx, cancel := context.WithCancelCause(context.Background())
+		ctx, cancel := context.WithCancelCause(t.Context())
 		cancel(errCancel)
 		dcancel, err := newAPINotReady(t).DeliverablePrefixes(ctx, "helloworld")
 		assert.Equal(t, errCancel, err)
@@ -333,7 +337,7 @@ func Test_DeliverablePrefixes(t *testing.T) {
 
 		api := newAPINotReady(t)
 		close(api.closeCh)
-		cancel, err := api.DeliverablePrefixes(context.Background(), "hello world")
+		cancel, err := api.DeliverablePrefixes(t.Context(), "hello world")
 		assert.Equal(t, errors.New("api is closed"), err)
 		assert.Nil(t, cancel)
 	})
@@ -375,7 +379,7 @@ func newAPINotReady(t *testing.T) *api {
 		Collector: collector,
 	})
 
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(t.Context())
 	done := make(chan error)
 	t.Cleanup(func() {
 		cancel()

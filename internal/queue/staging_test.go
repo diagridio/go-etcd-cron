@@ -6,7 +6,6 @@ Licensed under the MIT License.
 package queue
 
 import (
-	"context"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -32,7 +31,7 @@ func Test_DeliverablePrefixes(t *testing.T) {
 		}
 		assert.Empty(t, q.deliverablePrefixes)
 
-		cancel, err := q.DeliverablePrefixes(context.Background())
+		cancel, err := q.DeliverablePrefixes(t.Context())
 		require.NoError(t, err)
 		assert.Empty(t, q.deliverablePrefixes)
 		cancel()
@@ -48,7 +47,7 @@ func Test_DeliverablePrefixes(t *testing.T) {
 		}
 		assert.Empty(t, q.deliverablePrefixes)
 
-		cancel, err := q.DeliverablePrefixes(context.Background(), "abc")
+		cancel, err := q.DeliverablePrefixes(t.Context(), "abc")
 		require.NoError(t, err)
 		assert.Len(t, q.deliverablePrefixes, 1)
 		cancel()
@@ -64,10 +63,10 @@ func Test_DeliverablePrefixes(t *testing.T) {
 		}
 		assert.Empty(t, q.deliverablePrefixes)
 
-		cancel1, err := q.DeliverablePrefixes(context.Background(), "abc")
+		cancel1, err := q.DeliverablePrefixes(t.Context(), "abc")
 		require.NoError(t, err)
 		assert.Len(t, q.deliverablePrefixes, 1)
-		cancel2, err := q.DeliverablePrefixes(context.Background(), "abc")
+		cancel2, err := q.DeliverablePrefixes(t.Context(), "abc")
 		require.NoError(t, err)
 		assert.Len(t, q.deliverablePrefixes, 1)
 
@@ -86,16 +85,16 @@ func Test_DeliverablePrefixes(t *testing.T) {
 		}
 		assert.Empty(t, q.deliverablePrefixes)
 
-		cancel1, err := q.DeliverablePrefixes(context.Background(), "abc")
+		cancel1, err := q.DeliverablePrefixes(t.Context(), "abc")
 		require.NoError(t, err)
 		assert.Len(t, q.deliverablePrefixes, 1)
-		cancel2, err := q.DeliverablePrefixes(context.Background(), "abc")
+		cancel2, err := q.DeliverablePrefixes(t.Context(), "abc")
 		require.NoError(t, err)
 		assert.Len(t, q.deliverablePrefixes, 1)
-		cancel3, err := q.DeliverablePrefixes(context.Background(), "def")
+		cancel3, err := q.DeliverablePrefixes(t.Context(), "def")
 		require.NoError(t, err)
 		assert.Len(t, q.deliverablePrefixes, 2)
-		cancel4, err := q.DeliverablePrefixes(context.Background(), "def")
+		cancel4, err := q.DeliverablePrefixes(t.Context(), "def")
 		require.NoError(t, err)
 		assert.Len(t, q.deliverablePrefixes, 2)
 
@@ -121,7 +120,7 @@ func Test_DeliverablePrefixes(t *testing.T) {
 			queue: queue.NewProcessor[string, counter.Interface](
 				func(counter counter.Interface) {
 					//nolint:errcheck
-					lock.Lock(context.Background())
+					lock.Lock(t.Context())
 					defer lock.Unlock()
 					triggered = append(triggered, counter.JobName())
 				},
@@ -140,24 +139,24 @@ func Test_DeliverablePrefixes(t *testing.T) {
 			"xyz123": counter5, "xyz234": counter6,
 		}
 
-		cancel, err := q.DeliverablePrefixes(context.Background(), "abc", "xyz")
+		cancel, err := q.DeliverablePrefixes(t.Context(), "abc", "xyz")
 		require.NoError(t, err)
 		t.Cleanup(cancel)
 		assert.Equal(t, map[string]counter.Interface{"def123": counter3, "def234": counter4}, q.staged)
 		assert.EventuallyWithT(t, func(c *assert.CollectT) {
 			//nolint:errcheck
-			lock.Lock(context.Background())
+			lock.Lock(t.Context())
 			defer lock.Unlock()
 			assert.ElementsMatch(c, []string{"abc123", "abc234", "xyz123", "xyz234"}, triggered)
 		}, time.Second*10, time.Millisecond*10)
 
-		cancel, err = q.DeliverablePrefixes(context.Background(), "d")
+		cancel, err = q.DeliverablePrefixes(t.Context(), "d")
 		require.NoError(t, err)
 		t.Cleanup(cancel)
 		assert.Empty(t, q.staged)
 		assert.EventuallyWithT(t, func(c *assert.CollectT) {
 			//nolint:errcheck
-			lock.Lock(context.Background())
+			lock.Lock(t.Context())
 			defer lock.Unlock()
 			assert.ElementsMatch(c, []string{"abc123", "abc234", "xyz123", "xyz234", "def123", "def234"}, triggered)
 		}, time.Second*10, time.Millisecond*10)
