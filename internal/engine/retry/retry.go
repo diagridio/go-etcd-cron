@@ -132,25 +132,17 @@ func (r *Retry) handleShouldRetry(err error) bool {
 	switch {
 	case err == nil, apierrors.IsJobAlreadyExists(err):
 		return false
-	case errors.Is(err, internalapi.ErrClosed):
-		return true
-	case errors.Is(err, etcdserver.ErrTimeout):
-		return true
-	case errors.Is(err, etcdserver.ErrTimeoutDueToLeaderFail):
-		return true
-	case errors.Is(err, etcdserver.ErrTimeoutDueToConnectionLost):
-		return true
-	case errors.Is(err, etcdserver.ErrTimeoutLeaderTransfer):
-		return true
-	case errors.Is(err, etcdserver.ErrTimeoutWaitAppliedIndex):
-		return true
-	case errors.Is(err, etcdserver.ErrLeaderChanged):
-		return true
-	case errors.Is(err, etcdserver.ErrNotEnoughStartedMembers):
-		return true
-	case errors.Is(err, etcdserver.ErrTooManyRequests):
-		return true
-	case clientv3.IsConnCanceled(err):
+	case
+		errors.Is(err, internalapi.ErrClosed),
+		errors.Is(err, etcdserver.ErrTimeout),
+		errors.Is(err, etcdserver.ErrTimeoutDueToLeaderFail),
+		errors.Is(err, etcdserver.ErrTimeoutDueToConnectionLost),
+		errors.Is(err, etcdserver.ErrTimeoutLeaderTransfer),
+		errors.Is(err, etcdserver.ErrTimeoutWaitAppliedIndex),
+		errors.Is(err, etcdserver.ErrLeaderChanged),
+		errors.Is(err, etcdserver.ErrNotEnoughStartedMembers),
+		errors.Is(err, etcdserver.ErrTooManyRequests),
+		clientv3.IsConnCanceled(err):
 		return true
 	default:
 		return false
