@@ -12,6 +12,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	clientv3 "go.etcd.io/etcd/client/v3"
 	"go.etcd.io/etcd/server/v3/etcdserver"
 
 	"github.com/diagridio/go-etcd-cron/api"
@@ -148,6 +149,8 @@ func (r *Retry) handleShouldRetry(err error) bool {
 	case errors.Is(err, etcdserver.ErrNotEnoughStartedMembers):
 		return true
 	case errors.Is(err, etcdserver.ErrTooManyRequests):
+		return true
+	case clientv3.IsConnCanceled(err):
 		return true
 	default:
 		return false
