@@ -38,7 +38,7 @@ func Test_CRUD(t *testing.T) {
 			return c.DeleteMulti("123")
 		},
 		"PutIfNotExists": func(c *client) error {
-			_, err := c.PutIfNotExists(context.Background(), "123", "abc")
+			_, err := c.PutIfNotExists(t.Context(), "123", "abc")
 			return err
 		},
 	}
