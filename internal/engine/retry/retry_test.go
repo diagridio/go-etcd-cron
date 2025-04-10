@@ -11,10 +11,12 @@ import (
 	"sync/atomic"
 	"testing"
 
-	"github.com/diagridio/go-etcd-cron/internal/api"
-	"github.com/diagridio/go-etcd-cron/internal/engine/fake"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/diagridio/go-etcd-cron/internal/api"
+	clienterrors "github.com/diagridio/go-etcd-cron/internal/client/errors"
+	"github.com/diagridio/go-etcd-cron/internal/engine/fake"
 )
 
 func Test_handle(t *testing.T) {
@@ -115,5 +117,21 @@ func Test_handle(t *testing.T) {
 			return api.ErrClosed
 		})
 		require.ErrorIs(t, err, errClosed)
+	})
+
+	t.Run("if the key already exists error, then should not retry", func(t *testing.T) {
+		t.Parallel()
+
+		r := New()
+		r.Ready(fake.New())
+
+		var called atomic.Int64
+		err := r.handle(context.Background(), func(a api.Interface) error {
+			called.Add(1)
+			return clienterrors.NewKeyAlreadyExists("foo")
+		})
+		require.Error(t, err)
+		assert.Equal(t, int64(1), called.Load())
+		assert.True(t, clienterrors.IsKeyAlreadyExists(err))
 	})
 }

@@ -23,6 +23,8 @@ type Fake struct {
 	delFn func(context.Context, string, ...clientv3.OpOption) (*clientv3.DeleteResponse, error)
 	delMu func(...string) error
 
+	putIfNotExistsFn func(context.Context, string, string, ...clientv3.OpOption) (*clientv3.PutResponse, error)
+
 	err error
 }
 
@@ -47,6 +49,11 @@ func (f *Fake) WithDeleteFn(fn func(context.Context, string, ...clientv3.OpOptio
 
 func (f *Fake) WithDeleteMultiFn(fn func(...string) error) *Fake {
 	f.delMu = fn
+	return f
+}
+
+func (f *Fake) WithPutIfNotExistsFn(fn func(context.Context, string, string, ...clientv3.OpOption) (*clientv3.PutResponse, error)) *Fake {
+	f.putIfNotExistsFn = fn
 	return f
 }
 
@@ -97,7 +104,9 @@ func (f *Fake) Delete(_ context.Context, k string, _ ...clientv3.OpOption) (*cli
 
 func (f *Fake) Commit() (*clientv3.TxnResponse, error) {
 	f.calls.Add(1)
-	return nil, f.err
+	return &clientv3.TxnResponse{
+		Succeeded: true,
+	}, f.err
 }
 
 func (f *Fake) DeleteMulti(keys ...string) error {
@@ -106,6 +115,14 @@ func (f *Fake) DeleteMulti(keys ...string) error {
 		return f.delMu(keys...)
 	}
 	return f.err
+}
+
+func (f *Fake) PutIfNotExists(_ context.Context, k string, b string, _ ...clientv3.OpOption) (*clientv3.PutResponse, error) {
+	f.calls.Add(1)
+	if f.putIfNotExistsFn != nil {
+		return f.putIfNotExistsFn(context.Background(), k, b)
+	}
+	return nil, f.err
 }
 
 func (f *Fake) Close() error {

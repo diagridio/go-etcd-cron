@@ -17,9 +17,11 @@ import (
 	"google.golang.org/protobuf/proto"
 
 	cronapi "github.com/diagridio/go-etcd-cron/api"
+	apierrors "github.com/diagridio/go-etcd-cron/api/errors"
 	"github.com/diagridio/go-etcd-cron/internal/api/stored"
 	"github.com/diagridio/go-etcd-cron/internal/api/validator"
 	"github.com/diagridio/go-etcd-cron/internal/client"
+	clienterrors "github.com/diagridio/go-etcd-cron/internal/client/errors"
 	"github.com/diagridio/go-etcd-cron/internal/informer"
 	"github.com/diagridio/go-etcd-cron/internal/key"
 	"github.com/diagridio/go-etcd-cron/internal/queue"
@@ -50,6 +52,10 @@ type Interface interface {
 
 	// Add adds a job to the cron instance.
 	Add(ctx context.Context, name string, job *cronapi.Job) error
+
+	// AddIfNotExists adds a job to the cron instance. If the Job already exists,
+	// then returns an error.
+	AddIfNotExists(ctx context.Context, name string, job *cronapi.Job) error
 
 	// Get gets a job from the cron instance.
 	Get(ctx context.Context, name string) (*cronapi.Job, error)
@@ -130,6 +136,16 @@ func (a *api) Run(ctx context.Context) error {
 
 // Add adds a new cron job to the cron instance.
 func (a *api) Add(ctx context.Context, name string, job *cronapi.Job) error {
+	return a.addJob(ctx, name, job, true)
+}
+
+// AddIfNotExists adds a new cron job to the cron instance. If the Job already
+// exists, an error is returned.
+func (a *api) AddIfNotExists(ctx context.Context, name string, job *cronapi.Job) error {
+	return a.addJob(ctx, name, job, false)
+}
+
+func (a *api) addJob(ctx context.Context, name string, job *cronapi.Job, upsert bool) error {
 	if err := a.waitReady(ctx); err != nil {
 		return err
 	}
@@ -152,7 +168,15 @@ func (a *api) Add(ctx context.Context, name string, job *cronapi.Job) error {
 		return fmt.Errorf("failed to marshal job: %w", err)
 	}
 
-	_, err = a.client.Put(ctx, a.key.JobKey(name), string(b))
+	if upsert {
+		_, err = a.client.Put(ctx, a.key.JobKey(name), string(b))
+	} else {
+		_, err = a.client.PutIfNotExists(ctx, a.key.JobKey(name), string(b))
+		if clienterrors.IsKeyAlreadyExists(err) {
+			return apierrors.NewJobAlreadyExists(name)
+		}
+	}
+
 	return err
 }
 

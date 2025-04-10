@@ -31,6 +31,10 @@ type Interface interface {
 	// Add adds a job to the cron instance.
 	Add(ctx context.Context, name string, job *Job) error
 
+	// AddIfNotExists adds a job to the cron instance. If the Job already exists,
+	// then returns an error.
+	AddIfNotExists(ctx context.Context, name string, job *Job) error
+
 	// Get gets a job from the cron instance.
 	Get(ctx context.Context, name string) (*Job, error)
 

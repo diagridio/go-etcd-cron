@@ -18,6 +18,7 @@ import (
 	"google.golang.org/protobuf/types/known/durationpb"
 
 	cronapi "github.com/diagridio/go-etcd-cron/api"
+	apierrors "github.com/diagridio/go-etcd-cron/api/errors"
 	"github.com/diagridio/go-etcd-cron/internal/garbage"
 	"github.com/diagridio/go-etcd-cron/internal/key"
 	"github.com/diagridio/go-etcd-cron/internal/queue"
@@ -38,7 +39,11 @@ func Test_CRUD(t *testing.T) {
 	require.NoError(t, err)
 	assert.Nil(t, resp)
 
-	require.NoError(t, api.Add(context.Background(), "def", &cronapi.Job{
+	require.NoError(t, api.AddIfNotExists(context.Background(), "def", &cronapi.Job{
+		DueTime: ptr.Of(now.Add(time.Hour).Format(time.RFC3339)),
+	}))
+
+	require.Error(t, api.AddIfNotExists(context.Background(), "def", &cronapi.Job{
 		DueTime: ptr.Of(now.Add(time.Hour).Format(time.RFC3339)),
 	}))
 
@@ -139,6 +144,62 @@ func Test_Add(t *testing.T) {
 		api := newAPI(t)
 
 		require.Error(t, api.Add(context.Background(), "def", nil))
+	})
+}
+
+func Test_AddIfNotExists(t *testing.T) {
+	t.Parallel()
+
+	t.Run("returns context error if api not ready in time", func(t *testing.T) {
+		t.Parallel()
+
+		ctx, cancel := context.WithCancelCause(context.Background())
+		cancel(errCancel)
+		assert.Equal(t, errCancel, newAPINotReady(t).AddIfNotExists(ctx, "def", &cronapi.Job{
+			DueTime: ptr.Of(time.Now().Format(time.RFC3339)),
+		}))
+	})
+
+	t.Run("returns closed error if cron is closed", func(t *testing.T) {
+		t.Parallel()
+
+		api := newAPINotReady(t)
+		close(api.closeCh)
+		assert.Equal(t, errors.New("api is closed"), api.AddIfNotExists(context.Background(), "def", &cronapi.Job{
+			DueTime: ptr.Of(time.Now().Format(time.RFC3339)),
+		}))
+	})
+
+	t.Run("invalid name should error", func(t *testing.T) {
+		t.Parallel()
+
+		api := newAPI(t)
+
+		require.Error(t, api.AddIfNotExists(context.Background(), "./.", &cronapi.Job{
+			DueTime: ptr.Of(time.Now().Format(time.RFC3339)),
+		}))
+	})
+
+	t.Run("empty job should error", func(t *testing.T) {
+		t.Parallel()
+
+		api := newAPI(t)
+
+		require.Error(t, api.AddIfNotExists(context.Background(), "def", nil))
+	})
+
+	t.Run("error if the job already exists", func(t *testing.T) {
+		t.Parallel()
+
+		api := newAPI(t)
+		job := &cronapi.Job{
+			DueTime: ptr.Of(time.Now().Format(time.RFC3339)),
+		}
+		require.NoError(t, api.Add(context.Background(), "def", job))
+		err := api.AddIfNotExists(context.Background(), "def", job)
+		require.Error(t, err)
+		assert.True(t, apierrors.IsJobAlreadyExists(err))
+		assert.Equal(t, "job already exists: 'def'", err.Error())
 	})
 }
 
