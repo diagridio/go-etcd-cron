@@ -26,7 +26,7 @@ func Test_handle(t *testing.T) {
 		t.Parallel()
 
 		r := New()
-		ctx, cancel := context.WithCancel(context.Background())
+		ctx, cancel := context.WithCancel(t.Context())
 		cancel()
 		require.Error(t, r.handle(ctx, nil))
 	})
@@ -36,7 +36,7 @@ func Test_handle(t *testing.T) {
 
 		r := New()
 		r.Close()
-		require.Error(t, r.handle(context.Background(), nil))
+		require.Error(t, r.handle(t.Context(), nil))
 	})
 
 	t.Run("when retry ready, should call given func", func(t *testing.T) {
@@ -46,7 +46,7 @@ func Test_handle(t *testing.T) {
 		r.Ready(fake.New())
 
 		var called atomic.Bool
-		require.NoError(t, r.handle(context.Background(), func(a api.Interface) error {
+		require.NoError(t, r.handle(t.Context(), func(a api.Interface) error {
 			called.Store(true)
 			return nil
 		}))
@@ -61,7 +61,7 @@ func Test_handle(t *testing.T) {
 		r.Ready(fake.New())
 
 		var called atomic.Bool
-		require.Error(t, r.handle(context.Background(), func(a api.Interface) error {
+		require.Error(t, r.handle(t.Context(), func(a api.Interface) error {
 			called.Store(true)
 			return errors.New("this is an error")
 		}))
@@ -76,7 +76,7 @@ func Test_handle(t *testing.T) {
 		r.Ready(fake.New())
 
 		var called atomic.Int64
-		require.NoError(t, r.handle(context.Background(), func(a api.Interface) error {
+		require.NoError(t, r.handle(t.Context(), func(a api.Interface) error {
 			if called.Add(1) < 4 {
 				return api.ErrClosed
 			}
@@ -93,7 +93,7 @@ func Test_handle(t *testing.T) {
 		r.Ready(fake.New())
 
 		var called atomic.Int64
-		ctx, cancel := context.WithCancel(context.Background())
+		ctx, cancel := context.WithCancel(t.Context())
 		err := r.handle(ctx, func(a api.Interface) error {
 			if called.Add(1) > 3 {
 				cancel()
@@ -110,7 +110,7 @@ func Test_handle(t *testing.T) {
 		r.Ready(fake.New())
 
 		var called atomic.Int64
-		err := r.handle(context.Background(), func(a api.Interface) error {
+		err := r.handle(t.Context(), func(a api.Interface) error {
 			if called.Add(1) > 3 {
 				r.Close()
 			}

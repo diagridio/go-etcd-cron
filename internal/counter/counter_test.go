@@ -62,9 +62,9 @@ func Test_New(t *testing.T) {
 		counterBytes, err := proto.Marshal(counter)
 		require.NoError(t, err)
 
-		_, err = client.Put(context.Background(), "abc/jobs/1", string(jobBytes))
+		_, err = client.Put(t.Context(), "abc/jobs/1", string(jobBytes))
 		require.NoError(t, err)
-		_, err = client.Put(context.Background(), "abc/counters/1", string(counterBytes))
+		_, err = client.Put(t.Context(), "abc/counters/1", string(counterBytes))
 		require.NoError(t, err)
 
 		collector, err := garbage.New(garbage.Options{Client: client})
@@ -78,7 +78,7 @@ func Test_New(t *testing.T) {
 			ID:        "0",
 		})
 		require.NoError(t, err)
-		c, ok, err := New(context.Background(), Options{
+		c, ok, err := New(t.Context(), Options{
 			Name:      "1",
 			Client:    client,
 			Key:       key,
@@ -91,16 +91,16 @@ func Test_New(t *testing.T) {
 		assert.True(t, ok)
 		assert.NotNil(t, c)
 
-		ctx, cancel := context.WithCancel(context.Background())
+		ctx, cancel := context.WithCancel(t.Context())
 		cancel()
 		require.NoError(t, collector.Run(ctx))
 
-		resp, err := client.Get(context.Background(), "abc/jobs/1")
+		resp, err := client.Get(t.Context(), "abc/jobs/1")
 		require.NoError(t, err)
 		require.Len(t, resp.Kvs, 1)
 		assert.Equal(t, jobBytes, resp.Kvs[0].Value)
 
-		resp, err = client.Get(context.Background(), "abc/counters/1")
+		resp, err = client.Get(t.Context(), "abc/counters/1")
 		require.NoError(t, err)
 		require.Len(t, resp.Kvs, 1)
 		assert.Equal(t, counterBytes, resp.Kvs[0].Value)
@@ -136,9 +136,9 @@ func Test_New(t *testing.T) {
 		counterBytes, err := proto.Marshal(counter)
 		require.NoError(t, err)
 
-		_, err = client.Put(context.Background(), "abc/jobs/1", string(jobBytes))
+		_, err = client.Put(t.Context(), "abc/jobs/1", string(jobBytes))
 		require.NoError(t, err)
-		_, err = client.Put(context.Background(), "abc/counters/1", string(counterBytes))
+		_, err = client.Put(t.Context(), "abc/counters/1", string(counterBytes))
 		require.NoError(t, err)
 
 		collector, err := garbage.New(garbage.Options{Client: client})
@@ -146,7 +146,7 @@ func Test_New(t *testing.T) {
 
 		yard := grave.New()
 
-		ctx, cancel := context.WithCancel(context.Background())
+		ctx, cancel := context.WithCancel(t.Context())
 		errCh := make(chan error)
 		go func() {
 			errCh <- collector.Run(ctx)
@@ -158,7 +158,7 @@ func Test_New(t *testing.T) {
 		})
 		require.NoError(t, err)
 
-		c, ok, err := New(context.Background(), Options{
+		c, ok, err := New(t.Context(), Options{
 			Name:      "1",
 			Key:       key,
 			Client:    client,
@@ -184,12 +184,12 @@ func Test_New(t *testing.T) {
 
 		assert.False(t, yard.HasJustDeleted("abc/jobs/1"))
 
-		resp, err := client.Get(context.Background(), "abc/jobs/1")
+		resp, err := client.Get(t.Context(), "abc/jobs/1")
 		require.NoError(t, err)
 		require.Len(t, resp.Kvs, 1)
 		assert.Equal(t, jobBytes, resp.Kvs[0].Value)
 
-		resp, err = client.Get(context.Background(), "abc/counters/1")
+		resp, err = client.Get(t.Context(), "abc/counters/1")
 		require.NoError(t, err)
 		require.Len(t, resp.Kvs, 1)
 		assert.Equal(t, counterBytes, resp.Kvs[0].Value)
@@ -225,9 +225,9 @@ func Test_New(t *testing.T) {
 		counterBytes, err := proto.Marshal(counter)
 		require.NoError(t, err)
 
-		_, err = client.Put(context.Background(), "abc/jobs/1", string(jobBytes))
+		_, err = client.Put(t.Context(), "abc/jobs/1", string(jobBytes))
 		require.NoError(t, err)
-		_, err = client.Put(context.Background(), "abc/counters/1", string(counterBytes))
+		_, err = client.Put(t.Context(), "abc/counters/1", string(counterBytes))
 		require.NoError(t, err)
 
 		collector, err := garbage.New(garbage.Options{Client: client})
@@ -235,7 +235,7 @@ func Test_New(t *testing.T) {
 
 		yard := grave.New()
 
-		ctx, cancel := context.WithCancel(context.Background())
+		ctx, cancel := context.WithCancel(t.Context())
 		errCh := make(chan error)
 		go func() {
 			errCh <- collector.Run(ctx)
@@ -246,7 +246,7 @@ func Test_New(t *testing.T) {
 			ID:        "0",
 		})
 		require.NoError(t, err)
-		c, ok, err := New(context.Background(), Options{
+		c, ok, err := New(t.Context(), Options{
 			Name:      "1",
 			Key:       key,
 			Client:    client,
@@ -270,7 +270,7 @@ func Test_New(t *testing.T) {
 
 		assert.False(t, yard.HasJustDeleted("abc/jobs/1"))
 
-		resp, err := client.Get(context.Background(), "abc/jobs/1")
+		resp, err := client.Get(t.Context(), "abc/jobs/1")
 		require.NoError(t, err)
 		require.Len(t, resp.Kvs, 1)
 		assert.Equal(t, jobBytes, resp.Kvs[0].Value)
@@ -282,7 +282,7 @@ func Test_New(t *testing.T) {
 		}
 		counterBytes, err = proto.Marshal(counter)
 		require.NoError(t, err)
-		resp, err = client.Get(context.Background(), "abc/counters/1")
+		resp, err = client.Get(t.Context(), "abc/counters/1")
 		require.NoError(t, err)
 		require.Len(t, resp.Kvs, 1)
 		assert.Equal(t, counterBytes, resp.Kvs[0].Value)
@@ -318,9 +318,9 @@ func Test_New(t *testing.T) {
 		counterBytes, err := proto.Marshal(counter)
 		require.NoError(t, err)
 
-		_, err = client.Put(context.Background(), "abc/jobs/1", string(jobBytes))
+		_, err = client.Put(t.Context(), "abc/jobs/1", string(jobBytes))
 		require.NoError(t, err)
-		_, err = client.Put(context.Background(), "abc/counters/1", string(counterBytes))
+		_, err = client.Put(t.Context(), "abc/counters/1", string(counterBytes))
 		require.NoError(t, err)
 
 		collector, err := garbage.New(garbage.Options{Client: client})
@@ -328,7 +328,7 @@ func Test_New(t *testing.T) {
 
 		yard := grave.New()
 
-		ctx, cancel := context.WithCancel(context.Background())
+		ctx, cancel := context.WithCancel(t.Context())
 		errCh := make(chan error)
 		go func() {
 			errCh <- collector.Run(ctx)
@@ -339,7 +339,7 @@ func Test_New(t *testing.T) {
 			ID:        "0",
 		})
 		require.NoError(t, err)
-		c, ok, err := New(context.Background(), Options{
+		c, ok, err := New(t.Context(), Options{
 			Name:      "1",
 			Key:       key,
 			Client:    client,
@@ -363,10 +363,10 @@ func Test_New(t *testing.T) {
 
 		assert.True(t, yard.HasJustDeleted("abc/jobs/1"))
 
-		resp, err := client.Get(context.Background(), "abc/jobs/1")
+		resp, err := client.Get(t.Context(), "abc/jobs/1")
 		require.NoError(t, err)
 		require.Empty(t, resp.Kvs)
-		resp, err = client.Get(context.Background(), "abc/counters/1")
+		resp, err = client.Get(t.Context(), "abc/counters/1")
 		require.NoError(t, err)
 		require.Empty(t, resp.Kvs)
 	})
@@ -394,7 +394,7 @@ func Test_New(t *testing.T) {
 		jobBytes, err := proto.Marshal(job)
 		require.NoError(t, err)
 
-		_, err = client.Put(context.Background(), "abc/jobs/1", string(jobBytes))
+		_, err = client.Put(t.Context(), "abc/jobs/1", string(jobBytes))
 		require.NoError(t, err)
 
 		collector, err := garbage.New(garbage.Options{Client: client})
@@ -402,7 +402,7 @@ func Test_New(t *testing.T) {
 
 		yard := grave.New()
 
-		ctx, cancel := context.WithCancel(context.Background())
+		ctx, cancel := context.WithCancel(t.Context())
 		errCh := make(chan error)
 		go func() {
 			errCh <- collector.Run(ctx)
@@ -413,7 +413,7 @@ func Test_New(t *testing.T) {
 			ID:        "0",
 		})
 		require.NoError(t, err)
-		counter, ok, err := New(context.Background(), Options{
+		counter, ok, err := New(t.Context(), Options{
 			Name:      "1",
 			Key:       key,
 			Client:    client,
@@ -437,12 +437,12 @@ func Test_New(t *testing.T) {
 
 		assert.False(t, yard.HasJustDeleted("abc/jobs/1"))
 
-		resp, err := client.Get(context.Background(), "abc/jobs/1")
+		resp, err := client.Get(t.Context(), "abc/jobs/1")
 		require.NoError(t, err)
 		require.Len(t, resp.Kvs, 1)
 		assert.Equal(t, jobBytes, resp.Kvs[0].Value)
 
-		resp, err = client.Get(context.Background(), "abc/counters/1")
+		resp, err = client.Get(t.Context(), "abc/counters/1")
 		require.NoError(t, err)
 		require.Empty(t, resp.Kvs)
 	})
@@ -477,15 +477,15 @@ func Test_TriggerSuccess(t *testing.T) {
 		counterBytes, err := proto.Marshal(scounter)
 		require.NoError(t, err)
 
-		_, err = client.Put(context.Background(), "abc/jobs/1", string(jobBytes))
+		_, err = client.Put(t.Context(), "abc/jobs/1", string(jobBytes))
 		require.NoError(t, err)
-		_, err = client.Put(context.Background(), "abc/counters/1", string(counterBytes))
+		_, err = client.Put(t.Context(), "abc/counters/1", string(counterBytes))
 		require.NoError(t, err)
 
 		collector, err := garbage.New(garbage.Options{Client: client})
 		require.NoError(t, err)
 
-		ctx, cancel := context.WithCancel(context.Background())
+		ctx, cancel := context.WithCancel(t.Context())
 		errCh := make(chan error)
 		go func() {
 			errCh <- collector.Run(ctx)
@@ -518,7 +518,7 @@ func Test_TriggerSuccess(t *testing.T) {
 
 		assert.False(t, yard.HasJustDeleted("abc/jobs/1"))
 
-		resp, err := client.Get(context.Background(), "abc/jobs/1")
+		resp, err := client.Get(t.Context(), "abc/jobs/1")
 		require.NoError(t, err)
 		require.Len(t, resp.Kvs, 1)
 		assert.Equal(t, jobBytes, resp.Kvs[0].Value)
@@ -530,7 +530,7 @@ func Test_TriggerSuccess(t *testing.T) {
 		})
 		require.NoError(t, err)
 
-		resp, err = client.Get(context.Background(), "abc/counters/1")
+		resp, err = client.Get(t.Context(), "abc/counters/1")
 		require.NoError(t, err)
 		require.Len(t, resp.Kvs, 1)
 		assert.Equal(t, counterBytes, resp.Kvs[0].Value)
@@ -565,15 +565,15 @@ func Test_TriggerSuccess(t *testing.T) {
 		counterBytes, err := proto.Marshal(scounter)
 		require.NoError(t, err)
 
-		_, err = client.Put(context.Background(), "abc/jobs/1", string(jobBytes))
+		_, err = client.Put(t.Context(), "abc/jobs/1", string(jobBytes))
 		require.NoError(t, err)
-		_, err = client.Put(context.Background(), "abc/counters/1", string(counterBytes))
+		_, err = client.Put(t.Context(), "abc/counters/1", string(counterBytes))
 		require.NoError(t, err)
 
 		collector, err := garbage.New(garbage.Options{Client: client})
 		require.NoError(t, err)
 
-		ctx, cancel := context.WithCancel(context.Background())
+		ctx, cancel := context.WithCancel(t.Context())
 		errCh := make(chan error)
 		go func() {
 			errCh <- collector.Run(ctx)
@@ -606,11 +606,11 @@ func Test_TriggerSuccess(t *testing.T) {
 
 		assert.True(t, yard.HasJustDeleted("abc/jobs/1"))
 
-		resp, err := client.Get(context.Background(), "abc/jobs/1")
+		resp, err := client.Get(t.Context(), "abc/jobs/1")
 		require.NoError(t, err)
 		require.Empty(t, resp.Kvs)
 
-		resp, err = client.Get(context.Background(), "abc/counters/1")
+		resp, err = client.Get(t.Context(), "abc/counters/1")
 		require.NoError(t, err)
 		require.Empty(t, resp.Kvs)
 	})
@@ -641,15 +641,15 @@ func Test_TriggerSuccess(t *testing.T) {
 		counterBytes, err := proto.Marshal(scounter)
 		require.NoError(t, err)
 
-		_, err = client.Put(context.Background(), "abc/jobs/1", string(jobBytes))
+		_, err = client.Put(t.Context(), "abc/jobs/1", string(jobBytes))
 		require.NoError(t, err)
-		_, err = client.Put(context.Background(), "abc/counters/1", string(counterBytes))
+		_, err = client.Put(t.Context(), "abc/counters/1", string(counterBytes))
 		require.NoError(t, err)
 
 		collector, err := garbage.New(garbage.Options{Client: client})
 		require.NoError(t, err)
 
-		ctx, cancel := context.WithCancel(context.Background())
+		ctx, cancel := context.WithCancel(t.Context())
 		errCh := make(chan error)
 		go func() {
 			errCh <- collector.Run(ctx)
@@ -682,7 +682,7 @@ func Test_TriggerSuccess(t *testing.T) {
 
 		assert.False(t, yard.HasJustDeleted("abc/jobs/1"))
 
-		resp, err := client.Get(context.Background(), "abc/jobs/1")
+		resp, err := client.Get(t.Context(), "abc/jobs/1")
 		require.NoError(t, err)
 		require.Len(t, resp.Kvs, 1)
 		assert.Equal(t, jobBytes, resp.Kvs[0].Value)
@@ -695,7 +695,7 @@ func Test_TriggerSuccess(t *testing.T) {
 		})
 		require.NoError(t, err)
 
-		resp, err = client.Get(context.Background(), "abc/counters/1")
+		resp, err = client.Get(t.Context(), "abc/counters/1")
 		require.NoError(t, err)
 		require.Len(t, resp.Kvs, 1)
 		assert.Equal(t, counterBytes, resp.Kvs[0].Value)
@@ -730,15 +730,15 @@ func Test_tickNext(t *testing.T) {
 		counterBytes, err := proto.Marshal(scounter)
 		require.NoError(t, err)
 
-		_, err = client.Put(context.Background(), "abc/jobs/1", string(jobBytes))
+		_, err = client.Put(t.Context(), "abc/jobs/1", string(jobBytes))
 		require.NoError(t, err)
-		_, err = client.Put(context.Background(), "abc/counters/1", string(counterBytes))
+		_, err = client.Put(t.Context(), "abc/counters/1", string(counterBytes))
 		require.NoError(t, err)
 
 		collector, err := garbage.New(garbage.Options{Client: client})
 		require.NoError(t, err)
 
-		ctx, cancel := context.WithCancel(context.Background())
+		ctx, cancel := context.WithCancel(t.Context())
 		errCh := make(chan error)
 		go func() {
 			errCh <- collector.Run(ctx)
@@ -770,12 +770,12 @@ func Test_tickNext(t *testing.T) {
 
 		assert.False(t, yard.HasJustDeleted("abc/jobs/1"))
 
-		resp, err := client.Get(context.Background(), "abc/jobs/1")
+		resp, err := client.Get(t.Context(), "abc/jobs/1")
 		require.NoError(t, err)
 		require.Len(t, resp.Kvs, 1)
 		assert.Equal(t, jobBytes, resp.Kvs[0].Value)
 
-		resp, err = client.Get(context.Background(), "abc/counters/1")
+		resp, err = client.Get(t.Context(), "abc/counters/1")
 		require.NoError(t, err)
 		require.Len(t, resp.Kvs, 1)
 		assert.Equal(t, counterBytes, resp.Kvs[0].Value)
@@ -810,15 +810,15 @@ func Test_tickNext(t *testing.T) {
 		counterBytes, err := proto.Marshal(scounter)
 		require.NoError(t, err)
 
-		_, err = client.Put(context.Background(), "abc/jobs/1", string(jobBytes))
+		_, err = client.Put(t.Context(), "abc/jobs/1", string(jobBytes))
 		require.NoError(t, err)
-		_, err = client.Put(context.Background(), "abc/counters/1", string(counterBytes))
+		_, err = client.Put(t.Context(), "abc/counters/1", string(counterBytes))
 		require.NoError(t, err)
 
 		collector, err := garbage.New(garbage.Options{Client: client})
 		require.NoError(t, err)
 
-		ctx, cancel := context.WithCancel(context.Background())
+		ctx, cancel := context.WithCancel(t.Context())
 		errCh := make(chan error)
 		go func() {
 			errCh <- collector.Run(ctx)
@@ -850,11 +850,11 @@ func Test_tickNext(t *testing.T) {
 
 		assert.True(t, yard.HasJustDeleted("abc/jobs/1"))
 
-		resp, err := client.Get(context.Background(), "abc/jobs/1")
+		resp, err := client.Get(t.Context(), "abc/jobs/1")
 		require.NoError(t, err)
 		require.Empty(t, resp.Kvs)
 
-		resp, err = client.Get(context.Background(), "abc/counters/1")
+		resp, err = client.Get(t.Context(), "abc/counters/1")
 		require.NoError(t, err)
 		require.Empty(t, resp.Kvs)
 	})
@@ -1669,7 +1669,7 @@ func Test_TriggerFailed(t *testing.T) {
 				yard:      grave.New(),
 			}
 
-			ok, err := counter.TriggerFailed(context.Background())
+			ok, err := counter.TriggerFailed(t.Context())
 			require.NoError(t, err)
 			assert.Equal(t, test.exp, ok)
 			if test.expDel == nil {
@@ -1739,7 +1739,7 @@ func Test_TriggerFailureSuccess(t *testing.T) {
 	}))
 	assert.Equal(t, uint32(0), putCall.Load())
 
-	ok, err := counter.TriggerSuccess(context.Background())
+	ok, err := counter.TriggerSuccess(t.Context())
 	require.NoError(t, err)
 	assert.True(t, ok)
 	assert.Equal(t, now.Add(time.Second), counter.next)
@@ -1751,7 +1751,7 @@ func Test_TriggerFailureSuccess(t *testing.T) {
 		Count: 1, Attempts: 0, LastTrigger: timestamppb.New(now),
 	}))
 
-	ok, err = counter.TriggerFailed(context.Background())
+	ok, err = counter.TriggerFailed(t.Context())
 	require.NoError(t, err)
 	assert.True(t, ok)
 	assert.Equal(t, now.Add(time.Second*6), counter.next)
@@ -1761,7 +1761,7 @@ func Test_TriggerFailureSuccess(t *testing.T) {
 	assert.True(t, proto.Equal(count.Load().(*stored.Counter), &stored.Counter{
 		Count: 1, Attempts: 1, LastTrigger: timestamppb.New(now),
 	}))
-	ok, err = counter.TriggerFailed(context.Background())
+	ok, err = counter.TriggerFailed(t.Context())
 	require.NoError(t, err)
 	assert.True(t, ok)
 	assert.Equal(t, now.Add(time.Second*11), counter.next)
@@ -1771,7 +1771,7 @@ func Test_TriggerFailureSuccess(t *testing.T) {
 	assert.True(t, proto.Equal(count.Load().(*stored.Counter), &stored.Counter{
 		Count: 1, Attempts: 2, LastTrigger: timestamppb.New(now),
 	}))
-	ok, err = counter.TriggerSuccess(context.Background())
+	ok, err = counter.TriggerSuccess(t.Context())
 	require.NoError(t, err)
 	assert.True(t, ok)
 	assert.Equal(t, now.Add(time.Second*2), counter.next)
@@ -1782,7 +1782,7 @@ func Test_TriggerFailureSuccess(t *testing.T) {
 		Count: 2, Attempts: 0, LastTrigger: timestamppb.New(now.Add(time.Second)),
 	}))
 
-	ok, err = counter.TriggerFailed(context.Background())
+	ok, err = counter.TriggerFailed(t.Context())
 	require.NoError(t, err)
 	assert.True(t, ok)
 	assert.Equal(t, now.Add(time.Second*7), counter.next)
@@ -1792,7 +1792,7 @@ func Test_TriggerFailureSuccess(t *testing.T) {
 	assert.True(t, proto.Equal(count.Load().(*stored.Counter), &stored.Counter{
 		Count: 2, Attempts: 1, LastTrigger: timestamppb.New(now.Add(time.Second)),
 	}))
-	ok, err = counter.TriggerFailed(context.Background())
+	ok, err = counter.TriggerFailed(t.Context())
 	require.NoError(t, err)
 	assert.True(t, ok)
 	assert.Equal(t, now.Add(time.Second*12), counter.next)
@@ -1804,7 +1804,7 @@ func Test_TriggerFailureSuccess(t *testing.T) {
 	}))
 	assert.Equal(t, uint32(0), delCall.Load())
 	assert.Nil(t, del.Load())
-	ok, err = counter.TriggerFailed(context.Background())
+	ok, err = counter.TriggerFailed(t.Context())
 	require.NoError(t, err)
 	assert.False(t, ok)
 	assert.Equal(t, uint32(1), delCall.Load())

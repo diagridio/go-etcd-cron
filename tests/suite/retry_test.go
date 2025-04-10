@@ -35,7 +35,7 @@ func Test_leadership_retry(t *testing.T) {
 		require.NoError(t, err)
 
 		errCh := make(chan error)
-		ctx1, cancel1 := context.WithCancel(context.Background())
+		ctx1, cancel1 := context.WithCancel(t.Context())
 		go func() { errCh <- cron1.Run(ctx1) }()
 
 		t.Cleanup(func() {
@@ -46,7 +46,7 @@ func Test_leadership_retry(t *testing.T) {
 		ierrCh := make(chan error, 10*2)
 		go func() {
 			for range 10 {
-				ctx, cancel := context.WithTimeout(context.Background(), time.Millisecond*500)
+				ctx, cancel := context.WithTimeout(t.Context(), time.Millisecond*500)
 				c, err := cron.New(cron.Options{
 					Client:    client,
 					ID:        "456",
@@ -63,7 +63,7 @@ func Test_leadership_retry(t *testing.T) {
 		}()
 
 		for i := range 5000 {
-			require.NoError(t, cron1.Add(context.Background(), strconv.Itoa(i), &api.Job{
+			require.NoError(t, cron1.Add(t.Context(), strconv.Itoa(i), &api.Job{
 				DueTime: ptr.Of("100000s"),
 			}))
 		}

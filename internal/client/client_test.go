@@ -6,7 +6,6 @@ Licensed under the MIT License.
 package client
 
 import (
-	"context"
 	"errors"
 	"testing"
 	"time"
@@ -24,22 +23,22 @@ func Test_CRUD(t *testing.T) {
 
 	tests := map[string]func(*client) error{
 		"Put": func(c *client) error {
-			_, err := c.Put(context.Background(), "123", "abc")
+			_, err := c.Put(t.Context(), "123", "abc")
 			return err
 		},
 		"Get": func(c *client) error {
-			_, err := c.Get(context.Background(), "123")
+			_, err := c.Get(t.Context(), "123")
 			return err
 		},
 		"Delete": func(c *client) error {
-			_, err := c.Delete(context.Background(), "123")
+			_, err := c.Delete(t.Context(), "123")
 			return err
 		},
 		"DeleteMulti": func(c *client) error {
 			return c.DeleteMulti("123")
 		},
 		"PutIfNotExists": func(c *client) error {
-			_, err := c.PutIfNotExists(context.Background(), "123", "abc")
+			_, err := c.PutIfNotExists(t.Context(), "123", "abc")
 			return err
 		},
 	}

@@ -6,7 +6,6 @@ Licensed under the MIT License.
 package suite
 
 import (
-	"context"
 	"strconv"
 	"sync"
 	"sync/atomic"
@@ -333,7 +332,7 @@ func Test_undeliverable(t *testing.T) {
 			Job:         &api.Job{DueTime: ptr.Of(time.Now().Format(time.RFC3339))},
 		})
 		require.NoError(t, err)
-		_, err = client.Put(context.Background(), "abc/jobs/helloworld", string(jobBytes))
+		_, err = client.Put(t.Context(), "abc/jobs/helloworld", string(jobBytes))
 		require.NoError(t, err)
 
 		var inTrigger atomic.Uint32
@@ -381,7 +380,7 @@ func Test_undeliverable(t *testing.T) {
 			Job:         &api.Job{DueTime: ptr.Of(time.Now().Format(time.RFC3339))},
 		})
 		require.NoError(t, err)
-		_, err = client.Put(context.Background(), "abc/jobs/helloworld", string(jobBytes))
+		_, err = client.Put(t.Context(), "abc/jobs/helloworld", string(jobBytes))
 		require.NoError(t, err)
 
 		var inTrigger atomic.Uint32

@@ -6,7 +6,6 @@ Licensed under the MIT License.
 package suite
 
 import (
-	"context"
 	"testing"
 	"time"
 
@@ -22,7 +21,7 @@ func Test_cron_starting(t *testing.T) {
 	cr := cron.SinglePartitionRun(t)
 
 	assert.EventuallyWithT(t, func(c *assert.CollectT) {
-		resp, err := cr.KV.Get(context.Background(), "abc/leadership/", clientv3.WithPrefix())
+		resp, err := cr.KV.Get(t.Context(), "abc/leadership/", clientv3.WithPrefix())
 		assert.NoError(c, err, "unexpected error querying etcd")
 		assert.Len(c, resp.Kvs, 1, "expected 1 leadership key, but got %d", len(resp.Kvs))
 	}, 3*time.Second, 100*time.Millisecond)
@@ -35,7 +34,7 @@ func Test_cron_cluster_starting(t *testing.T) {
 	defer cr.Stop(t)
 
 	assert.EventuallyWithT(t, func(c *assert.CollectT) {
-		resp, err := cr.KV.Get(context.Background(), "abc/leadership/", clientv3.WithPrefix())
+		resp, err := cr.KV.Get(t.Context(), "abc/leadership/", clientv3.WithPrefix())
 		assert.NoError(c, err, "unexpected error querying etcd")
 		assert.Len(c, resp.Kvs, 3, "expected 3 leadership keys, but got %d", len(resp.Kvs))
 	}, 5*time.Second, 100*time.Millisecond)

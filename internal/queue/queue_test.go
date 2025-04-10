@@ -43,7 +43,7 @@ func Test_delete_race(t *testing.T) {
 	jobKeys := make([]string, 20)
 	for i := range jobKeys {
 		jobKeys[i] = fmt.Sprintf("abc/jobs/%d", i)
-		require.NoError(t, queue.HandleInformerEvent(context.Background(), &informer.Event{
+		require.NoError(t, queue.HandleInformerEvent(t.Context(), &informer.Event{
 			IsPut: true,
 			Key:   []byte(jobKeys[i]),
 			Job: &stored.Job{
@@ -67,7 +67,7 @@ func Test_delete_race(t *testing.T) {
 			_, ok = queue.counterCache.Load(key)
 			assert.True(t, ok)
 
-			require.NoError(t, queue.HandleInformerEvent(context.Background(), &informer.Event{
+			require.NoError(t, queue.HandleInformerEvent(t.Context(), &informer.Event{
 				IsPut: false,
 				Key:   []byte(key),
 			}))
@@ -109,7 +109,7 @@ func newQueue(t *testing.T, triggerFn api.TriggerFunction) *Queue {
 	})
 	require.NoError(t, err)
 
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(t.Context())
 	errCh := make(chan error)
 	t.Cleanup(func() {
 		cancel()

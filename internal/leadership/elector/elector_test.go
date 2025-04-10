@@ -30,10 +30,10 @@ func Test_Relect(t *testing.T) {
 	replicaData := &anypb.Any{Value: []byte("hello")}
 
 	client := etcd.Embedded(t)
-	lease, err := client.Grant(context.Background(), 20)
+	lease, err := client.Grant(t.Context(), 20)
 	require.NoError(t, err)
 
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(t.Context())
 	t.Cleanup(cancel)
 
 	key1, err := key.New(key.Options{
@@ -122,7 +122,7 @@ func Test_Relect(t *testing.T) {
 	}()
 
 	assert.EventuallyWithT(t, func(c *assert.CollectT) {
-		resp, err := client.Get(context.Background(), "abc/leadership", clientv3.WithPrefix())
+		resp, err := client.Get(t.Context(), "abc/leadership", clientv3.WithPrefix())
 		require.NoError(t, err)
 		assert.Len(c, resp.Kvs, 3)
 	}, time.Second*10, time.Millisecond*10)
@@ -169,10 +169,10 @@ func Test_Elect(t *testing.T) {
 		require.NoError(t, err)
 
 		client := etcd.Embedded(t)
-		lease, err := client.Grant(context.Background(), 20)
+		lease, err := client.Grant(t.Context(), 20)
 		require.NoError(t, err)
 
-		ctx, cancel := context.WithCancel(context.Background())
+		ctx, cancel := context.WithCancel(t.Context())
 		t.Cleanup(cancel)
 
 		inf, err := informer.New(ctx, informer.Options{
@@ -200,10 +200,10 @@ func Test_Elect(t *testing.T) {
 		t.Parallel()
 
 		client := etcd.Embedded(t)
-		lease, err := client.Grant(context.Background(), 20)
+		lease, err := client.Grant(t.Context(), 20)
 		require.NoError(t, err)
 
-		ctx, cancel := context.WithCancel(context.Background())
+		ctx, cancel := context.WithCancel(t.Context())
 		t.Cleanup(cancel)
 
 		key1, err := key.New(key.Options{
@@ -281,7 +281,7 @@ func Test_haveQuorum(t *testing.T) {
 
 		client := etcd.Embedded(t)
 
-		lease, err := client.Grant(context.Background(), 20)
+		lease, err := client.Grant(t.Context(), 20)
 		require.NoError(t, err)
 		e := New(Options{
 			Log:         logr.Discard(),
@@ -304,11 +304,11 @@ func Test_haveQuorum(t *testing.T) {
 		})
 		require.NoError(t, err)
 
-		_, err = client.Put(context.Background(), "abc/leadership/helloworld", string(l1))
+		_, err = client.Put(t.Context(), "abc/leadership/helloworld", string(l1))
 		require.NoError(t, err)
-		_, err = client.Put(context.Background(), "abc/leadership/1", string(l2))
+		_, err = client.Put(t.Context(), "abc/leadership/1", string(l2))
 		require.NoError(t, err)
-		resp, err := client.Get(context.Background(), "abc/leadership", clientv3.WithPrefix())
+		resp, err := client.Get(t.Context(), "abc/leadership", clientv3.WithPrefix())
 		require.NoError(t, err)
 
 		require.Error(t, e.haveQuorum(resp, 3))
@@ -319,7 +319,7 @@ func Test_haveQuorum(t *testing.T) {
 
 		client := etcd.Embedded(t)
 
-		lease, err := client.Grant(context.Background(), 20)
+		lease, err := client.Grant(t.Context(), 20)
 		require.NoError(t, err)
 
 		e := New(Options{
@@ -343,11 +343,11 @@ func Test_haveQuorum(t *testing.T) {
 		})
 		require.NoError(t, err)
 
-		_, err = client.Put(context.Background(), "abc/leadership/helloworld", string(l1))
+		_, err = client.Put(t.Context(), "abc/leadership/helloworld", string(l1))
 		require.NoError(t, err)
-		_, err = client.Put(context.Background(), "abc/leadership/1", string(l2))
+		_, err = client.Put(t.Context(), "abc/leadership/1", string(l2))
 		require.NoError(t, err)
-		resp, err := client.Get(context.Background(), "abc/leadership", clientv3.WithPrefix())
+		resp, err := client.Get(t.Context(), "abc/leadership", clientv3.WithPrefix())
 		require.NoError(t, err)
 
 		require.NoError(t, e.haveQuorum(resp, 2))
@@ -358,7 +358,7 @@ func Test_haveQuorum(t *testing.T) {
 
 		client := etcd.Embedded(t)
 
-		lease, err := client.Grant(context.Background(), 20)
+		lease, err := client.Grant(t.Context(), 20)
 		require.NoError(t, err)
 
 		e := New(Options{
@@ -382,11 +382,11 @@ func Test_haveQuorum(t *testing.T) {
 		})
 		require.NoError(t, err)
 
-		_, err = client.Put(context.Background(), "abc/leadership/helloworld", string(l1))
+		_, err = client.Put(t.Context(), "abc/leadership/helloworld", string(l1))
 		require.NoError(t, err)
-		_, err = client.Put(context.Background(), "abc/leadership/1", string(l2))
+		_, err = client.Put(t.Context(), "abc/leadership/1", string(l2))
 		require.NoError(t, err)
-		resp, err := client.Get(context.Background(), "abc/leadership", clientv3.WithPrefix())
+		resp, err := client.Get(t.Context(), "abc/leadership", clientv3.WithPrefix())
 		require.NoError(t, err)
 
 		require.Error(t, e.haveQuorum(resp, 2))
@@ -397,7 +397,7 @@ func Test_haveQuorum(t *testing.T) {
 
 		client := etcd.Embedded(t)
 
-		lease, err := client.Grant(context.Background(), 20)
+		lease, err := client.Grant(t.Context(), 20)
 		require.NoError(t, err)
 
 		e := New(Options{
@@ -415,9 +415,9 @@ func Test_haveQuorum(t *testing.T) {
 		})
 		require.NoError(t, err)
 
-		_, err = client.Put(context.Background(), "abc/leadership/1", string(l2))
+		_, err = client.Put(t.Context(), "abc/leadership/1", string(l2))
 		require.NoError(t, err)
-		resp, err := client.Get(context.Background(), "abc/leadership", clientv3.WithPrefix())
+		resp, err := client.Get(t.Context(), "abc/leadership", clientv3.WithPrefix())
 		require.NoError(t, err)
 
 		require.Error(t, e.haveQuorum(resp, 1))
@@ -428,7 +428,7 @@ func Test_haveQuorum(t *testing.T) {
 
 		client := etcd.Embedded(t)
 
-		lease, err := client.Grant(context.Background(), 20)
+		lease, err := client.Grant(t.Context(), 20)
 		require.NoError(t, err)
 
 		e := New(Options{
@@ -452,11 +452,11 @@ func Test_haveQuorum(t *testing.T) {
 		})
 		require.NoError(t, err)
 
-		_, err = client.Put(context.Background(), "abc/leadership/helloworld", string(l1))
+		_, err = client.Put(t.Context(), "abc/leadership/helloworld", string(l1))
 		require.NoError(t, err)
-		_, err = client.Put(context.Background(), "abc/leadership/1", string(l2))
+		_, err = client.Put(t.Context(), "abc/leadership/1", string(l2))
 		require.NoError(t, err)
-		resp, err := client.Get(context.Background(), "abc/leadership", clientv3.WithPrefix())
+		resp, err := client.Get(t.Context(), "abc/leadership", clientv3.WithPrefix())
 		require.NoError(t, err)
 
 		require.Error(t, e.haveQuorum(resp, 2))
@@ -467,7 +467,7 @@ func Test_haveQuorum(t *testing.T) {
 
 		client := etcd.Embedded(t)
 
-		lease, err := client.Grant(context.Background(), 20)
+		lease, err := client.Grant(t.Context(), 20)
 		require.NoError(t, err)
 
 		e := New(Options{
@@ -491,11 +491,11 @@ func Test_haveQuorum(t *testing.T) {
 		})
 		require.NoError(t, err)
 
-		_, err = client.Put(context.Background(), "abc/leadership/helloworld", string(l1))
+		_, err = client.Put(t.Context(), "abc/leadership/helloworld", string(l1))
 		require.NoError(t, err)
-		_, err = client.Put(context.Background(), "abc/leadership/1", string(l2))
+		_, err = client.Put(t.Context(), "abc/leadership/1", string(l2))
 		require.NoError(t, err)
-		resp, err := client.Get(context.Background(), "abc/leadership", clientv3.WithPrefix())
+		resp, err := client.Get(t.Context(), "abc/leadership", clientv3.WithPrefix())
 		require.NoError(t, err)
 
 		require.Error(t, e.haveQuorum(resp, 2))
@@ -518,7 +518,7 @@ func Test_quorumReconcile(t *testing.T) {
 
 		client := etcd.Embedded(t)
 
-		lease, err := client.Grant(context.Background(), 20)
+		lease, err := client.Grant(t.Context(), 20)
 		require.NoError(t, err)
 
 		e := New(Options{
@@ -529,7 +529,7 @@ func Test_quorumReconcile(t *testing.T) {
 			LeaseID:     lease.ID,
 		})
 
-		a, ok, err := e.quorumReconcile(context.Background(), new(clientv3.GetResponse))
+		a, ok, err := e.quorumReconcile(t.Context(), new(clientv3.GetResponse))
 		require.Error(t, err)
 		assert.False(t, ok)
 		assert.Nil(t, a)
@@ -540,7 +540,7 @@ func Test_quorumReconcile(t *testing.T) {
 
 		client := etcd.Embedded(t)
 
-		lease, err := client.Grant(context.Background(), 20)
+		lease, err := client.Grant(t.Context(), 20)
 		require.NoError(t, err)
 
 		e := New(Options{
@@ -558,12 +558,12 @@ func Test_quorumReconcile(t *testing.T) {
 		})
 		require.NoError(t, err)
 
-		_, err = client.Put(context.Background(), "abc/leadership/helloworld", string(l1))
+		_, err = client.Put(t.Context(), "abc/leadership/helloworld", string(l1))
 		require.NoError(t, err)
-		resp, err := client.Get(context.Background(), "abc/leadership", clientv3.WithPrefix())
+		resp, err := client.Get(t.Context(), "abc/leadership", clientv3.WithPrefix())
 		require.NoError(t, err)
 
-		a, ok, err := e.quorumReconcile(context.Background(), resp)
+		a, ok, err := e.quorumReconcile(t.Context(), resp)
 		require.NoError(t, err)
 		assert.True(t, ok)
 		require.Len(t, a, 1)
@@ -575,7 +575,7 @@ func Test_quorumReconcile(t *testing.T) {
 
 		client := etcd.Embedded(t)
 
-		lease, err := client.Grant(context.Background(), 20)
+		lease, err := client.Grant(t.Context(), 20)
 		require.NoError(t, err)
 
 		e := New(Options{
@@ -593,18 +593,18 @@ func Test_quorumReconcile(t *testing.T) {
 		})
 		require.NoError(t, err)
 
-		_, err = client.Put(context.Background(), "abc/leadership/helloworld", string(l1))
+		_, err = client.Put(t.Context(), "abc/leadership/helloworld", string(l1))
 		require.NoError(t, err)
-		resp, err := client.Get(context.Background(), "abc/leadership", clientv3.WithPrefix())
+		resp, err := client.Get(t.Context(), "abc/leadership", clientv3.WithPrefix())
 		require.NoError(t, err)
 
-		a, ok, err := e.quorumReconcile(context.Background(), resp)
+		a, ok, err := e.quorumReconcile(t.Context(), resp)
 		require.NoError(t, err)
 		assert.True(t, ok)
 		require.Len(t, a, 1)
 		assert.True(t, proto.Equal(a[0], replicaData))
 
-		resp, err = client.Get(context.Background(), "abc/leadership/helloworld")
+		resp, err = client.Get(t.Context(), "abc/leadership/helloworld")
 		require.NoError(t, err)
 		exp, err := proto.Marshal(&stored.Leadership{
 			Total:       1,
@@ -620,7 +620,7 @@ func Test_quorumReconcile(t *testing.T) {
 
 		client := etcd.Embedded(t)
 
-		lease, err := client.Grant(context.Background(), 20)
+		lease, err := client.Grant(t.Context(), 20)
 		require.NoError(t, err)
 
 		e := New(Options{
@@ -644,21 +644,21 @@ func Test_quorumReconcile(t *testing.T) {
 		})
 		require.NoError(t, err)
 
-		_, err = client.Put(context.Background(), "abc/leadership/helloworld", string(l1))
+		_, err = client.Put(t.Context(), "abc/leadership/helloworld", string(l1))
 		require.NoError(t, err)
-		_, err = client.Put(context.Background(), "abc/leadership/1", string(l2))
+		_, err = client.Put(t.Context(), "abc/leadership/1", string(l2))
 		require.NoError(t, err)
-		resp, err := client.Get(context.Background(), "abc/leadership", clientv3.WithPrefix())
+		resp, err := client.Get(t.Context(), "abc/leadership", clientv3.WithPrefix())
 		require.NoError(t, err)
 
-		a, ok, err := e.quorumReconcile(context.Background(), resp)
+		a, ok, err := e.quorumReconcile(t.Context(), resp)
 		require.NoError(t, err)
 		assert.False(t, ok)
 		require.Len(t, a, 2)
 		assert.True(t, proto.Equal(a[1], replicaData))
 		assert.True(t, proto.Equal(a[0], &anypb.Any{Value: []byte("world")}))
 
-		resp, err = client.Get(context.Background(), "abc/leadership/helloworld")
+		resp, err = client.Get(t.Context(), "abc/leadership/helloworld")
 		require.NoError(t, err)
 		exp, err := proto.Marshal(&stored.Leadership{
 			Total:       2,
@@ -686,7 +686,7 @@ func Test_reconcileSelf(t *testing.T) {
 
 		client := etcd.Embedded(t)
 
-		lease, err := client.Grant(context.Background(), 20)
+		lease, err := client.Grant(t.Context(), 20)
 		require.NoError(t, err)
 
 		e := New(Options{
@@ -704,7 +704,7 @@ func Test_reconcileSelf(t *testing.T) {
 		}
 		self := &mvccpb.KeyValue{Value: []byte("123")}
 
-		err = e.reconcileSelf(context.Background(), self, selfLeader, 1)
+		err = e.reconcileSelf(t.Context(), self, selfLeader, 1)
 		require.Error(t, err)
 	})
 
@@ -713,7 +713,7 @@ func Test_reconcileSelf(t *testing.T) {
 
 		client := etcd.Embedded(t)
 
-		lease, err := client.Grant(context.Background(), 20)
+		lease, err := client.Grant(t.Context(), 20)
 		require.NoError(t, err)
 
 		e := New(Options{
@@ -733,7 +733,7 @@ func Test_reconcileSelf(t *testing.T) {
 		require.NoError(t, err)
 		self := &mvccpb.KeyValue{Value: selfValue}
 
-		err = e.reconcileSelf(context.Background(), self, selfLeader, 1)
+		err = e.reconcileSelf(t.Context(), self, selfLeader, 1)
 		require.Error(t, err)
 	})
 
@@ -742,7 +742,7 @@ func Test_reconcileSelf(t *testing.T) {
 
 		client := etcd.Embedded(t)
 
-		lease, err := client.Grant(context.Background(), 20)
+		lease, err := client.Grant(t.Context(), 20)
 		require.NoError(t, err)
 
 		e := New(Options{
@@ -762,7 +762,7 @@ func Test_reconcileSelf(t *testing.T) {
 		require.NoError(t, err)
 		self := &mvccpb.KeyValue{Value: selfValue}
 
-		err = e.reconcileSelf(context.Background(), self, selfLeader, 2)
+		err = e.reconcileSelf(t.Context(), self, selfLeader, 2)
 		require.NoError(t, err)
 	})
 
@@ -771,7 +771,7 @@ func Test_reconcileSelf(t *testing.T) {
 
 		client := etcd.Embedded(t)
 
-		lease, err := client.Grant(context.Background(), 20)
+		lease, err := client.Grant(t.Context(), 20)
 		require.NoError(t, err)
 
 		e := New(Options{
@@ -798,10 +798,10 @@ func Test_reconcileSelf(t *testing.T) {
 		})
 		require.NoError(t, err)
 
-		_, err = client.Put(context.Background(), "abc/leadership/helloworld", string(wproto))
+		_, err = client.Put(t.Context(), "abc/leadership/helloworld", string(wproto))
 		require.NoError(t, err)
 
-		err = e.reconcileSelf(context.Background(), self, selfLeader, 3)
+		err = e.reconcileSelf(t.Context(), self, selfLeader, 3)
 		require.Error(t, err)
 	})
 
@@ -810,7 +810,7 @@ func Test_reconcileSelf(t *testing.T) {
 
 		client := etcd.Embedded(t)
 
-		lease, err := client.Grant(context.Background(), 20)
+		lease, err := client.Grant(t.Context(), 20)
 		require.NoError(t, err)
 
 		e := New(Options{
@@ -837,13 +837,13 @@ func Test_reconcileSelf(t *testing.T) {
 		})
 		require.NoError(t, err)
 
-		_, err = client.Put(context.Background(), "abc/leadership/helloworld", string(wproto))
+		_, err = client.Put(t.Context(), "abc/leadership/helloworld", string(wproto))
 		require.NoError(t, err)
 
-		err = e.reconcileSelf(context.Background(), self, selfLeader, 3)
+		err = e.reconcileSelf(t.Context(), self, selfLeader, 3)
 		require.NoError(t, err)
 
-		resp, err := client.Get(context.Background(), "abc/leadership/helloworld")
+		resp, err := client.Get(t.Context(), "abc/leadership/helloworld")
 		require.NoError(t, err)
 		assert.Len(t, resp.Kvs, 1)
 
@@ -872,7 +872,7 @@ func Test_attemptNewLeadership(t *testing.T) {
 
 		replicaData := &anypb.Any{Value: []byte("hello")}
 
-		lease, err := client.Grant(context.Background(), 20)
+		lease, err := client.Grant(t.Context(), 20)
 		require.NoError(t, err)
 
 		e := New(Options{
@@ -883,14 +883,14 @@ func Test_attemptNewLeadership(t *testing.T) {
 			LeaseID:     lease.ID,
 		})
 
-		resp, err := client.Get(context.Background(), "abc/leadership", clientv3.WithPrefix())
+		resp, err := client.Get(t.Context(), "abc/leadership", clientv3.WithPrefix())
 		require.NoError(t, err)
 
-		ok, err := e.attemptNewLeadership(context.Background(), resp)
+		ok, err := e.attemptNewLeadership(t.Context(), resp)
 		require.NoError(t, err)
 		assert.True(t, ok)
 
-		resp, err = client.Get(context.Background(), "abc/leadership", clientv3.WithPrefix())
+		resp, err = client.Get(t.Context(), "abc/leadership", clientv3.WithPrefix())
 		require.NoError(t, err)
 		require.Len(t, resp.Kvs, 1)
 		assert.Equal(t, "abc/leadership/helloworld", string(resp.Kvs[0].Key))
@@ -916,7 +916,7 @@ func Test_attemptNewLeadership(t *testing.T) {
 
 		replicaData := &anypb.Any{Value: []byte("hello")}
 
-		lease, err := client.Grant(context.Background(), 20)
+		lease, err := client.Grant(t.Context(), 20)
 		require.NoError(t, err)
 
 		e := New(Options{
@@ -940,19 +940,19 @@ func Test_attemptNewLeadership(t *testing.T) {
 		})
 		require.NoError(t, err)
 
-		_, err = client.Put(context.Background(), "abc/leadership/1", string(l1))
+		_, err = client.Put(t.Context(), "abc/leadership/1", string(l1))
 		require.NoError(t, err)
-		_, err = client.Put(context.Background(), "abc/leadership/2", string(l2))
-		require.NoError(t, err)
-
-		resp, err := client.Get(context.Background(), "abc/leadership", clientv3.WithPrefix())
+		_, err = client.Put(t.Context(), "abc/leadership/2", string(l2))
 		require.NoError(t, err)
 
-		ok, err := e.attemptNewLeadership(context.Background(), resp)
+		resp, err := client.Get(t.Context(), "abc/leadership", clientv3.WithPrefix())
+		require.NoError(t, err)
+
+		ok, err := e.attemptNewLeadership(t.Context(), resp)
 		require.NoError(t, err)
 		assert.True(t, ok)
 
-		resp, err = client.Get(context.Background(), "abc/leadership", clientv3.WithPrefix())
+		resp, err = client.Get(t.Context(), "abc/leadership", clientv3.WithPrefix())
 		require.NoError(t, err)
 		require.Len(t, resp.Kvs, 3)
 		require.Equal(t, "abc/leadership/helloworld", string(resp.Kvs[2].Key))
@@ -984,10 +984,10 @@ func Test_attemptNewLeadership(t *testing.T) {
 		})
 		require.NoError(t, err)
 
-		_, err = client.Put(context.Background(), "abc/leadership/helloworld", string(exp))
+		_, err = client.Put(t.Context(), "abc/leadership/helloworld", string(exp))
 		require.NoError(t, err)
 
-		lease, err := client.Grant(context.Background(), 20)
+		lease, err := client.Grant(t.Context(), 20)
 		require.NoError(t, err)
 
 		e := New(Options{
@@ -998,10 +998,10 @@ func Test_attemptNewLeadership(t *testing.T) {
 			LeaseID:     lease.ID,
 		})
 
-		resp, err := client.Get(context.Background(), "abc/leadership", clientv3.WithPrefix())
+		resp, err := client.Get(t.Context(), "abc/leadership", clientv3.WithPrefix())
 		require.NoError(t, err)
 
-		ok, err := e.attemptNewLeadership(context.Background(), resp)
+		ok, err := e.attemptNewLeadership(t.Context(), resp)
 		require.NoError(t, err)
 		assert.False(t, ok)
 	})

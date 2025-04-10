@@ -58,7 +58,7 @@ func Test_active_passive(t *testing.T) {
 	}
 
 	errCh := make(chan error)
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(t.Context())
 	for i := range 6 {
 		go func() { errCh <- crs[i].Run(ctx) }()
 	}
@@ -140,7 +140,7 @@ func Test_passive_active(t *testing.T) {
 
 	for i := range 6 {
 		//nolint:fatcontext
-		ctxs[i], cancels[i] = context.WithCancel(context.Background())
+		ctxs[i], cancels[i] = context.WithCancel(t.Context())
 		go func(i int) { errCh <- crs[i].Run(ctxs[i]) }(i)
 	}
 
@@ -172,7 +172,7 @@ func Test_passive_active(t *testing.T) {
 	}
 
 	for i := range 100 {
-		require.NoError(t, cr.Add(context.Background(), strconv.Itoa(i), &api.Job{
+		require.NoError(t, cr.Add(t.Context(), strconv.Itoa(i), &api.Job{
 			DueTime: ptr.Of("0s"),
 		}))
 	}
@@ -193,7 +193,7 @@ func Test_passive_active(t *testing.T) {
 	}
 
 	uids := make([]uint64, 3)
-	resp, err := client.Get(context.Background(), "leadership", clientv3.WithPrefix())
+	resp, err := client.Get(t.Context(), "leadership", clientv3.WithPrefix())
 	require.NoError(t, err)
 	require.Len(t, resp.Kvs, 3)
 	for i, kv := range resp.Kvs {
@@ -216,7 +216,7 @@ func Test_passive_active(t *testing.T) {
 	}()
 
 	assert.EventuallyWithT(t, func(c *assert.CollectT) {
-		resp, err = client.Get(context.Background(), "leadership", clientv3.WithPrefix())
+		resp, err = client.Get(t.Context(), "leadership", clientv3.WithPrefix())
 		require.NoError(t, err)
 		assert.Len(c, resp.Kvs, 3)
 		for _, kv := range resp.Kvs {
@@ -234,7 +234,7 @@ func Test_passive_active(t *testing.T) {
 	}
 
 	for i := range 100 {
-		require.NoError(t, cr.Add(context.Background(), strconv.Itoa(i+100), &api.Job{
+		require.NoError(t, cr.Add(t.Context(), strconv.Itoa(i+100), &api.Job{
 			DueTime: ptr.Of("0s"),
 		}))
 	}

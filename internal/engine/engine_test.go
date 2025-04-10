@@ -84,7 +84,7 @@ func Test_Run(t *testing.T) {
 		require.NoError(t, err)
 		require.NotNil(t, engine)
 
-		ctx, cancel := context.WithCancel(context.Background())
+		ctx, cancel := context.WithCancel(t.Context())
 		defer cancel()
 
 		errCh := make(chan error)
@@ -124,7 +124,7 @@ func Test_Run(t *testing.T) {
 		require.NoError(t, err)
 		require.NotNil(t, engine)
 
-		ctx, cancel := context.WithCancel(context.Background())
+		ctx, cancel := context.WithCancel(t.Context())
 		t.Cleanup(cancel)
 
 		errCh := make(chan error)

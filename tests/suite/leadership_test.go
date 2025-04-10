@@ -57,7 +57,7 @@ func Test_leadership_scaleup(t *testing.T) {
 	}
 
 	errCh := make(chan error)
-	ctx1, cancel1 := context.WithCancel(context.Background())
+	ctx1, cancel1 := context.WithCancel(t.Context())
 	for i := range 3 {
 		go func() { errCh <- crs[i].Run(ctx1) }()
 	}
@@ -96,7 +96,7 @@ func Test_leadership_scaleup(t *testing.T) {
 	assert.Len(t, instanceCalled, 3)
 	lock.Unlock()
 
-	ctx2, cancel2 := context.WithCancel(context.Background())
+	ctx2, cancel2 := context.WithCancel(t.Context())
 	for i := range 2 {
 		go func() { errCh <- crs[i+3].Run(ctx2) }()
 	}
@@ -160,12 +160,12 @@ func Test_leadership_scaledown(t *testing.T) {
 	}
 
 	errCh := make(chan error)
-	ctx1, cancel1 := context.WithCancel(context.Background())
+	ctx1, cancel1 := context.WithCancel(t.Context())
 	for i := range 3 {
 		go func() { errCh <- crs[i].Run(ctx1) }()
 	}
 
-	ctx2, cancel2 := context.WithCancel(context.Background())
+	ctx2, cancel2 := context.WithCancel(t.Context())
 	for i := range 2 {
 		go func() { errCh <- crs[i+3].Run(ctx2) }()
 	}
@@ -242,7 +242,7 @@ func Test_leadership_wait_free(t *testing.T) {
 		},
 	}
 
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(t.Context())
 
 	_, err := client.Put(ctx, "leadership/456", "123")
 	require.NoError(t, err)

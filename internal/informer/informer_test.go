@@ -59,7 +59,7 @@ func Test_Run(t *testing.T) {
 			Key:         key,
 		})
 
-		ctx, cancel := context.WithCancel(context.Background())
+		ctx, cancel := context.WithCancel(t.Context())
 		errCh := make(chan error, 1)
 		t.Cleanup(func() {
 			cancel()
@@ -101,7 +101,7 @@ func Test_Run(t *testing.T) {
 		jobUID4, err := proto.Marshal(&stored.Job{PartitionId: 4})
 		require.NoError(t, err)
 
-		ctx, cancel := context.WithCancel(context.Background())
+		ctx, cancel := context.WithCancel(t.Context())
 		for i, jobUID := range [][]byte{jobUID1, jobUID2, jobUID3, jobUID4} {
 			_, err := client.Put(ctx, "abc/jobs/"+strconv.Itoa(i), string(jobUID))
 			require.NoError(t, err)
@@ -183,7 +183,7 @@ func Test_Run(t *testing.T) {
 		jobUID6, err := proto.Marshal(&stored.Job{PartitionId: 6})
 		require.NoError(t, err)
 
-		ctx, cancel := context.WithCancel(context.Background())
+		ctx, cancel := context.WithCancel(t.Context())
 		for i, jobUID := range [][]byte{jobUID1, jobUID2, jobUID3, jobUID4} {
 			_, err := client.Put(ctx, "abc/jobs/"+strconv.Itoa(i+1), string(jobUID))
 			require.NoError(t, err)
@@ -401,7 +401,7 @@ func Test_Ready(t *testing.T) {
 	t.Run("Ready returns when the given context is cancelled with the context error", func(t *testing.T) {
 		t.Parallel()
 
-		ctx, cancel := context.WithCancel(context.Background())
+		ctx, cancel := context.WithCancel(t.Context())
 		cancel()
 		i := New(Options{})
 		assert.Equal(t, context.Canceled, i.Ready(ctx))
@@ -410,7 +410,7 @@ func Test_Ready(t *testing.T) {
 	t.Run("Ready returns nil when ready", func(t *testing.T) {
 		t.Parallel()
 
-		ctx, cancel := context.WithCancel(context.Background())
+		ctx, cancel := context.WithCancel(t.Context())
 		t.Cleanup(cancel)
 		i := New(Options{})
 		close(i.readyCh)

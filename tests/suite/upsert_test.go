@@ -37,7 +37,7 @@ func Test_upsert(t *testing.T) {
 		return cron.Triggered() == 1
 	}, 5*time.Second, 1*time.Second)
 
-	resp, err := cron.Client().Get(context.Background(), "abc/jobs/def")
+	resp, err := cron.Client().Get(t.Context(), "abc/jobs/def")
 	require.NoError(t, err)
 	assert.Empty(t, resp.Kvs)
 }
@@ -82,6 +82,38 @@ func Test_upsert_ifnotexists(t *testing.T) {
 	assert.True(t, errors.IsJobAlreadyExists(err))
 	assert.Equal(t, "job already exists: 'def'", err.Error())
 	require.NoError(t, cron.API().Add(cron.Context(), "def", job))
+
+	job = &api.Job{
+		DueTime: ptr.Of(time.Now().Add(time.Second).Format(time.RFC3339)),
+	}
+	require.NoError(t, cron.API().Add(cron.Context(), "def", job))
+
+	assert.Eventually(t, func() bool {
+		return cron.Triggered() == 1
+	}, 5*time.Second, 1*time.Second)
+
+	resp, err := cron.Client().Get(context.Background(), "abc/jobs/def")
+	require.NoError(t, err)
+	assert.Empty(t, resp.Kvs)
+}
+
+func Test_upsert_ifnotexists_delete(t *testing.T) {
+	t.Parallel()
+
+	cron := integration.NewBase(t, 1)
+
+	job := &api.Job{
+		DueTime: ptr.Of(time.Now().Add(time.Hour).Format(time.RFC3339)),
+	}
+
+	require.NoError(t, cron.API().AddIfNotExists(cron.Context(), "def", job))
+	err := cron.API().AddIfNotExists(cron.Context(), "def", job)
+	require.Error(t, err)
+	assert.True(t, errors.IsJobAlreadyExists(err))
+	assert.Equal(t, "job already exists: 'def'", err.Error())
+
+	require.NoError(t, cron.API().Delete(cron.Context(), "def"))
+	require.NoError(t, cron.API().AddIfNotExists(cron.Context(), "def", job))
 
 	job = &api.Job{
 		DueTime: ptr.Of(time.Now().Add(time.Second).Format(time.RFC3339)),

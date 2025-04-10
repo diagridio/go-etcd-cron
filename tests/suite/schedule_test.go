@@ -6,7 +6,6 @@ Licensed under the MIT License.
 package suite
 
 import (
-	"context"
 	"testing"
 	"time"
 
@@ -38,7 +37,7 @@ func Test_schedule(t *testing.T) {
 			Job:         &api.Job{DueTime: ptr.Of(now.Add(time.Hour).Format(time.RFC3339))},
 		})
 		require.NoError(t, err)
-		_, err = client.Put(context.Background(), "abc/jobs/1", string(jobBytes1))
+		_, err = client.Put(t.Context(), "abc/jobs/1", string(jobBytes1))
 		require.NoError(t, err)
 
 		jobBytes2, err := proto.Marshal(&stored.Job{
@@ -47,10 +46,10 @@ func Test_schedule(t *testing.T) {
 			Job:         &api.Job{DueTime: ptr.Of(now.Format(time.RFC3339))},
 		})
 		require.NoError(t, err)
-		_, err = client.Put(context.Background(), "abc/jobs/2", string(jobBytes2))
+		_, err = client.Put(t.Context(), "abc/jobs/2", string(jobBytes2))
 		require.NoError(t, err)
 
-		resp, err := client.Get(context.Background(), "abc/jobs", clientv3.WithPrefix())
+		resp, err := client.Get(t.Context(), "abc/jobs", clientv3.WithPrefix())
 		require.NoError(t, err)
 		assert.Len(t, resp.Kvs, 2)
 
@@ -64,19 +63,19 @@ func Test_schedule(t *testing.T) {
 		}, 5*time.Second, 10*time.Millisecond)
 
 		assert.EventuallyWithT(t, func(c *assert.CollectT) {
-			resp, err = client.Get(context.Background(), "abc/jobs", clientv3.WithPrefix())
+			resp, err = client.Get(t.Context(), "abc/jobs", clientv3.WithPrefix())
 			require.NoError(t, err)
 			assert.Len(c, resp.Kvs, 1)
 		}, 5*time.Second, 10*time.Millisecond)
 
 		cron.Close()
 
-		resp, err = client.Get(context.Background(), "abc/jobs/1")
+		resp, err = client.Get(t.Context(), "abc/jobs/1")
 		require.NoError(t, err)
 		require.Len(t, resp.Kvs, 1)
 		assert.Equal(t, string(jobBytes1), string(resp.Kvs[0].Value))
 
-		resp, err = client.Get(context.Background(), "abc/counters", clientv3.WithPrefix())
+		resp, err = client.Get(t.Context(), "abc/counters", clientv3.WithPrefix())
 		require.NoError(t, err)
 		require.Empty(t, resp.Kvs)
 
@@ -106,9 +105,9 @@ func Test_schedule(t *testing.T) {
 		})
 		require.NoError(t, err)
 
-		_, err = client.Put(context.Background(), "abc/jobs/1", string(jobBytes))
+		_, err = client.Put(t.Context(), "abc/jobs/1", string(jobBytes))
 		require.NoError(t, err)
-		_, err = client.Put(context.Background(), "abc/counters/1", string(counterBytes))
+		_, err = client.Put(t.Context(), "abc/counters/1", string(counterBytes))
 		require.NoError(t, err)
 
 		now := time.Now().UTC()
@@ -117,7 +116,7 @@ func Test_schedule(t *testing.T) {
 			Job:   &api.Job{DueTime: ptr.Of(now.Format(time.RFC3339))},
 		})
 		require.NoError(t, err)
-		_, err = client.Put(context.Background(), "abc/jobs/2", string(jobBytes2))
+		_, err = client.Put(t.Context(), "abc/jobs/2", string(jobBytes2))
 		require.NoError(t, err)
 
 		cron := integration.New(t, integration.Options{
@@ -129,17 +128,17 @@ func Test_schedule(t *testing.T) {
 			assert.Equal(c, 1, cron.Triggered())
 		}, 5*time.Second, 10*time.Millisecond)
 
-		resp, err := client.Get(context.Background(), "abc/jobs/1")
+		resp, err := client.Get(t.Context(), "abc/jobs/1")
 		require.NoError(t, err)
 		require.Len(t, resp.Kvs, 1)
 		assert.Equal(t, string(jobBytes), string(resp.Kvs[0].Value))
 
-		resp, err = client.Get(context.Background(), "abc/counters/1")
+		resp, err = client.Get(t.Context(), "abc/counters/1")
 		require.NoError(t, err)
 		require.Len(t, resp.Kvs, 1)
 		assert.Equal(t, string(counterBytes), string(resp.Kvs[0].Value))
 
-		resp, err = client.Get(context.Background(), "abc/jobs", clientv3.WithPrefix())
+		resp, err = client.Get(t.Context(), "abc/jobs", clientv3.WithPrefix())
 		require.NoError(t, err)
 		assert.Len(t, resp.Kvs, 1)
 	})
@@ -167,9 +166,9 @@ func Test_schedule(t *testing.T) {
 		})
 		require.NoError(t, err)
 
-		_, err = client.Put(context.Background(), "abc/jobs/1", string(jobBytes))
+		_, err = client.Put(t.Context(), "abc/jobs/1", string(jobBytes))
 		require.NoError(t, err)
-		_, err = client.Put(context.Background(), "abc/counters/1", string(counterBytes))
+		_, err = client.Put(t.Context(), "abc/counters/1", string(counterBytes))
 		require.NoError(t, err)
 
 		cron := integration.New(t, integration.Options{
@@ -178,10 +177,10 @@ func Test_schedule(t *testing.T) {
 		})
 
 		assert.EventuallyWithT(t, func(c *assert.CollectT) {
-			resp, err := client.Get(context.Background(), "abc/jobs/1")
+			resp, err := client.Get(t.Context(), "abc/jobs/1")
 			require.NoError(t, err)
 			assert.Empty(c, resp.Kvs)
-			resp, err = client.Get(context.Background(), "abc/counters/1")
+			resp, err = client.Get(t.Context(), "abc/counters/1")
 			require.NoError(t, err)
 			assert.Empty(c, resp.Kvs)
 		}, 5*time.Second, 10*time.Millisecond)
