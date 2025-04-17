@@ -13,13 +13,13 @@ import (
 
 	clientv3 "go.etcd.io/etcd/client/v3"
 
-	"github.com/diagridio/go-etcd-cron/internal/client"
+	"github.com/diagridio/go-etcd-cron/internal/client/api"
 	"github.com/diagridio/go-etcd-cron/internal/key"
 )
 
 type Options struct {
 	// Client is the etcd client.
-	Client client.Interface
+	Client api.Interface
 
 	// Key is the ETCD key generator.
 	Key *key.Key
@@ -30,7 +30,7 @@ type Options struct {
 type Informer struct {
 	nsKey  string
 	ch     clientv3.WatchChan
-	client client.Interface
+	client api.Interface
 	inNext atomic.Bool
 }
 

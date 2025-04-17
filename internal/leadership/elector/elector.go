@@ -18,7 +18,7 @@ import (
 	"google.golang.org/protobuf/types/known/anypb"
 
 	"github.com/diagridio/go-etcd-cron/internal/api/stored"
-	"github.com/diagridio/go-etcd-cron/internal/client"
+	"github.com/diagridio/go-etcd-cron/internal/client/api"
 	"github.com/diagridio/go-etcd-cron/internal/key"
 	"github.com/diagridio/go-etcd-cron/internal/leadership/informer"
 	"github.com/diagridio/go-etcd-cron/internal/leadership/partitioner"
@@ -28,7 +28,7 @@ type Options struct {
 	Log logr.Logger
 
 	// Client is the etcd client.
-	Client client.Interface
+	Client api.Interface
 
 	// Key is the ETCD key generator.
 	Key *key.Key
@@ -53,7 +53,7 @@ type Options struct {
 // in this case to continue leadership with the new partition total.
 type Elector struct {
 	log      logr.Logger
-	client   client.Interface
+	client   api.Interface
 	leaseID  clientv3.LeaseID
 	informer *informer.Informer
 

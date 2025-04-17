@@ -19,7 +19,6 @@ import (
 
 	cronapi "github.com/diagridio/go-etcd-cron/api"
 	apierrors "github.com/diagridio/go-etcd-cron/api/errors"
-	"github.com/diagridio/go-etcd-cron/internal/garbage"
 	"github.com/diagridio/go-etcd-cron/internal/key"
 	"github.com/diagridio/go-etcd-cron/internal/queue"
 	"github.com/diagridio/go-etcd-cron/internal/scheduler"
@@ -355,13 +354,6 @@ func newAPINotReady(t *testing.T) *api {
 
 	client := etcd.Embedded(t)
 
-	collector, err := garbage.New(garbage.Options{
-		Log:                logr.Discard(),
-		Client:             client,
-		CollectionInterval: ptr.Of(time.Second),
-	})
-	require.NoError(t, err)
-
 	key, err := key.New(key.Options{
 		Namespace: "test",
 		ID:        "test",
@@ -376,7 +368,6 @@ func newAPINotReady(t *testing.T) *api {
 		TriggerFn: func(context.Context, *cronapi.TriggerRequest) *cronapi.TriggerResponse {
 			return &cronapi.TriggerResponse{Result: cronapi.TriggerResponseResult_SUCCESS}
 		},
-		Collector: collector,
 	})
 
 	ctx, cancel := context.WithCancel(t.Context())

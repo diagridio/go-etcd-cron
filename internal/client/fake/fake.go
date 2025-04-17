@@ -10,6 +10,8 @@ import (
 	"sync/atomic"
 
 	clientv3 "go.etcd.io/etcd/client/v3"
+
+	"github.com/diagridio/go-etcd-cron/internal/client/api"
 )
 
 type Fake struct {
@@ -21,9 +23,12 @@ type Fake struct {
 	putFn func(context.Context, string, string, ...clientv3.OpOption) (*clientv3.PutResponse, error)
 	getFn func(context.Context, string, ...clientv3.OpOption) (*clientv3.GetResponse, error)
 	delFn func(context.Context, string, ...clientv3.OpOption) (*clientv3.DeleteResponse, error)
-	delMu func(...string) error
 
-	putIfNotExistsFn func(context.Context, string, string, ...clientv3.OpOption) (*clientv3.PutResponse, error)
+	putIfNotExistsFn             func(context.Context, string, string, ...clientv3.OpOption) (bool, error)
+	delPairFn                    func(context.Context, string, string) error
+	putIfOtherHasRevisionFn      func(context.Context, api.PutIfOtherHasRevisionOpts) (bool, error)
+	deleteBothIfOtherHasRevionFn func(context.Context, api.DeleteBothIfOtherHasRevisionOpts) error
+	deletePrefixesFn             func(context.Context, ...string) error
 
 	err error
 }
@@ -47,12 +52,12 @@ func (f *Fake) WithDeleteFn(fn func(context.Context, string, ...clientv3.OpOptio
 	return f
 }
 
-func (f *Fake) WithDeleteMultiFn(fn func(...string) error) *Fake {
-	f.delMu = fn
+func (f *Fake) WithDeletePairFn(fn func(context.Context, string, string) error) *Fake {
+	f.delPairFn = fn
 	return f
 }
 
-func (f *Fake) WithPutIfNotExistsFn(fn func(context.Context, string, string, ...clientv3.OpOption) (*clientv3.PutResponse, error)) *Fake {
+func (f *Fake) WithPutIfNotExistsFn(fn func(context.Context, string, string, ...clientv3.OpOption) (bool, error)) *Fake {
 	f.putIfNotExistsFn = fn
 	return f
 }
@@ -62,19 +67,18 @@ func (f *Fake) WithError(err error) *Fake {
 	return f
 }
 
-func (f *Fake) If(...clientv3.Cmp) clientv3.Txn {
+func (f *Fake) WithPutIfOtherHasRevisionFn(fn func(context.Context, api.PutIfOtherHasRevisionOpts) (bool, error)) *Fake {
+	f.putIfOtherHasRevisionFn = fn
 	return f
 }
 
-func (f *Fake) Else(...clientv3.Op) clientv3.Txn {
+func (f *Fake) WithDeleteBothIfOtherHasRevisionFn(fn func(context.Context, api.DeleteBothIfOtherHasRevisionOpts) error) *Fake {
+	f.deleteBothIfOtherHasRevionFn = fn
 	return f
 }
 
-func (f *Fake) Then(...clientv3.Op) clientv3.Txn {
-	return f
-}
-
-func (f *Fake) Txn(context.Context) clientv3.Txn {
+func (f *Fake) WithDeletePrefixesFn(fn func(context.Context, ...string) error) *Fake {
+	f.deletePrefixesFn = fn
 	return f
 }
 
@@ -102,6 +106,22 @@ func (f *Fake) Delete(_ context.Context, k string, _ ...clientv3.OpOption) (*cli
 	return nil, f.err
 }
 
+func (f *Fake) If(...clientv3.Cmp) clientv3.Txn {
+	return f
+}
+
+func (f *Fake) Else(...clientv3.Op) clientv3.Txn {
+	return f
+}
+
+func (f *Fake) Then(...clientv3.Op) clientv3.Txn {
+	return f
+}
+
+func (f *Fake) Txn(context.Context) clientv3.Txn {
+	return f
+}
+
 func (f *Fake) Commit() (*clientv3.TxnResponse, error) {
 	f.calls.Add(1)
 	return &clientv3.TxnResponse{
@@ -109,20 +129,20 @@ func (f *Fake) Commit() (*clientv3.TxnResponse, error) {
 	}, f.err
 }
 
-func (f *Fake) DeleteMulti(keys ...string) error {
+func (f *Fake) DeletePair(_ context.Context, k string, v string) error {
 	f.calls.Add(1)
-	if f.delMu != nil {
-		return f.delMu(keys...)
+	if f.delPairFn != nil {
+		return f.delPairFn(context.Background(), k, v)
 	}
 	return f.err
 }
 
-func (f *Fake) PutIfNotExists(_ context.Context, k string, b string, _ ...clientv3.OpOption) (*clientv3.PutResponse, error) {
+func (f *Fake) PutIfNotExists(_ context.Context, k string, b string, _ ...clientv3.OpOption) (bool, error) {
 	f.calls.Add(1)
 	if f.putIfNotExistsFn != nil {
 		return f.putIfNotExistsFn(context.Background(), k, b)
 	}
-	return nil, f.err
+	return true, f.err
 }
 
 func (f *Fake) Close() error {
@@ -131,4 +151,29 @@ func (f *Fake) Close() error {
 
 func (f *Fake) Calls() uint32 {
 	return f.calls.Load()
+}
+
+func (f *Fake) PutIfOtherHasRevision(_ context.Context, opts api.PutIfOtherHasRevisionOpts) (bool, error) {
+	f.calls.Add(1)
+	if f.putIfOtherHasRevisionFn != nil {
+		return f.putIfOtherHasRevisionFn(context.Background(), opts)
+	}
+	return true, f.err
+}
+
+func (f *Fake) DeleteBothIfOtherHasRevision(_ context.Context, opts api.DeleteBothIfOtherHasRevisionOpts) error {
+	f.calls.Add(1)
+	if f.deleteBothIfOtherHasRevionFn != nil {
+		return f.deleteBothIfOtherHasRevionFn(context.Background(), opts)
+	}
+
+	return f.err
+}
+
+func (f *Fake) DeletePrefixes(_ context.Context, prefixes ...string) error {
+	f.calls.Add(1)
+	if f.deletePrefixesFn != nil {
+		return f.deletePrefixesFn(context.Background(), prefixes...)
+	}
+	return f.err
 }

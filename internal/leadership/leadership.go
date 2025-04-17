@@ -14,7 +14,7 @@ import (
 	"github.com/go-logr/logr"
 	"google.golang.org/protobuf/types/known/anypb"
 
-	"github.com/diagridio/go-etcd-cron/internal/client"
+	"github.com/diagridio/go-etcd-cron/internal/client/api"
 	"github.com/diagridio/go-etcd-cron/internal/key"
 	"github.com/diagridio/go-etcd-cron/internal/leadership/elector"
 	"github.com/diagridio/go-etcd-cron/internal/leadership/informer"
@@ -26,7 +26,7 @@ type Options struct {
 	Log logr.Logger
 
 	// Client is the etcd client.
-	Client client.Interface
+	Client api.Interface
 
 	// Key is the ETCD key generator.
 	Key *key.Key
@@ -40,7 +40,7 @@ type Options struct {
 // re-elect leadership, returning contexts which cancel on lost quorum.
 type Leadership struct {
 	log         logr.Logger
-	client      client.Interface
+	client      api.Interface
 	key         *key.Key
 	replicaData *anypb.Any
 
@@ -123,10 +123,10 @@ func (l *Leadership) Run(ctx context.Context) error {
 // will cancel when the leadership quorum is lost.
 func (l *Leadership) Elect(ctx context.Context) (context.Context, *elector.Elected, error) {
 	select {
-	case <-l.closeCh:
-		return nil, nil, errors.New("cannot elect: leadership closed")
 	case <-ctx.Done():
 		return nil, nil, ctx.Err()
+	case <-l.closeCh:
+		return nil, nil, nil
 	case <-l.readyCh:
 		return l.elector.Elect(ctx)
 	}

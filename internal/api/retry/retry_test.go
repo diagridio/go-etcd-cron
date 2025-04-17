@@ -11,11 +11,12 @@ import (
 	"sync/atomic"
 	"testing"
 
+	"github.com/go-logr/logr"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	apierrors "github.com/diagridio/go-etcd-cron/api/errors"
 	"github.com/diagridio/go-etcd-cron/internal/api"
-	clienterrors "github.com/diagridio/go-etcd-cron/internal/client/errors"
 	"github.com/diagridio/go-etcd-cron/internal/engine/fake"
 )
 
@@ -25,7 +26,7 @@ func Test_handle(t *testing.T) {
 	t.Run("if the given context is cancelled, should return error", func(t *testing.T) {
 		t.Parallel()
 
-		r := New()
+		r := New(Options{Log: logr.Discard()})
 		ctx, cancel := context.WithCancel(t.Context())
 		cancel()
 		require.Error(t, r.handle(ctx, nil))
@@ -34,7 +35,7 @@ func Test_handle(t *testing.T) {
 	t.Run("if retry has been closed, then should return error", func(t *testing.T) {
 		t.Parallel()
 
-		r := New()
+		r := New(Options{Log: logr.Discard()})
 		r.Close()
 		require.Error(t, r.handle(t.Context(), nil))
 	})
@@ -42,7 +43,7 @@ func Test_handle(t *testing.T) {
 	t.Run("when retry ready, should call given func", func(t *testing.T) {
 		t.Parallel()
 
-		r := New()
+		r := New(Options{Log: logr.Discard()})
 		r.Ready(fake.New())
 
 		var called atomic.Bool
@@ -57,7 +58,7 @@ func Test_handle(t *testing.T) {
 	t.Run("if handle func returns error, expect error", func(t *testing.T) {
 		t.Parallel()
 
-		r := New()
+		r := New(Options{Log: logr.Discard()})
 		r.Ready(fake.New())
 
 		var called atomic.Bool
@@ -72,7 +73,7 @@ func Test_handle(t *testing.T) {
 	t.Run("if error api closed, expect multiple calls till it is not", func(t *testing.T) {
 		t.Parallel()
 
-		r := New()
+		r := New(Options{Log: logr.Discard()})
 		r.Ready(fake.New())
 
 		var called atomic.Int64
@@ -89,7 +90,7 @@ func Test_handle(t *testing.T) {
 	t.Run("if context cancelled during retry loop, expect context error", func(t *testing.T) {
 		t.Parallel()
 
-		r := New()
+		r := New(Options{Log: logr.Discard()})
 		r.Ready(fake.New())
 
 		var called atomic.Int64
@@ -106,7 +107,7 @@ func Test_handle(t *testing.T) {
 	t.Run("if closed during retry loop, expect closed error", func(t *testing.T) {
 		t.Parallel()
 
-		r := New()
+		r := New(Options{Log: logr.Discard()})
 		r.Ready(fake.New())
 
 		var called atomic.Int64
@@ -122,16 +123,16 @@ func Test_handle(t *testing.T) {
 	t.Run("if the key already exists error, then should not retry", func(t *testing.T) {
 		t.Parallel()
 
-		r := New()
+		r := New(Options{Log: logr.Discard()})
 		r.Ready(fake.New())
 
 		var called atomic.Int64
 		err := r.handle(context.Background(), func(a api.Interface) error {
 			called.Add(1)
-			return clienterrors.NewKeyAlreadyExists("foo")
+			return apierrors.NewJobAlreadyExists("foo")
 		})
 		require.Error(t, err)
 		assert.Equal(t, int64(1), called.Load())
-		assert.True(t, clienterrors.IsKeyAlreadyExists(err))
+		assert.True(t, apierrors.IsJobAlreadyExists(err))
 	})
 }

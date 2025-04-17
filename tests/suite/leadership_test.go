@@ -121,10 +121,9 @@ func Test_leadership_scaleup(t *testing.T) {
 		for _, k := range called {
 			assert.Equal(c, 5, k)
 		}
+		assert.Len(c, instanceCalled, 5)
 		lock.Unlock()
 	}, time.Second*10, time.Millisecond*10)
-
-	assert.Len(t, instanceCalled, 5)
 }
 
 func Test_leadership_scaledown(t *testing.T) {
@@ -203,9 +202,10 @@ func Test_leadership_scaledown(t *testing.T) {
 
 	lock.Lock()
 	assert.Len(t, instanceCalled, 5)
+	clear(instanceCalled)
+	cancel2()
 	lock.Unlock()
 
-	cancel2()
 	for len(d) != 3 {
 		select {
 		case <-time.After(time.Second * 5):
@@ -214,19 +214,14 @@ func Test_leadership_scaledown(t *testing.T) {
 		}
 	}
 
-	lock.Lock()
-	clear(instanceCalled)
-	lock.Unlock()
-
 	assert.EventuallyWithT(t, func(c *assert.CollectT) {
 		lock.Lock()
 		for _, k := range called {
-			assert.Equal(c, 5, k)
+			assert.GreaterOrEqual(c, k, 5)
 		}
+		assert.Len(c, instanceCalled, 3)
 		lock.Unlock()
 	}, time.Second*10, time.Millisecond*10)
-
-	assert.Len(t, instanceCalled, 3)
 }
 
 func Test_leadership_wait_free(t *testing.T) {

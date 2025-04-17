@@ -14,16 +14,14 @@ import (
 	"github.com/dapr/kit/ptr"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	clientv3 "go.etcd.io/etcd/client/v3"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/durationpb"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	"github.com/diagridio/go-etcd-cron/api"
 	"github.com/diagridio/go-etcd-cron/internal/api/stored"
+	clientapi "github.com/diagridio/go-etcd-cron/internal/client/api"
 	"github.com/diagridio/go-etcd-cron/internal/client/fake"
-	"github.com/diagridio/go-etcd-cron/internal/garbage"
-	"github.com/diagridio/go-etcd-cron/internal/grave"
 	"github.com/diagridio/go-etcd-cron/internal/key"
 	"github.com/diagridio/go-etcd-cron/internal/scheduler"
 	"github.com/diagridio/go-etcd-cron/tests/framework/etcd"
@@ -31,80 +29,6 @@ import (
 
 func Test_New(t *testing.T) {
 	t.Parallel()
-
-	t.Run("New pops the job key on the collector", func(t *testing.T) {
-		t.Parallel()
-
-		client := etcd.Embedded(t)
-
-		now := time.Now().UTC()
-
-		job := &stored.Job{
-			Begin: &stored.Job_Start{
-				Start: timestamppb.New(now),
-			},
-			PartitionId: 123,
-			Job: &api.Job{
-				DueTime: ptr.Of(now.Format(time.RFC3339)),
-			},
-		}
-		counter := &stored.Counter{
-			LastTrigger:    nil,
-			Count:          0,
-			JobPartitionId: 123,
-		}
-
-		sched, err := scheduler.NewBuilder().Schedule(job)
-		require.NoError(t, err)
-
-		jobBytes, err := proto.Marshal(job)
-		require.NoError(t, err)
-		counterBytes, err := proto.Marshal(counter)
-		require.NoError(t, err)
-
-		_, err = client.Put(t.Context(), "abc/jobs/1", string(jobBytes))
-		require.NoError(t, err)
-		_, err = client.Put(t.Context(), "abc/counters/1", string(counterBytes))
-		require.NoError(t, err)
-
-		collector, err := garbage.New(garbage.Options{Client: client})
-		require.NoError(t, err)
-		collector.Push("abc/counters/1")
-
-		yard := grave.New()
-		yard.Deleted("abc/jobs/1")
-		key, err := key.New(key.Options{
-			Namespace: "abc",
-			ID:        "0",
-		})
-		require.NoError(t, err)
-		c, ok, err := New(t.Context(), Options{
-			Name:      "1",
-			Client:    client,
-			Key:       key,
-			Schedule:  sched,
-			Job:       job,
-			Yard:      yard,
-			Collector: collector,
-		})
-		require.NoError(t, err)
-		assert.True(t, ok)
-		assert.NotNil(t, c)
-
-		ctx, cancel := context.WithCancel(t.Context())
-		cancel()
-		require.NoError(t, collector.Run(ctx))
-
-		resp, err := client.Get(t.Context(), "abc/jobs/1")
-		require.NoError(t, err)
-		require.Len(t, resp.Kvs, 1)
-		assert.Equal(t, jobBytes, resp.Kvs[0].Value)
-
-		resp, err = client.Get(t.Context(), "abc/counters/1")
-		require.NoError(t, err)
-		require.Len(t, resp.Kvs, 1)
-		assert.Equal(t, counterBytes, resp.Kvs[0].Value)
-	})
 
 	t.Run("if the counter already exists and partition ID matches, expect counter be kept the same", func(t *testing.T) {
 		t.Parallel()
@@ -141,17 +65,6 @@ func Test_New(t *testing.T) {
 		_, err = client.Put(t.Context(), "abc/counters/1", string(counterBytes))
 		require.NoError(t, err)
 
-		collector, err := garbage.New(garbage.Options{Client: client})
-		require.NoError(t, err)
-
-		yard := grave.New()
-
-		ctx, cancel := context.WithCancel(t.Context())
-		errCh := make(chan error)
-		go func() {
-			errCh <- collector.Run(ctx)
-		}()
-
 		key, err := key.New(key.Options{
 			Namespace: "abc",
 			ID:        "0",
@@ -159,13 +72,11 @@ func Test_New(t *testing.T) {
 		require.NoError(t, err)
 
 		c, ok, err := New(t.Context(), Options{
-			Name:      "1",
-			Key:       key,
-			Client:    client,
-			Schedule:  sched,
-			Job:       job,
-			Yard:      yard,
-			Collector: collector,
+			Name:     "1",
+			Key:      key,
+			Client:   client,
+			Schedule: sched,
+			Job:      job,
 		})
 
 		require.NoError(t, err)
@@ -173,16 +84,6 @@ func Test_New(t *testing.T) {
 		assert.NotNil(t, c)
 
 		assert.Equal(t, "1", c.JobName())
-
-		cancel()
-		select {
-		case err := <-errCh:
-			require.NoError(t, err)
-		case <-time.After(time.Second):
-			t.Fatal("timedout waiting for the collector to finish")
-		}
-
-		assert.False(t, yard.HasJustDeleted("abc/jobs/1"))
 
 		resp, err := client.Get(t.Context(), "abc/jobs/1")
 		require.NoError(t, err)
@@ -225,21 +126,10 @@ func Test_New(t *testing.T) {
 		counterBytes, err := proto.Marshal(counter)
 		require.NoError(t, err)
 
-		_, err = client.Put(t.Context(), "abc/jobs/1", string(jobBytes))
+		presp, err := client.Put(t.Context(), "abc/jobs/1", string(jobBytes))
 		require.NoError(t, err)
 		_, err = client.Put(t.Context(), "abc/counters/1", string(counterBytes))
 		require.NoError(t, err)
-
-		collector, err := garbage.New(garbage.Options{Client: client})
-		require.NoError(t, err)
-
-		yard := grave.New()
-
-		ctx, cancel := context.WithCancel(t.Context())
-		errCh := make(chan error)
-		go func() {
-			errCh <- collector.Run(ctx)
-		}()
 
 		key, err := key.New(key.Options{
 			Namespace: "abc",
@@ -247,28 +137,17 @@ func Test_New(t *testing.T) {
 		})
 		require.NoError(t, err)
 		c, ok, err := New(t.Context(), Options{
-			Name:      "1",
-			Key:       key,
-			Client:    client,
-			Schedule:  sched,
-			Job:       job,
-			Yard:      yard,
-			Collector: collector,
+			Name:           "1",
+			Key:            key,
+			Client:         client,
+			Schedule:       sched,
+			Job:            job,
+			JobModRevision: presp.Header.GetRevision(),
 		})
 
 		require.NoError(t, err)
 		assert.True(t, ok)
 		assert.NotNil(t, c)
-
-		cancel()
-		select {
-		case err := <-errCh:
-			require.NoError(t, err)
-		case <-time.After(time.Second):
-			t.Fatal("timedout waiting for the collector to finish")
-		}
-
-		assert.False(t, yard.HasJustDeleted("abc/jobs/1"))
 
 		resp, err := client.Get(t.Context(), "abc/jobs/1")
 		require.NoError(t, err)
@@ -318,21 +197,10 @@ func Test_New(t *testing.T) {
 		counterBytes, err := proto.Marshal(counter)
 		require.NoError(t, err)
 
-		_, err = client.Put(t.Context(), "abc/jobs/1", string(jobBytes))
+		presp, err := client.Put(t.Context(), "abc/jobs/1", string(jobBytes))
 		require.NoError(t, err)
 		_, err = client.Put(t.Context(), "abc/counters/1", string(counterBytes))
 		require.NoError(t, err)
-
-		collector, err := garbage.New(garbage.Options{Client: client})
-		require.NoError(t, err)
-
-		yard := grave.New()
-
-		ctx, cancel := context.WithCancel(t.Context())
-		errCh := make(chan error)
-		go func() {
-			errCh <- collector.Run(ctx)
-		}()
 
 		key, err := key.New(key.Options{
 			Namespace: "abc",
@@ -340,28 +208,17 @@ func Test_New(t *testing.T) {
 		})
 		require.NoError(t, err)
 		c, ok, err := New(t.Context(), Options{
-			Name:      "1",
-			Key:       key,
-			Client:    client,
-			Schedule:  sched,
-			Job:       job,
-			Yard:      yard,
-			Collector: collector,
+			Name:           "1",
+			Key:            key,
+			Client:         client,
+			Schedule:       sched,
+			Job:            job,
+			JobModRevision: presp.Header.GetRevision(),
 		})
 
 		require.NoError(t, err)
 		assert.False(t, ok)
 		assert.Nil(t, c)
-
-		cancel()
-		select {
-		case err := <-errCh:
-			require.NoError(t, err)
-		case <-time.After(time.Second):
-			t.Fatal("timedout waiting for the collector to finish")
-		}
-
-		assert.True(t, yard.HasJustDeleted("abc/jobs/1"))
 
 		resp, err := client.Get(t.Context(), "abc/jobs/1")
 		require.NoError(t, err)
@@ -397,45 +254,22 @@ func Test_New(t *testing.T) {
 		_, err = client.Put(t.Context(), "abc/jobs/1", string(jobBytes))
 		require.NoError(t, err)
 
-		collector, err := garbage.New(garbage.Options{Client: client})
-		require.NoError(t, err)
-
-		yard := grave.New()
-
-		ctx, cancel := context.WithCancel(t.Context())
-		errCh := make(chan error)
-		go func() {
-			errCh <- collector.Run(ctx)
-		}()
-
 		key, err := key.New(key.Options{
 			Namespace: "abc",
 			ID:        "0",
 		})
 		require.NoError(t, err)
 		counter, ok, err := New(t.Context(), Options{
-			Name:      "1",
-			Key:       key,
-			Client:    client,
-			Schedule:  sched,
-			Job:       job,
-			Yard:      yard,
-			Collector: collector,
+			Name:     "1",
+			Key:      key,
+			Client:   client,
+			Schedule: sched,
+			Job:      job,
 		})
 
 		require.NoError(t, err)
 		assert.True(t, ok)
 		assert.NotNil(t, counter)
-
-		cancel()
-		select {
-		case err := <-errCh:
-			require.NoError(t, err)
-		case <-time.After(time.Second):
-			t.Fatal("timedout waiting for the collector to finish")
-		}
-
-		assert.False(t, yard.HasJustDeleted("abc/jobs/1"))
 
 		resp, err := client.Get(t.Context(), "abc/jobs/1")
 		require.NoError(t, err)
@@ -477,46 +311,25 @@ func Test_TriggerSuccess(t *testing.T) {
 		counterBytes, err := proto.Marshal(scounter)
 		require.NoError(t, err)
 
-		_, err = client.Put(t.Context(), "abc/jobs/1", string(jobBytes))
+		presp, err := client.Put(t.Context(), "abc/jobs/1", string(jobBytes))
 		require.NoError(t, err)
 		_, err = client.Put(t.Context(), "abc/counters/1", string(counterBytes))
 		require.NoError(t, err)
 
-		collector, err := garbage.New(garbage.Options{Client: client})
-		require.NoError(t, err)
-
-		ctx, cancel := context.WithCancel(t.Context())
-		errCh := make(chan error)
-		go func() {
-			errCh <- collector.Run(ctx)
-		}()
-
-		yard := grave.New()
 		c := &counter{
-			yard:       yard,
-			client:     client,
-			collector:  collector,
-			job:        job,
-			count:      scounter,
-			schedule:   sched,
-			jobKey:     "abc/jobs/1",
-			counterKey: "abc/counters/1",
-			next:       now,
+			client:      client,
+			job:         job,
+			count:       scounter,
+			schedule:    sched,
+			jobKey:      "abc/jobs/1",
+			counterKey:  "abc/counters/1",
+			next:        now,
+			modRevision: presp.Header.GetRevision(),
 		}
 
-		ok, err := c.TriggerSuccess(ctx)
+		ok, err := c.TriggerSuccess(t.Context())
 		require.NoError(t, err)
 		assert.True(t, ok)
-
-		cancel()
-		select {
-		case err := <-errCh:
-			require.NoError(t, err)
-		case <-time.After(time.Second):
-			t.Fatal("timedout waiting for the collector to finish")
-		}
-
-		assert.False(t, yard.HasJustDeleted("abc/jobs/1"))
 
 		resp, err := client.Get(t.Context(), "abc/jobs/1")
 		require.NoError(t, err)
@@ -565,46 +378,25 @@ func Test_TriggerSuccess(t *testing.T) {
 		counterBytes, err := proto.Marshal(scounter)
 		require.NoError(t, err)
 
-		_, err = client.Put(t.Context(), "abc/jobs/1", string(jobBytes))
+		presp, err := client.Put(t.Context(), "abc/jobs/1", string(jobBytes))
 		require.NoError(t, err)
 		_, err = client.Put(t.Context(), "abc/counters/1", string(counterBytes))
 		require.NoError(t, err)
 
-		collector, err := garbage.New(garbage.Options{Client: client})
-		require.NoError(t, err)
-
-		ctx, cancel := context.WithCancel(t.Context())
-		errCh := make(chan error)
-		go func() {
-			errCh <- collector.Run(ctx)
-		}()
-
-		yard := grave.New()
 		c := &counter{
-			yard:       yard,
-			client:     client,
-			collector:  collector,
-			job:        job,
-			next:       now,
-			count:      scounter,
-			schedule:   sched,
-			jobKey:     "abc/jobs/1",
-			counterKey: "abc/counters/1",
+			client:      client,
+			job:         job,
+			next:        now,
+			count:       scounter,
+			schedule:    sched,
+			jobKey:      "abc/jobs/1",
+			counterKey:  "abc/counters/1",
+			modRevision: presp.Header.GetRevision(),
 		}
 
-		ok, err := c.TriggerSuccess(ctx)
+		ok, err := c.TriggerSuccess(t.Context())
 		require.NoError(t, err)
 		assert.False(t, ok)
-
-		cancel()
-		select {
-		case err := <-errCh:
-			require.NoError(t, err)
-		case <-time.After(time.Second):
-			t.Fatal("timedout waiting for the collector to finish")
-		}
-
-		assert.True(t, yard.HasJustDeleted("abc/jobs/1"))
 
 		resp, err := client.Get(t.Context(), "abc/jobs/1")
 		require.NoError(t, err)
@@ -641,46 +433,25 @@ func Test_TriggerSuccess(t *testing.T) {
 		counterBytes, err := proto.Marshal(scounter)
 		require.NoError(t, err)
 
-		_, err = client.Put(t.Context(), "abc/jobs/1", string(jobBytes))
+		presp, err := client.Put(t.Context(), "abc/jobs/1", string(jobBytes))
 		require.NoError(t, err)
 		_, err = client.Put(t.Context(), "abc/counters/1", string(counterBytes))
 		require.NoError(t, err)
 
-		collector, err := garbage.New(garbage.Options{Client: client})
-		require.NoError(t, err)
-
-		ctx, cancel := context.WithCancel(t.Context())
-		errCh := make(chan error)
-		go func() {
-			errCh <- collector.Run(ctx)
-		}()
-
-		yard := grave.New()
 		c := &counter{
-			yard:       yard,
-			client:     client,
-			collector:  collector,
-			job:        job,
-			count:      scounter,
-			schedule:   sched,
-			jobKey:     "abc/jobs/1",
-			counterKey: "abc/counters/1",
-			next:       now,
+			client:      client,
+			job:         job,
+			count:       scounter,
+			schedule:    sched,
+			jobKey:      "abc/jobs/1",
+			counterKey:  "abc/counters/1",
+			next:        now,
+			modRevision: presp.Header.GetRevision(),
 		}
 
-		ok, err := c.TriggerSuccess(ctx)
+		ok, err := c.TriggerSuccess(t.Context())
 		require.NoError(t, err)
 		assert.True(t, ok)
-
-		cancel()
-		select {
-		case err := <-errCh:
-			require.NoError(t, err)
-		case <-time.After(time.Second):
-			t.Fatal("timedout waiting for the collector to finish")
-		}
-
-		assert.False(t, yard.HasJustDeleted("abc/jobs/1"))
 
 		resp, err := client.Get(t.Context(), "abc/jobs/1")
 		require.NoError(t, err)
@@ -730,45 +501,24 @@ func Test_tickNext(t *testing.T) {
 		counterBytes, err := proto.Marshal(scounter)
 		require.NoError(t, err)
 
-		_, err = client.Put(t.Context(), "abc/jobs/1", string(jobBytes))
+		presp, err := client.Put(t.Context(), "abc/jobs/1", string(jobBytes))
 		require.NoError(t, err)
 		_, err = client.Put(t.Context(), "abc/counters/1", string(counterBytes))
 		require.NoError(t, err)
 
-		collector, err := garbage.New(garbage.Options{Client: client})
-		require.NoError(t, err)
-
-		ctx, cancel := context.WithCancel(t.Context())
-		errCh := make(chan error)
-		go func() {
-			errCh <- collector.Run(ctx)
-		}()
-
-		yard := grave.New()
 		c := &counter{
-			yard:       yard,
-			client:     client,
-			collector:  collector,
-			job:        job,
-			count:      scounter,
-			schedule:   sched,
-			jobKey:     "abc/jobs/1",
-			counterKey: "abc/counters/1",
+			client:      client,
+			job:         job,
+			count:       scounter,
+			schedule:    sched,
+			jobKey:      "abc/jobs/1",
+			counterKey:  "abc/counters/1",
+			modRevision: presp.Header.GetRevision(),
 		}
 
 		ok, err := c.tickNext()
 		require.NoError(t, err)
 		assert.True(t, ok)
-
-		cancel()
-		select {
-		case err := <-errCh:
-			require.NoError(t, err)
-		case <-time.After(time.Second):
-			t.Fatal("timedout waiting for the collector to finish")
-		}
-
-		assert.False(t, yard.HasJustDeleted("abc/jobs/1"))
 
 		resp, err := client.Get(t.Context(), "abc/jobs/1")
 		require.NoError(t, err)
@@ -810,45 +560,24 @@ func Test_tickNext(t *testing.T) {
 		counterBytes, err := proto.Marshal(scounter)
 		require.NoError(t, err)
 
-		_, err = client.Put(t.Context(), "abc/jobs/1", string(jobBytes))
+		presp, err := client.Put(t.Context(), "abc/jobs/1", string(jobBytes))
 		require.NoError(t, err)
 		_, err = client.Put(t.Context(), "abc/counters/1", string(counterBytes))
 		require.NoError(t, err)
 
-		collector, err := garbage.New(garbage.Options{Client: client})
-		require.NoError(t, err)
-
-		ctx, cancel := context.WithCancel(t.Context())
-		errCh := make(chan error)
-		go func() {
-			errCh <- collector.Run(ctx)
-		}()
-
-		yard := grave.New()
 		c := &counter{
-			yard:       yard,
-			client:     client,
-			collector:  collector,
-			job:        job,
-			count:      scounter,
-			schedule:   sched,
-			jobKey:     "abc/jobs/1",
-			counterKey: "abc/counters/1",
+			client:      client,
+			job:         job,
+			count:       scounter,
+			schedule:    sched,
+			jobKey:      "abc/jobs/1",
+			counterKey:  "abc/counters/1",
+			modRevision: presp.Header.GetRevision(),
 		}
 
 		ok, err := c.tickNext()
 		require.NoError(t, err)
 		assert.False(t, ok)
-
-		cancel()
-		select {
-		case err := <-errCh:
-			require.NoError(t, err)
-		case <-time.After(time.Second):
-			t.Fatal("timedout waiting for the collector to finish")
-		}
-
-		assert.True(t, yard.HasJustDeleted("abc/jobs/1"))
 
 		resp, err := client.Get(t.Context(), "abc/jobs/1")
 		require.NoError(t, err)
@@ -1006,9 +735,11 @@ func Test_TriggerFailed(t *testing.T) {
 
 	now := time.Now().UTC().Truncate(time.Second)
 
-	type putExp struct {
-		key     string
-		counter *stored.Counter
+	marshalCounter := func(c *stored.Counter) string {
+		t.Helper()
+		counterBytes, err := proto.Marshal(c)
+		require.NoError(t, err)
+		return string(counterBytes)
 	}
 
 	tests := map[string]struct {
@@ -1019,8 +750,8 @@ func Test_TriggerFailed(t *testing.T) {
 		lastTriggerTime *timestamppb.Timestamp
 		exp             bool
 		expNext         *time.Time
-		expPut          *putExp
-		expDel          *string
+		expPut          *clientapi.PutIfOtherHasRevisionOpts
+		expDel          *clientapi.DeleteBothIfOtherHasRevisionOpts
 	}{
 		"no failure policy defined, just due time, expect job deleted": {
 			job: &api.Job{
@@ -1032,7 +763,11 @@ func Test_TriggerFailed(t *testing.T) {
 			next:     ptr.Of(now),
 			exp:      false,
 			expPut:   nil,
-			expDel:   ptr.Of("abc/jobs/1"),
+			expDel: &clientapi.DeleteBothIfOtherHasRevisionOpts{
+				Key:           "abc/counters/1",
+				OtherKey:      "abc/jobs/1",
+				OtherRevision: 123,
+			},
 		},
 		"no failure policy defined, schedule, expect counter forward": {
 			job: &api.Job{
@@ -1045,12 +780,14 @@ func Test_TriggerFailed(t *testing.T) {
 			next:     ptr.Of(now),
 			exp:      true,
 			expNext:  ptr.Of(now.Add(time.Second)),
-			expPut: &putExp{
-				key: "abc/counters/1",
-				counter: &stored.Counter{
+			expPut: &clientapi.PutIfOtherHasRevisionOpts{
+				Key:           "abc/counters/1",
+				OtherKey:      "abc/jobs/1",
+				OtherRevision: 123,
+				Val: marshalCounter(&stored.Counter{
 					Count:       1,
 					LastTrigger: timestamppb.New(now),
-				},
+				}),
 			},
 			expDel: nil,
 		},
@@ -1064,7 +801,11 @@ func Test_TriggerFailed(t *testing.T) {
 			next:     ptr.Of(now),
 			exp:      false,
 			expPut:   nil,
-			expDel:   ptr.Of("abc/jobs/1"),
+			expDel: &clientapi.DeleteBothIfOtherHasRevisionOpts{
+				Key:           "abc/counters/1",
+				OtherKey:      "abc/jobs/1",
+				OtherRevision: 123,
+			},
 		},
 		"no failure policy Policy defined, schedule, expect counter forward": {
 			job: &api.Job{
@@ -1077,12 +818,14 @@ func Test_TriggerFailed(t *testing.T) {
 			next:     ptr.Of(now),
 			exp:      true,
 			expNext:  ptr.Of(now.Add(time.Second)),
-			expPut: &putExp{
-				key: "abc/counters/1",
-				counter: &stored.Counter{
+			expPut: &clientapi.PutIfOtherHasRevisionOpts{
+				Key: "abc/counters/1",
+				Val: marshalCounter(&stored.Counter{
 					Count:       1,
 					LastTrigger: timestamppb.New(now),
-				},
+				}),
+				OtherKey:      "abc/jobs/1",
+				OtherRevision: 123,
 			},
 			expDel: nil,
 		},
@@ -1098,7 +841,11 @@ func Test_TriggerFailed(t *testing.T) {
 			next:     ptr.Of(now),
 			exp:      false,
 			expPut:   nil,
-			expDel:   ptr.Of("abc/jobs/1"),
+			expDel: &clientapi.DeleteBothIfOtherHasRevisionOpts{
+				Key:           "abc/counters/1",
+				OtherKey:      "abc/jobs/1",
+				OtherRevision: 123,
+			},
 		},
 		"failure policy Drop defined, schedule, expect counter forward": {
 			job: &api.Job{
@@ -1113,12 +860,14 @@ func Test_TriggerFailed(t *testing.T) {
 			next:     ptr.Of(now),
 			exp:      true,
 			expNext:  ptr.Of(now.Add(time.Second)),
-			expPut: &putExp{
-				key: "abc/counters/1",
-				counter: &stored.Counter{
+			expPut: &clientapi.PutIfOtherHasRevisionOpts{
+				Key: "abc/counters/1",
+				Val: marshalCounter(&stored.Counter{
 					Count:       1,
 					LastTrigger: timestamppb.New(now),
-				},
+				}),
+				OtherKey:      "abc/jobs/1",
+				OtherRevision: 123,
 			},
 			expDel: nil,
 		},
@@ -1137,12 +886,14 @@ func Test_TriggerFailed(t *testing.T) {
 			lastTriggerTime: timestamppb.New(now),
 			exp:             true,
 			expNext:         ptr.Of(now.Add(time.Second * 2)),
-			expPut: &putExp{
-				key: "abc/counters/1",
-				counter: &stored.Counter{
+			expPut: &clientapi.PutIfOtherHasRevisionOpts{
+				Key: "abc/counters/1",
+				Val: marshalCounter(&stored.Counter{
 					Count:       2,
 					LastTrigger: timestamppb.New(now.Add(time.Second)),
-				},
+				}),
+				OtherKey:      "abc/jobs/1",
+				OtherRevision: 123,
 			},
 			expDel: nil,
 		},
@@ -1161,7 +912,11 @@ func Test_TriggerFailed(t *testing.T) {
 			exp:      false,
 			expNext:  nil,
 			expPut:   nil,
-			expDel:   ptr.Of("abc/jobs/1"),
+			expDel: &clientapi.DeleteBothIfOtherHasRevisionOpts{
+				Key:           "abc/counters/1",
+				OtherKey:      "abc/jobs/1",
+				OtherRevision: 123,
+			},
 		},
 		"failure policy Constant default, nil interval and nil max retries, one shot, expect true with Put and next now": {
 			job: &api.Job{
@@ -1179,12 +934,14 @@ func Test_TriggerFailed(t *testing.T) {
 			next:     ptr.Of(now),
 			exp:      true,
 			expNext:  ptr.Of(now),
-			expPut: &putExp{
-				key: "abc/counters/1",
-				counter: &stored.Counter{
+			expPut: &clientapi.PutIfOtherHasRevisionOpts{
+				Key: "abc/counters/1",
+				Val: marshalCounter(&stored.Counter{
 					Count:    0,
 					Attempts: 1,
-				},
+				}),
+				OtherKey:      "abc/jobs/1",
+				OtherRevision: 123,
 			},
 			expDel: nil,
 		},
@@ -1205,7 +962,11 @@ func Test_TriggerFailed(t *testing.T) {
 			exp:      false,
 			expNext:  nil,
 			expPut:   nil,
-			expDel:   ptr.Of("abc/jobs/1"),
+			expDel: &clientapi.DeleteBothIfOtherHasRevisionOpts{
+				Key:           "abc/counters/1",
+				OtherKey:      "abc/jobs/1",
+				OtherRevision: 123,
+			},
 		},
 		"failure policy Constant default, nil interval and 0 max retries, schedule, expect true with count forward": {
 			job: &api.Job{
@@ -1224,13 +985,15 @@ func Test_TriggerFailed(t *testing.T) {
 			next:     ptr.Of(now),
 			exp:      true,
 			expNext:  ptr.Of(now.Add(time.Second)),
-			expPut: &putExp{
-				key: "abc/counters/1",
-				counter: &stored.Counter{
+			expPut: &clientapi.PutIfOtherHasRevisionOpts{
+				Key: "abc/counters/1",
+				Val: marshalCounter(&stored.Counter{
 					Count:       1,
 					Attempts:    0,
 					LastTrigger: timestamppb.New(now),
-				},
+				}),
+				OtherKey:      "abc/jobs/1",
+				OtherRevision: 123,
 			},
 			expDel: nil,
 		},
@@ -1253,7 +1016,11 @@ func Test_TriggerFailed(t *testing.T) {
 			exp:      false,
 			expNext:  nil,
 			expPut:   nil,
-			expDel:   ptr.Of("abc/jobs/1"),
+			expDel: &clientapi.DeleteBothIfOtherHasRevisionOpts{
+				Key:           "abc/counters/1",
+				OtherKey:      "abc/jobs/1",
+				OtherRevision: 123,
+			},
 		},
 		"failure policy Constant default, 3s interval and nil max retries, one shot, expect true with Put and next now+3s": {
 			job: &api.Job{
@@ -1271,13 +1038,16 @@ func Test_TriggerFailed(t *testing.T) {
 			next:     ptr.Of(now),
 			exp:      true,
 			expNext:  ptr.Of(now.Add(time.Second * 3)),
-			expPut: &putExp{
-				key: "abc/counters/1",
-				counter: &stored.Counter{
+			expPut: &clientapi.PutIfOtherHasRevisionOpts{
+				Key: "abc/counters/1",
+				Val: marshalCounter(&stored.Counter{
 					Count:    0,
 					Attempts: 1,
-				},
+				}),
+				OtherKey:      "abc/jobs/1",
+				OtherRevision: 123,
 			},
+
 			expDel: nil,
 		},
 		"failure policy Constant default, 3s interval and nil max retries, schedule, expect true with Put and next now+3s": {
@@ -1297,12 +1067,14 @@ func Test_TriggerFailed(t *testing.T) {
 			next:     ptr.Of(now),
 			exp:      true,
 			expNext:  ptr.Of(now.Add(time.Second * 3)),
-			expPut: &putExp{
-				key: "abc/counters/1",
-				counter: &stored.Counter{
+			expPut: &clientapi.PutIfOtherHasRevisionOpts{
+				Key: "abc/counters/1",
+				Val: marshalCounter(&stored.Counter{
 					Count:    0,
 					Attempts: 1,
-				},
+				}),
+				OtherKey:      "abc/jobs/1",
+				OtherRevision: 123,
 			},
 			expDel: nil,
 		},
@@ -1324,12 +1096,14 @@ func Test_TriggerFailed(t *testing.T) {
 			next:     ptr.Of(now.Add(time.Second * 6)),
 			exp:      true,
 			expNext:  ptr.Of(now.Add(time.Second * 9)),
-			expPut: &putExp{
-				key: "abc/counters/1",
-				counter: &stored.Counter{
+			expPut: &clientapi.PutIfOtherHasRevisionOpts{
+				Key: "abc/counters/1",
+				Val: marshalCounter(&stored.Counter{
 					Count:    2,
 					Attempts: 1,
-				},
+				}),
+				OtherKey:      "abc/jobs/1",
+				OtherRevision: 123,
 			},
 			expDel: nil,
 		},
@@ -1350,12 +1124,14 @@ func Test_TriggerFailed(t *testing.T) {
 			next:     ptr.Of(now.Add(time.Second * 3 * 4)),
 			exp:      true,
 			expNext:  ptr.Of(now.Add(time.Second * 3 * 5)),
-			expPut: &putExp{
-				key: "abc/counters/1",
-				counter: &stored.Counter{
+			expPut: &clientapi.PutIfOtherHasRevisionOpts{
+				Key: "abc/counters/1",
+				Val: marshalCounter(&stored.Counter{
 					Count:    0,
 					Attempts: 5,
-				},
+				}),
+				OtherKey:      "abc/jobs/1",
+				OtherRevision: 123,
 			},
 			expDel: nil,
 		},
@@ -1376,12 +1152,14 @@ func Test_TriggerFailed(t *testing.T) {
 			next:     ptr.Of(now),
 			exp:      true,
 			expNext:  ptr.Of(now),
-			expPut: &putExp{
-				key: "abc/counters/1",
-				counter: &stored.Counter{
+			expPut: &clientapi.PutIfOtherHasRevisionOpts{
+				Key: "abc/counters/1",
+				Val: marshalCounter(&stored.Counter{
 					Count:    0,
 					Attempts: 5,
-				},
+				}),
+				OtherKey:      "abc/jobs/1",
+				OtherRevision: 123,
 			},
 			expDel: nil,
 		},
@@ -1402,13 +1180,15 @@ func Test_TriggerFailed(t *testing.T) {
 			next:     ptr.Of(now),
 			exp:      true,
 			expNext:  ptr.Of(now.Add(time.Second)),
-			expPut: &putExp{
-				key: "abc/counters/1",
-				counter: &stored.Counter{
+			expPut: &clientapi.PutIfOtherHasRevisionOpts{
+				Key: "abc/counters/1",
+				Val: marshalCounter(&stored.Counter{
 					Count:       1,
 					Attempts:    0,
 					LastTrigger: timestamppb.New(now),
-				},
+				}),
+				OtherKey:      "abc/jobs/1",
+				OtherRevision: 123,
 			},
 			expDel: nil,
 		},
@@ -1429,7 +1209,11 @@ func Test_TriggerFailed(t *testing.T) {
 			exp:      false,
 			expNext:  nil,
 			expPut:   nil,
-			expDel:   ptr.Of("abc/jobs/1"),
+			expDel: &clientapi.DeleteBothIfOtherHasRevisionOpts{
+				Key:           "abc/counters/1",
+				OtherKey:      "abc/jobs/1",
+				OtherRevision: 123,
+			},
 		},
 		"if failure policy is constant with 5s interval and 1 max retries with 0 attempts, schedule, expect true with Put and next now+5s": {
 			job: &api.Job{
@@ -1448,12 +1232,14 @@ func Test_TriggerFailed(t *testing.T) {
 			next:     ptr.Of(now),
 			exp:      true,
 			expNext:  ptr.Of(now.Add(time.Second * 5)),
-			expPut: &putExp{
-				key: "abc/counters/1",
-				counter: &stored.Counter{
+			expPut: &clientapi.PutIfOtherHasRevisionOpts{
+				Key: "abc/counters/1",
+				Val: marshalCounter(&stored.Counter{
 					Count:    0,
 					Attempts: 1,
-				},
+				}),
+				OtherKey:      "abc/jobs/1",
+				OtherRevision: 123,
 			},
 			expDel: nil,
 		},
@@ -1473,16 +1259,17 @@ func Test_TriggerFailed(t *testing.T) {
 			next:     ptr.Of(now),
 			exp:      true,
 			expNext:  ptr.Of(now.Add(time.Second * 5)),
-			expPut: &putExp{
-				key: "abc/counters/1",
-				counter: &stored.Counter{
+			expPut: &clientapi.PutIfOtherHasRevisionOpts{
+				Key: "abc/counters/1",
+				Val: marshalCounter(&stored.Counter{
 					Count:    0,
 					Attempts: 1,
-				},
+				}),
+				OtherKey:      "abc/jobs/1",
+				OtherRevision: 123,
 			},
 			expDel: nil,
 		},
-
 		"if failure policy is constant with 5s interval and 1 max retries with 1 attempts, schedule, expect true with count forward and next now+1s": {
 			job: &api.Job{
 				DueTime:  ptr.Of(now.Format(time.RFC3339)),
@@ -1500,13 +1287,15 @@ func Test_TriggerFailed(t *testing.T) {
 			next:     ptr.Of(now),
 			exp:      true,
 			expNext:  ptr.Of(now.Add(time.Second)),
-			expPut: &putExp{
-				key: "abc/counters/1",
-				counter: &stored.Counter{
+			expPut: &clientapi.PutIfOtherHasRevisionOpts{
+				Key: "abc/counters/1",
+				Val: marshalCounter(&stored.Counter{
 					Count:       1,
 					Attempts:    0,
 					LastTrigger: timestamppb.New(now),
-				},
+				}),
+				OtherKey:      "abc/jobs/1",
+				OtherRevision: 123,
 			},
 			expDel: nil,
 		},
@@ -1527,9 +1316,12 @@ func Test_TriggerFailed(t *testing.T) {
 			exp:      false,
 			expNext:  nil,
 			expPut:   nil,
-			expDel:   ptr.Of("abc/jobs/1"),
+			expDel: &clientapi.DeleteBothIfOtherHasRevisionOpts{
+				Key:           "abc/counters/1",
+				OtherKey:      "abc/jobs/1",
+				OtherRevision: 123,
+			},
 		},
-
 		"if failure policy is constant with 5s interval and 2 max retries with 2 attempts, schedule, expect true with count forward and next now+1s": {
 			job: &api.Job{
 				DueTime:  ptr.Of(now.Format(time.RFC3339)),
@@ -1547,13 +1339,15 @@ func Test_TriggerFailed(t *testing.T) {
 			next:     ptr.Of(now),
 			exp:      true,
 			expNext:  ptr.Of(now.Add(time.Second)),
-			expPut: &putExp{
-				key: "abc/counters/1",
-				counter: &stored.Counter{
+			expPut: &clientapi.PutIfOtherHasRevisionOpts{
+				Key: "abc/counters/1",
+				Val: marshalCounter(&stored.Counter{
 					Count:       1,
 					Attempts:    0,
 					LastTrigger: timestamppb.New(now),
-				},
+				}),
+				OtherKey:      "abc/jobs/1",
+				OtherRevision: 123,
 			},
 			expDel: nil,
 		},
@@ -1574,12 +1368,14 @@ func Test_TriggerFailed(t *testing.T) {
 			next:     ptr.Of(now.Add(time.Second * 5 * 2)),
 			exp:      true,
 			expNext:  ptr.Of(now.Add(time.Second * 5 * 3)),
-			expPut: &putExp{
-				key: "abc/counters/1",
-				counter: &stored.Counter{
+			expPut: &clientapi.PutIfOtherHasRevisionOpts{
+				Key: "abc/counters/1",
+				Val: marshalCounter(&stored.Counter{
 					Count:    0,
 					Attempts: 3,
-				},
+				}),
+				OtherKey:      "abc/jobs/1",
+				OtherRevision: 123,
 			},
 			expDel: nil,
 		},
@@ -1601,13 +1397,16 @@ func Test_TriggerFailed(t *testing.T) {
 			next:            ptr.Of(now.Add((time.Second * 2) + (time.Second * 5 * 2))),
 			exp:             true,
 			expNext:         ptr.Of(now.Add(time.Second * 5)),
-			expPut: &putExp{
-				key: "abc/counters/1",
-				counter: &stored.Counter{
+			expPut: &clientapi.PutIfOtherHasRevisionOpts{
+				Key: "abc/counters/1",
+				Val: marshalCounter(&stored.Counter{
 					Count:       4,
 					LastTrigger: timestamppb.New(now.Add((time.Second * 4))),
-				},
+				}),
+				OtherKey:      "abc/jobs/1",
+				OtherRevision: 123,
 			},
+
 			expDel: nil,
 		},
 	}
@@ -1616,29 +1415,24 @@ func Test_TriggerFailed(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 
+			var gotDel *clientapi.DeleteBothIfOtherHasRevisionOpts
+			var gotPut *clientapi.PutIfOtherHasRevisionOpts
 			client := fake.New().
-				WithPutFn(func(_ context.Context, jobKey string, counter string, _ ...clientv3.OpOption) (*clientv3.PutResponse, error) {
+				WithPutIfOtherHasRevisionFn(func(_ context.Context, opts clientapi.PutIfOtherHasRevisionOpts) (bool, error) {
 					if test.expPut == nil {
 						assert.Fail(t, "unexpected put call")
-					} else {
-						var counterAPI stored.Counter
-						require.NoError(t, proto.Unmarshal([]byte(counter), &counterAPI))
-						assert.Equal(t, test.expPut.key, jobKey)
-						assert.Truef(t, proto.Equal(test.expPut.counter, &counterAPI), "%v != %v", test.expPut.counter, &counterAPI)
 					}
-					return nil, nil
+					gotPut = &opts
+					return true, nil
 				}).
-				WithDeleteMultiFn(func(keys ...string) error {
+				WithDeleteBothIfOtherHasRevisionFn(func(_ context.Context, opts clientapi.DeleteBothIfOtherHasRevisionOpts) error {
 					if test.expDel == nil {
 						assert.Fail(t, "unexpected delete call")
-					} else {
-						assert.Equal(t, []string{*test.expDel}, keys)
 					}
+
+					gotDel = &opts
 					return nil
 				})
-
-			collector, err := garbage.New(garbage.Options{Client: client})
-			require.NoError(t, err)
 
 			next := now
 			if test.next != nil {
@@ -1662,11 +1456,10 @@ func Test_TriggerFailed(t *testing.T) {
 					Count:       test.count,
 					LastTrigger: test.lastTriggerTime,
 				},
-				job:       job,
-				next:      next,
-				schedule:  sched,
-				collector: collector,
-				yard:      grave.New(),
+				job:         job,
+				next:        next,
+				schedule:    sched,
+				modRevision: 123,
 			}
 
 			ok, err := counter.TriggerFailed(t.Context())
@@ -1675,7 +1468,8 @@ func Test_TriggerFailed(t *testing.T) {
 			if test.expDel == nil {
 				assert.Equal(t, *test.expNext, counter.next, "next")
 			}
-			assert.NotEqual(t, test.expDel != nil, test.expPut != nil)
+			assert.Equal(t, test.expDel, gotDel)
+			assert.Equal(t, test.expPut, gotPut)
 		})
 	}
 }
@@ -1686,21 +1480,19 @@ func Test_TriggerFailureSuccess(t *testing.T) {
 	var putCall, delCall atomic.Uint32
 	var count, del atomic.Value
 	client := fake.New().
-		WithPutFn(func(_ context.Context, _ string, counter string, _ ...clientv3.OpOption) (*clientv3.PutResponse, error) {
+		WithPutIfOtherHasRevisionFn(func(_ context.Context, opts clientapi.PutIfOtherHasRevisionOpts) (bool, error) {
 			putCall.Add(1)
 			var counterAPI stored.Counter
-			require.NoError(t, proto.Unmarshal([]byte(counter), &counterAPI))
+			require.NoError(t, proto.Unmarshal([]byte(opts.Val), &counterAPI))
 			count.Store(&counterAPI)
-			return nil, nil
+			return true, nil
 		}).
-		WithDeleteMultiFn(func(keys ...string) error {
+		WithDeleteBothIfOtherHasRevisionFn(func(_ context.Context, opts clientapi.DeleteBothIfOtherHasRevisionOpts) error {
 			delCall.Add(1)
-			del.Store(keys)
+			del.Store([]string{opts.Key, opts.OtherKey})
 			return nil
 		})
 
-	collector, err := garbage.New(garbage.Options{Client: client})
-	require.NoError(t, err)
 	now := time.Now().UTC().Truncate(time.Second)
 
 	job := &stored.Job{
@@ -1730,8 +1522,6 @@ func Test_TriggerFailureSuccess(t *testing.T) {
 		job:        job,
 		next:       now,
 		schedule:   sched,
-		collector:  collector,
-		yard:       grave.New(),
 	}
 
 	assert.True(t, proto.Equal(counter.count, &stored.Counter{
@@ -1808,5 +1598,5 @@ func Test_TriggerFailureSuccess(t *testing.T) {
 	require.NoError(t, err)
 	assert.False(t, ok)
 	assert.Equal(t, uint32(1), delCall.Load())
-	assert.Equal(t, []string{"abc/jobs/1"}, del.Load())
+	assert.Equal(t, []string{"abc/counters/1", "abc/jobs/1"}, del.Load())
 }

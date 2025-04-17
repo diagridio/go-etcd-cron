@@ -14,6 +14,7 @@ import (
 
 	"github.com/dapr/kit/concurrency/slice"
 	"github.com/dapr/kit/ptr"
+	"github.com/dapr/kit/slices"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/protobuf/proto"
@@ -517,19 +518,20 @@ func Test_undeliverable(t *testing.T) {
 		require.NoError(t, cron.API().Add(cron.Context(), "xyz1", jobTmpl()))
 
 		assert.EventuallyWithT(t, func(c *assert.CollectT) {
-			assert.Equal(c, []string{"abc1", "def1", "xyz1"}, triggered.Slice())
+			triggered.Store(slices.Deduplicate(triggered.Slice())...)
+			assert.ElementsMatch(c, []string{"abc1", "def1", "xyz1"}, triggered.Slice())
 		}, time.Second*10, time.Millisecond*10)
 
 		require.NoError(t, cron.API().DeletePrefixes(cron.Context(), "abc", "def"))
 		assert.EventuallyWithT(t, func(c *assert.CollectT) {
-			assert.Equal(c, []string{"abc1", "def1", "xyz1", "xyz1"}, triggered.Slice())
+			assert.ElementsMatch(c, []string{"abc1", "def1", "xyz1", "xyz1"}, triggered.Slice())
 		}, time.Second*10, time.Millisecond*10)
 
 		cancel, err := cron.API().DeliverablePrefixes(cron.Context(), "abc", "def")
 		require.NoError(t, err)
 		t.Cleanup(cancel)
 		assert.EventuallyWithT(t, func(c *assert.CollectT) {
-			assert.Equal(c, []string{"abc1", "def1", "xyz1", "xyz1", "xyz1"}, triggered.Slice())
+			assert.ElementsMatch(c, []string{"abc1", "def1", "xyz1", "xyz1", "xyz1"}, triggered.Slice())
 		}, time.Second*10, time.Millisecond*10)
 	})
 

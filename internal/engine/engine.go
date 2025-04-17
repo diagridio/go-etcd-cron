@@ -8,10 +8,8 @@ package engine
 import (
 	"context"
 	"errors"
-	"fmt"
 	"sync"
 	"sync/atomic"
-	"time"
 
 	"github.com/dapr/kit/concurrency"
 	"github.com/go-logr/logr"
@@ -19,9 +17,7 @@ import (
 
 	"github.com/diagridio/go-etcd-cron/api"
 	internalapi "github.com/diagridio/go-etcd-cron/internal/api"
-	"github.com/diagridio/go-etcd-cron/internal/client"
-	"github.com/diagridio/go-etcd-cron/internal/garbage"
-	"github.com/diagridio/go-etcd-cron/internal/grave"
+	clientapi "github.com/diagridio/go-etcd-cron/internal/client/api"
 	"github.com/diagridio/go-etcd-cron/internal/informer"
 	"github.com/diagridio/go-etcd-cron/internal/key"
 	"github.com/diagridio/go-etcd-cron/internal/leadership/partitioner"
@@ -41,21 +37,10 @@ type Options struct {
 	Partitioner partitioner.Interface
 
 	// Client is the etcd client to use for storing cron entries.
-	Client client.Interface
+	Client clientapi.Interface
 
 	// TriggerFn is the function to call when a cron job is triggered.
 	TriggerFn api.TriggerFunction
-
-	// CounterGarbageCollectionInterval is the interval at which to run the
-	// garbage collection for counters is run. Counters are also garbage
-	// collected on shutdown. Counters are batch deleted, so a larger value
-	// increases the counter bucket and reduces the number of database
-	// operations.
-	// This value rarely needs to be set and is mostly used for testing. A small
-	// interval value will increase database operations and thus degrade cron
-	// performance.
-	// Defaults to 180 seconds.
-	CounterGarbageCollectionInterval *time.Duration
 }
 
 type Interface interface {
@@ -64,32 +49,20 @@ type Interface interface {
 }
 
 type engine struct {
-	log       logr.Logger
-	collector garbage.Interface
-	queue     *queue.Queue
-	informer  *informer.Informer
-	api       internalapi.Interface
-	running   atomic.Bool
-	wg        sync.WaitGroup
+	log      logr.Logger
+	queue    *queue.Queue
+	informer *informer.Informer
+	api      internalapi.Interface
+	running  atomic.Bool
+	wg       sync.WaitGroup
 }
 
 func New(opts Options) (Interface, error) {
-	collector, err := garbage.New(garbage.Options{
-		Log:                opts.Log,
-		Client:             opts.Client,
-		CollectionInterval: opts.CounterGarbageCollectionInterval,
-	})
-	if err != nil {
-		return nil, fmt.Errorf("failed to create garbage collector: %w", err)
-	}
 
-	yard := grave.New()
 	informer := informer.New(informer.Options{
 		Key:         opts.Key,
 		Client:      opts.Client,
-		Collector:   collector,
 		Partitioner: opts.Partitioner,
-		Yard:        yard,
 	})
 
 	schedBuilder := scheduler.NewBuilder()
@@ -100,8 +73,6 @@ func New(opts Options) (Interface, error) {
 		Key:              opts.Key,
 		SchedulerBuilder: schedBuilder,
 		TriggerFn:        opts.TriggerFn,
-		Collector:        collector,
-		Yard:             yard,
 	})
 
 	api := internalapi.New(internalapi.Options{
@@ -114,12 +85,11 @@ func New(opts Options) (Interface, error) {
 	})
 
 	return &engine{
-		log:       opts.Log.WithName("engine"),
-		collector: collector,
-		queue:     queue,
-		informer:  informer,
-		api:       api,
-		wg:        sync.WaitGroup{},
+		log:      opts.Log.WithName("engine"),
+		queue:    queue,
+		informer: informer,
+		api:      api,
+		wg:       sync.WaitGroup{},
 	}, nil
 }
 
@@ -133,7 +103,6 @@ func (e *engine) Run(ctx context.Context) error {
 	defer e.log.Info("cron engine shut down")
 
 	return concurrency.NewRunnerManager(
-		e.collector.Run,
 		e.queue.Run,
 		e.informer.Run,
 		e.api.Run,
@@ -148,9 +117,7 @@ func (e *engine) Run(ctx context.Context) error {
 				case <-ctx.Done():
 					return nil
 				case event := <-ev:
-					if err := e.queue.HandleInformerEvent(ctx, event); err != nil {
-						return err
-					}
+					e.queue.Inform(event)
 				}
 			}
 		},

@@ -11,7 +11,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/dapr/kit/ptr"
 	"github.com/go-logr/logr"
 	"github.com/stretchr/testify/require"
 	clientv3 "go.etcd.io/etcd/client/v3"
@@ -44,8 +43,7 @@ func newCron(t *testing.T, client *clientv3.Client, id string) *Cron {
 			calls.Add(1)
 			return &api.TriggerResponse{Result: api.TriggerResponseResult_SUCCESS}
 		},
-		CounterGarbageCollectionInterval: ptr.Of(time.Millisecond * 300),
-		ReplicaData:                      replicaData,
+		ReplicaData: replicaData,
 	})
 	require.NoError(t, err)
 
@@ -60,7 +58,7 @@ func (c *Cron) run(t *testing.T) *Cron {
 	t.Helper()
 
 	errCh := make(chan error)
-	ctx, cancel := context.WithCancel(t.Context())
+	ctx, cancel := context.WithCancel(context.Background())
 	c.cancel = cancel
 
 	t.Cleanup(func() {

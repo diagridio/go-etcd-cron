@@ -1,0 +1,87 @@
+/*
+Copyright (c) 2025 Diagrid Inc.
+Licensed under the MIT License.
+*/
+
+syntax = "proto3";
+
+package queue;
+
+import "proto/stored/job.proto";
+import "proto/api/trigger.proto";
+
+option go_package = "github.com/diagridio/go-etcd-cron/internal/api/queue";
+
+// ControlEvent is a queue event which should be executed in turn of the queue
+// control loop. Used for all job events.
+message ControlEvent {
+  // action is the typed action which should be executed by the queue control
+  // loop.
+  oneof action {
+    Informed informed = 1;
+    ExecuteRequest execute_request = 2;
+    ExecuteResponse execute_response = 3;
+    DeliverablePrefixes deliverable_prefixes = 4;
+    UndeliverablePrefixes undeliverable_prefixes = 5;
+    Close close = 6;
+  }
+}
+
+// Informed is the event that is sent to the queue when a job is added or
+// deleted from the storage informer.
+message Informed {
+  // job is the stored job object.
+  stored.Job job = 1;
+
+  // name is the name of the job object.
+  string name = 2;
+
+  // is_put is true if the event is a put event, false if it is a delete event.
+  bool is_put = 3;
+
+  // job_mod_revision is the key revision of the job object in the storage.
+  int64 job_mod_revision = 4;
+}
+
+// ExecuteRequest is the queue event to execute a job.
+message ExecuteRequest {
+  // job_name is the name of the job to execute.
+  string job_name = 1;
+
+  // counter_key is the storage key of the job counter to execute.
+  string counter_key = 2;
+}
+
+// ExecuteResponse is to report the result of a job execution.
+message ExecuteResponse {
+  // job_name is the name of the job to execute.
+  string job_name = 1;
+
+  // counter_key is the storage key of the job counter to execute.
+  string counter_key = 2;
+
+  // uid tracks the id of this execution to account for mid-execution
+  // cancellations.
+  uint64 uid = 3;
+
+  // result is the trigger result of executing this job counter.
+  api.TriggerResponse result = 4;
+}
+
+// DeliverablePrefixes is a queue event which instructs that the given prefixes
+// can now be executed by the queue executor.
+message DeliverablePrefixes {
+  // prefixes is the set of prefixes that can now be executed.
+  repeated string prefixes = 1;
+}
+
+// UndeliverablePrefixes is a queue event which instructs that the previously
+// given prefixes can no longer be executed by the queue executor.
+message UndeliverablePrefixes {
+  // prefixes is the set of prefixes that can no longer be executed.
+  repeated string prefixes = 1;
+}
+
+// Close is a queue event which instructs that the queue executor should
+// close.
+message Close {}

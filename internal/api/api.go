@@ -20,8 +20,7 @@ import (
 	apierrors "github.com/diagridio/go-etcd-cron/api/errors"
 	"github.com/diagridio/go-etcd-cron/internal/api/stored"
 	"github.com/diagridio/go-etcd-cron/internal/api/validator"
-	"github.com/diagridio/go-etcd-cron/internal/client"
-	clienterrors "github.com/diagridio/go-etcd-cron/internal/client/errors"
+	clientapi "github.com/diagridio/go-etcd-cron/internal/client/api"
 	"github.com/diagridio/go-etcd-cron/internal/informer"
 	"github.com/diagridio/go-etcd-cron/internal/key"
 	"github.com/diagridio/go-etcd-cron/internal/queue"
@@ -34,7 +33,7 @@ var (
 
 type Options struct {
 	Log              logr.Logger
-	Client           client.Interface
+	Client           clientapi.Interface
 	Key              *key.Key
 	SchedulerBuilder *scheduler.Builder
 	Queue            *queue.Queue
@@ -85,7 +84,7 @@ type Interface interface {
 // api implements the API interface.
 type api struct {
 	log          logr.Logger
-	client       client.Interface
+	client       clientapi.Interface
 	key          *key.Key
 	schedBuilder *scheduler.Builder
 	validator    *validator.Validator
@@ -170,14 +169,19 @@ func (a *api) addJob(ctx context.Context, name string, job *cronapi.Job, upsert 
 
 	if upsert {
 		_, err = a.client.Put(ctx, a.key.JobKey(name), string(b))
-	} else {
-		_, err = a.client.PutIfNotExists(ctx, a.key.JobKey(name), string(b))
-		if clienterrors.IsKeyAlreadyExists(err) {
-			return apierrors.NewJobAlreadyExists(name)
-		}
+		return err
 	}
 
-	return err
+	put, err := a.client.PutIfNotExists(ctx, a.key.JobKey(name), string(b))
+	if err != nil {
+		return err
+	}
+
+	if !put {
+		return apierrors.NewJobAlreadyExists(name)
+	}
+
+	return nil
 }
 
 // Get gets a cron job from the cron instance.
@@ -218,7 +222,7 @@ func (a *api) Delete(ctx context.Context, name string) error {
 		return err
 	}
 
-	_, err := a.client.Delete(ctx, a.key.JobKey(name))
+	err := a.client.DeletePair(ctx, a.key.JobKey(name), a.key.CounterKey(name))
 	if err != nil {
 		return err
 	}
@@ -243,15 +247,16 @@ func (a *api) DeletePrefixes(ctx context.Context, prefixes ...string) error {
 		}
 	}
 
-	var errs []error
+	txnPrefixes := make([]string, 0, len(prefixes)*2)
 	for _, prefix := range prefixes {
-		_, err := a.client.Delete(ctx, a.key.JobKey(prefix), clientv3.WithPrefix())
-		if err != nil {
-			errs = append(errs, fmt.Errorf("failed to delete jobs with prefix %q: %w", prefix, err))
-		}
+		txnPrefixes = append(txnPrefixes, a.key.JobKey(prefix), a.key.CounterKey(prefix))
 	}
 
-	return errors.Join(errs...)
+	if err := a.client.DeletePrefixes(ctx, txnPrefixes...); err != nil {
+		return fmt.Errorf("failed to delete prefixes %q: %w", strings.Join(prefixes, ","), err)
+	}
+
+	return nil
 }
 
 // List lists all cron jobs with the given job name prefix.
@@ -299,7 +304,7 @@ func (a *api) DeliverablePrefixes(ctx context.Context, prefixes ...string) (cont
 		return nil, errors.New("no prefixes provided")
 	}
 
-	return a.queue.DeliverablePrefixes(ctx, prefixes...)
+	return a.queue.DeliverablePrefixes(prefixes...), nil
 }
 
 func (a *api) waitReady(ctx context.Context) error {

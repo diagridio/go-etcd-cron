@@ -11,17 +11,14 @@ import (
 	"testing"
 	"time"
 
-	"github.com/dapr/kit/ptr"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.etcd.io/etcd/api/v3/mvccpb"
 	clientv3 "go.etcd.io/etcd/client/v3"
 	"google.golang.org/protobuf/proto"
 
+	"github.com/diagridio/go-etcd-cron/internal/api/queue"
 	"github.com/diagridio/go-etcd-cron/internal/api/stored"
-	"github.com/diagridio/go-etcd-cron/internal/garbage"
-	"github.com/diagridio/go-etcd-cron/internal/garbage/fake"
-	"github.com/diagridio/go-etcd-cron/internal/grave"
 	"github.com/diagridio/go-etcd-cron/internal/key"
 	"github.com/diagridio/go-etcd-cron/internal/leadership/partitioner"
 	"github.com/diagridio/go-etcd-cron/tests/framework/etcd"
@@ -49,13 +46,9 @@ func Test_Run(t *testing.T) {
 		t.Parallel()
 
 		client := etcd.Embedded(t)
-		collector, err := garbage.New(garbage.Options{Client: client})
-		require.NoError(t, err)
 		i := New(Options{
 			Partitioner: part,
 			Client:      client,
-			Collector:   collector,
-			Yard:        grave.New(),
 			Key:         key,
 		})
 
@@ -89,8 +82,6 @@ func Test_Run(t *testing.T) {
 		t.Parallel()
 
 		client := etcd.Embedded(t)
-		collector, err := garbage.New(garbage.Options{Client: client})
-		require.NoError(t, err)
 
 		jobUID1, err := proto.Marshal(&stored.Job{PartitionId: 1})
 		require.NoError(t, err)
@@ -114,8 +105,6 @@ func Test_Run(t *testing.T) {
 		i := New(Options{
 			Partitioner: part,
 			Client:      client,
-			Collector:   collector,
-			Yard:        grave.New(),
 			Key:         key,
 		})
 
@@ -129,11 +118,11 @@ func Test_Run(t *testing.T) {
 				require.NoError(t, err)
 			}
 		})
+
 		go func() {
 			errCh <- i.Run(ctx)
 		}()
 
-		require.NoError(t, i.Ready(ctx))
 		ch, err := i.Events()
 		require.NoError(t, err)
 
@@ -167,8 +156,6 @@ func Test_Run(t *testing.T) {
 		t.Parallel()
 
 		client := etcd.Embedded(t)
-		collector, err := garbage.New(garbage.Options{Client: client})
-		require.NoError(t, err)
 
 		jobUID1, err := proto.Marshal(&stored.Job{PartitionId: 1})
 		require.NoError(t, err)
@@ -184,9 +171,11 @@ func Test_Run(t *testing.T) {
 		require.NoError(t, err)
 
 		ctx, cancel := context.WithCancel(t.Context())
+		modRevision := make([]int64, 6)
 		for i, jobUID := range [][]byte{jobUID1, jobUID2, jobUID3, jobUID4} {
-			_, err := client.Put(ctx, "abc/jobs/"+strconv.Itoa(i+1), string(jobUID))
+			resp, err := client.Put(ctx, "abc/jobs/"+strconv.Itoa(i+1), string(jobUID))
 			require.NoError(t, err)
+			modRevision[i] = resp.Header.GetRevision()
 		}
 
 		jobs := make([]stored.Job, 3)
@@ -197,8 +186,6 @@ func Test_Run(t *testing.T) {
 		i := New(Options{
 			Partitioner: part,
 			Client:      client,
-			Collector:   collector,
-			Yard:        grave.New(),
 			Key:         key,
 		})
 
@@ -216,37 +203,50 @@ func Test_Run(t *testing.T) {
 			errCh <- i.Run(ctx)
 		}()
 
-		require.NoError(t, i.Ready(ctx))
 		ch, err := i.Events()
 		require.NoError(t, err)
+
+		expEvents := []*queue.Informed{
+			{IsPut: false, Job: nil, Name: "1"},
+			{IsPut: true, Job: &jobs[0], Name: "2", JobModRevision: modRevision[1]},
+			{IsPut: false, Job: nil, Name: "3"},
+			{IsPut: true, Job: &jobs[1], Name: "4", JobModRevision: modRevision[3]},
+		}
+
+		for _, expEvent := range expEvents {
+			select {
+			case ev := <-ch:
+				assert.True(t, proto.Equal(expEvent, ev), "%v != %v", expEvent, ev)
+			case <-time.After(time.Second):
+				t.Fatalf("timed out waiting for event %v", expEvent)
+			}
+		}
+
+		require.NoError(t, i.Ready(ctx))
 
 		_, err = client.Delete(ctx, "abc/jobs/1")
 		require.NoError(t, err)
 		_, err = client.Delete(ctx, "abc/jobs/2")
 		require.NoError(t, err)
 		for i, jobUID := range [][]byte{jobUID5, jobUID6} {
-			_, err := client.Put(ctx, "abc/jobs/"+strconv.Itoa(i+5), string(jobUID))
+			resp, err := client.Put(ctx, "abc/jobs/"+strconv.Itoa(i+5), string(jobUID))
 			require.NoError(t, err)
+			modRevision[i+4] = resp.Header.GetRevision()
 		}
 		_, err = client.Delete(ctx, "abc/jobs/4")
 		require.NoError(t, err)
 
-		expEvents := []*Event{
-			{IsPut: false, Job: nil, Key: []byte("abc/jobs/1")},
-			{IsPut: true, Job: &jobs[0], Key: []byte("abc/jobs/2")},
-			{IsPut: false, Job: nil, Key: []byte("abc/jobs/3")},
-			{IsPut: true, Job: &jobs[1], Key: []byte("abc/jobs/4")},
-			{IsPut: false, Job: nil, Key: []byte("abc/jobs/1")},
-			{IsPut: false, Job: &jobs[0], Key: []byte("abc/jobs/2")},
-			{IsPut: false, Job: nil, Key: []byte("abc/jobs/5")},
-			{IsPut: true, Job: &jobs[2], Key: []byte("abc/jobs/6")},
-			{IsPut: false, Job: &jobs[1], Key: []byte("abc/jobs/4")},
+		expEvents = []*queue.Informed{
+			{IsPut: false, Job: nil, Name: "1"},
+			{IsPut: false, Job: &jobs[0], Name: "2", JobModRevision: modRevision[1]},
+			{IsPut: false, Job: nil, Name: "5"},
+			{IsPut: true, Job: &jobs[2], Name: "6", JobModRevision: modRevision[5]},
+			{IsPut: false, Job: &jobs[1], Name: "4", JobModRevision: modRevision[3]},
 		}
-
 		for _, expEvent := range expEvents {
 			select {
 			case ev := <-ch:
-				assert.Equal(t, expEvent, ev)
+				assert.True(t, proto.Equal(expEvent, ev), "%v != %v", expEvent, ev)
 			case <-time.After(time.Second):
 				t.Fatalf("timed out waiting for event %v", expEvent)
 			}
@@ -272,11 +272,9 @@ func Test_handleEvent(t *testing.T) {
 	require.NoError(t, proto.Unmarshal(jobUID2, &job2))
 
 	tests := map[string]struct {
-		ev               *clientv3.Event
-		expEvent         *Event
-		yardDelete       *string
-		expCollectorPops []string
-		expErr           bool
+		ev       *clientv3.Event
+		expEvent *queue.Informed
+		expErr   bool
 	}{
 		"if event is not recognized, it should return an error": {
 			ev: &clientv3.Event{
@@ -293,9 +291,8 @@ func Test_handleEvent(t *testing.T) {
 					Value: []byte("bad data"),
 				},
 			},
-			expCollectorPops: []string{"abc/counters/1"},
-			expEvent:         nil,
-			expErr:           true,
+			expEvent: nil,
+			expErr:   true,
 		},
 		"if job is for different partition, return delete event": {
 			ev: &clientv3.Event{
@@ -305,10 +302,9 @@ func Test_handleEvent(t *testing.T) {
 					Value: jobUID1,
 				},
 			},
-			expCollectorPops: []string{"abc/counters/2"},
-			expEvent: &Event{
+			expEvent: &queue.Informed{
 				IsPut: false,
-				Key:   []byte("abc/jobs/2"),
+				Name:  "2",
 			},
 			expErr: false,
 		},
@@ -320,11 +316,10 @@ func Test_handleEvent(t *testing.T) {
 					Key:   []byte("abc/jobs/3"),
 				},
 			},
-			expCollectorPops: []string{"abc/counters/3"},
-			expEvent: &Event{
+			expEvent: &queue.Informed{
 				IsPut: true,
 				Job:   &job2,
-				Key:   []byte("abc/jobs/3"),
+				Name:  "3",
 			},
 			expErr: false,
 		},
@@ -334,23 +329,12 @@ func Test_handleEvent(t *testing.T) {
 				Kv:     &mvccpb.KeyValue{Value: jobUID2, Key: []byte("abc/jobs/3")},
 				PrevKv: &mvccpb.KeyValue{Value: jobUID2},
 			},
-			expEvent: &Event{
+			expEvent: &queue.Informed{
 				IsPut: false,
 				Job:   &job2,
+				Name:  "3",
 			},
 			expErr: false,
-		},
-		"if job is for partition, don't return job on DELETE if just deleted": {
-			ev: &clientv3.Event{
-				Type: clientv3.EventTypeDelete,
-				PrevKv: &mvccpb.KeyValue{
-					Key:   []byte("jobs/1"),
-					Value: jobUID2,
-				},
-			},
-			yardDelete: ptr.Of("jobs/1"),
-			expEvent:   nil,
-			expErr:     false,
 		},
 	}
 
@@ -374,23 +358,13 @@ func Test_handleEvent(t *testing.T) {
 			})
 			require.NoError(t, err)
 
-			collector := fake.New()
-
-			yard := grave.New()
-			if testInLoop.yardDelete != nil {
-				yard.Deleted(*testInLoop.yardDelete)
-			}
-
 			i := New(Options{
 				Partitioner: part,
-				Collector:   collector,
-				Yard:        yard,
 				Key:         key,
 			})
 			gotEvent, err := i.handleEvent(testInLoop.ev)
 			assert.Equal(t, testInLoop.expEvent, gotEvent)
 			assert.Equal(t, testInLoop.expErr, err != nil, "%v", err)
-			assert.Equal(t, testInLoop.expCollectorPops, collector.HasPoped())
 		})
 	}
 }
@@ -425,7 +399,7 @@ func Test_Events(t *testing.T) {
 		t.Parallel()
 
 		i := New(Options{})
-		var expCh <-chan *Event = i.ch
+		var expCh <-chan *queue.Informed = i.ch
 
 		gotCh, err := i.Events()
 		require.NoError(t, err)

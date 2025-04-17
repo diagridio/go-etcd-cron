@@ -14,9 +14,7 @@ import (
 
 	"github.com/diagridio/go-etcd-cron/api"
 	"github.com/diagridio/go-etcd-cron/internal/api/stored"
-	"github.com/diagridio/go-etcd-cron/internal/client"
-	"github.com/diagridio/go-etcd-cron/internal/garbage"
-	"github.com/diagridio/go-etcd-cron/internal/grave"
+	clientapi "github.com/diagridio/go-etcd-cron/internal/client/api"
 	"github.com/diagridio/go-etcd-cron/internal/key"
 	"github.com/diagridio/go-etcd-cron/internal/scheduler"
 )
@@ -30,7 +28,7 @@ type Options struct {
 	Key *key.Key
 
 	// Client is the etcd client to use.
-	Client client.Interface
+	Client clientapi.Interface
 
 	// Schedule is the schedule of this job.
 	Schedule scheduler.Interface
@@ -38,13 +36,9 @@ type Options struct {
 	// Job is the job to count.
 	Job *stored.Job
 
-	// Yard is a graveyard for signalling that a job has just been deleted and
-	// therefore it's Delete informer event should be ignored.
-	Yard *grave.Yard
-
-	// Collector is a garbage collector for pushing counter keys that are no
-	// longer needed, and should be deleted at some point.
-	Collector garbage.Interface
+	// JobModRevision is the mod revision of the job which is shared by this
+	// counter.
+	JobModRevision int64
 }
 
 // Interface is a counter, tracking state of a scheduled job as it is triggered
@@ -65,22 +59,18 @@ type counter struct {
 	name           string
 	jobKey         string
 	counterKey     string
-	client         client.Interface
+	client         clientapi.Interface
 	schedule       scheduler.Interface
-	yard           *grave.Yard
-	collector      garbage.Interface
 	job            *stored.Job
 	count          *stored.Counter
 	next           time.Time
 	triggerRequest *api.TriggerRequest
+	modRevision    int64
 }
 
 func New(ctx context.Context, opts Options) (Interface, bool, error) {
 	counterKey := opts.Key.CounterKey(opts.Name)
 	jobKey := opts.Key.JobKey(opts.Name)
-
-	// Pop the counter key from the garbage collector as we are going to use it.
-	opts.Collector.Pop(counterKey)
 
 	// Get the existing counter, if it exists.
 	res, err := opts.Client.Get(ctx, counterKey)
@@ -89,14 +79,13 @@ func New(ctx context.Context, opts Options) (Interface, bool, error) {
 	}
 
 	c := &counter{
-		name:       opts.Name,
-		counterKey: counterKey,
-		jobKey:     jobKey,
-		client:     opts.Client,
-		schedule:   opts.Schedule,
-		job:        opts.Job,
-		yard:       opts.Yard,
-		collector:  opts.Collector,
+		name:        opts.Name,
+		counterKey:  counterKey,
+		jobKey:      jobKey,
+		client:      opts.Client,
+		schedule:    opts.Schedule,
+		job:         opts.Job,
+		modRevision: opts.JobModRevision,
 		triggerRequest: &api.TriggerRequest{
 			Name:     opts.Name,
 			Metadata: opts.Job.GetJob().GetMetadata(),
@@ -123,12 +112,8 @@ func New(ctx context.Context, opts Options) (Interface, bool, error) {
 	// start again.
 	if count.GetJobPartitionId() != opts.Job.GetPartitionId() {
 		count = &stored.Counter{JobPartitionId: opts.Job.GetPartitionId()}
-		b, err := proto.Marshal(count)
-		if err != nil {
-			return nil, false, err
-		}
-		if _, err := opts.Client.Put(ctx, counterKey, string(b)); err != nil {
-			return nil, false, err
+		if ok, err := c.put(ctx, count); err != nil || !ok {
+			return nil, ok, err
 		}
 	}
 
@@ -180,14 +165,8 @@ func (c *counter) TriggerSuccess(ctx context.Context) (bool, error) {
 		return false, err
 	}
 
-	b, err := proto.Marshal(c.count)
-	if err != nil {
-		return false, err
-	}
-
 	// Update the counter in etcd and return the next trigger time.
-	_, err = c.client.Put(ctx, c.counterKey, string(b))
-	return true, err
+	return c.put(ctx, c.count)
 }
 
 // TriggerFailed is called when trigging the job has been marked as failed from
@@ -210,14 +189,8 @@ func (c *counter) TriggerFailed(ctx context.Context) (bool, error) {
 		}
 	}
 
-	b, err := proto.Marshal(c.count)
-	if err != nil {
-		return true, err
-	}
-
 	// Update the counter in etcd and return the next trigger time.
-	_, err = c.client.Put(ctx, c.counterKey, string(b))
-	return true, err
+	return c.put(ctx, c.count)
 }
 
 // policyTryAgain returns true if the failure policy indicates this job should
@@ -263,14 +236,16 @@ func (c *counter) tickNext() (bool, error) {
 		return true, nil
 	}
 
-	if err := c.client.DeleteMulti(c.jobKey); err != nil {
-		return false, err
-	}
-	// Mark the job as just been deleted, and push the counter key for garbage
-	// collection.
-	c.yard.Deleted(c.jobKey)
-	c.collector.Push(c.counterKey)
-	return false, nil
+	// Delete the job and counter keys.
+	// If the Job have been updated, then we leave the job alone to preserve it.
+	// Always attempt to delete the counter key.
+	return false, c.client.DeleteBothIfOtherHasRevision(context.Background(),
+		clientapi.DeleteBothIfOtherHasRevisionOpts{
+			Key:           c.counterKey,
+			OtherKey:      c.jobKey,
+			OtherRevision: c.modRevision,
+		},
+	)
 }
 
 // updateNext updates the counter's next trigger time.
@@ -299,4 +274,19 @@ func (c *counter) updateNext() bool {
 	c.next = *next
 
 	return true
+}
+
+// put will attempt to put the
+func (c *counter) put(ctx context.Context, count *stored.Counter) (bool, error) {
+	b, err := proto.Marshal(count)
+	if err != nil {
+		return false, err
+	}
+
+	return c.client.PutIfOtherHasRevision(ctx, clientapi.PutIfOtherHasRevisionOpts{
+		Key:           c.counterKey,
+		Val:           string(b),
+		OtherKey:      c.jobKey,
+		OtherRevision: c.modRevision,
+	})
 }

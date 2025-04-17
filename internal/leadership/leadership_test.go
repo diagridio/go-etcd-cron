@@ -191,7 +191,7 @@ func Test_Relect(t *testing.T) {
 func Test_Elect(t *testing.T) {
 	t.Parallel()
 
-	t.Run("returns error when closed", func(t *testing.T) {
+	t.Run("returns no error when closed", func(t *testing.T) {
 		t.Parallel()
 
 		client := etcd.Embedded(t)
@@ -214,7 +214,7 @@ func Test_Elect(t *testing.T) {
 		require.Error(t, leader.Run(ctx))
 
 		_, _, err = leader.Elect(t.Context())
-		require.Error(t, err)
+		require.NoError(t, err)
 	})
 
 	t.Run("returns error context cancelled", func(t *testing.T) {
