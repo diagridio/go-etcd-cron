@@ -20,6 +20,7 @@ import (
 	apierrors "github.com/diagridio/go-etcd-cron/api/errors"
 	internalapi "github.com/diagridio/go-etcd-cron/internal/api"
 	"github.com/diagridio/go-etcd-cron/internal/engine"
+	"github.com/go-logr/logr"
 )
 
 var errClosed = errors.New("cron is closed")
