@@ -12,6 +12,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/go-logr/logr"
 	clientv3 "go.etcd.io/etcd/client/v3"
 	"go.etcd.io/etcd/server/v3/etcdserver"
 
@@ -19,7 +20,6 @@ import (
 	apierrors "github.com/diagridio/go-etcd-cron/api/errors"
 	internalapi "github.com/diagridio/go-etcd-cron/internal/api"
 	"github.com/diagridio/go-etcd-cron/internal/engine"
-	"github.com/go-logr/logr"
 )
 
 var errClosed = errors.New("cron is closed")

@@ -276,7 +276,10 @@ func (c *counter) updateNext() bool {
 	return true
 }
 
-// put will attempt to put the
+// put will attempt to commit the count to the database. If the target Job has
+// been changed, then we don't commit the changes and signal this counter is no
+// longer active. The next Job counter handler will pick up the counter key,
+// and correctly overwrite (or delete) the counter key.
 func (c *counter) put(ctx context.Context, count *stored.Counter) (bool, error) {
 	b, err := proto.Marshal(count)
 	if err != nil {
