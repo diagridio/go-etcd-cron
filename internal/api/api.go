@@ -1,5 +1,5 @@
 /*
-Copyright (c) 2024 Diagrid Inc.
+Copyright (c) 2025 Diagrid Inc.
 Licensed under the MIT License.
 */
 

@@ -98,9 +98,11 @@ func New(opts Options) *Queue {
 // Run starts the cron queue.
 func (q *Queue) Run(ctx context.Context) error {
 	q.log.Info("queue is ready")
-	defer q.log.Info("shut down queue")
-	//nolint:errcheck
-	defer q.queue.Close()
+	defer func() {
+		//nolint:errcheck
+		q.queue.Close()
+		q.log.Info("shut down queue")
+	}()
 
 	err := q.loop.Run(ctx)
 	if errors.Is(err, context.Canceled) {
