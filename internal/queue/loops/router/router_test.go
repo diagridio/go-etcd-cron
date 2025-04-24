@@ -3,7 +3,7 @@ Copyright (c) 2025 Diagrid Inc.
 Licensed under the MIT License.
 */
 
-package jobs
+package router
 
 import (
 	"sync/atomic"
@@ -17,17 +17,17 @@ import (
 	"github.com/diagridio/go-etcd-cron/internal/queue/loops/fake"
 )
 
-func Test_jobs(t *testing.T) {
+func Test_router(t *testing.T) {
 	t.Parallel()
 
 	t.Run("if handle close job but no counter, then should error", func(t *testing.T) {
 		t.Parallel()
 
-		j := &jobs{
+		r := &router{
 			counters: make(map[string]*counter),
 		}
 
-		require.Error(t, j.Handle(t.Context(), &queue.JobEvent{
+		require.Error(t, r.Handle(t.Context(), &queue.JobEvent{
 			JobName: "test",
 			Action: &queue.JobAction{
 				Action: &queue.JobAction_CloseJob{
@@ -42,7 +42,7 @@ func Test_jobs(t *testing.T) {
 
 		var idx atomic.Int64
 		idx.Store(123)
-		j := &jobs{
+		r := &router{
 			counters: map[string]*counter{
 				"test": &counter{
 					idx: &idx,
@@ -50,7 +50,7 @@ func Test_jobs(t *testing.T) {
 			},
 		}
 
-		require.NoError(t, j.Handle(t.Context(), &queue.JobEvent{
+		require.NoError(t, r.Handle(t.Context(), &queue.JobEvent{
 			JobName: "test",
 			Action: &queue.JobAction{
 				Action: &queue.JobAction_CloseJob{
@@ -72,14 +72,14 @@ func Test_jobs(t *testing.T) {
 		})
 
 		var idx atomic.Int64
-		j := &jobs{
+		r := &router{
 			counters: map[string]*counter{
 				"test":   &counter{idx: &idx, loop: loop},
 				"test-2": &counter{},
 			},
 		}
 
-		require.NoError(t, j.Handle(t.Context(), &queue.JobEvent{
+		require.NoError(t, r.Handle(t.Context(), &queue.JobEvent{
 			JobName: "test",
 			Action: &queue.JobAction{
 				Action: &queue.JobAction_CloseJob{
@@ -91,7 +91,7 @@ func Test_jobs(t *testing.T) {
 		assert.Equal(t, 1, called)
 		assert.Equal(t, map[string]*counter{
 			"test-2": &counter{},
-		}, j.counters)
+		}, r.counters)
 	})
 
 	t.Run("if handle close, expect all loops to be closed", func(t *testing.T) {
@@ -108,7 +108,7 @@ func Test_jobs(t *testing.T) {
 		})
 
 		var idx atomic.Int64
-		j := &jobs{
+		r := &router{
 			counters: map[string]*counter{
 				"test1": &counter{idx: &idx, loop: loop},
 				"test2": &counter{idx: &idx, loop: loop},
@@ -118,7 +118,7 @@ func Test_jobs(t *testing.T) {
 			},
 		}
 
-		require.NoError(t, j.Handle(t.Context(), &queue.JobEvent{
+		require.NoError(t, r.Handle(t.Context(), &queue.JobEvent{
 			Action: &queue.JobAction{
 				Action: &queue.JobAction_Close{
 					Close: new(queue.Close),
@@ -145,20 +145,20 @@ func Test_jobs(t *testing.T) {
 			called++
 		})
 
-		j := &jobs{
+		r := &router{
 			counters: map[string]*counter{
 				"test-job": &counter{loop: loop},
 			},
 		}
 
-		require.NoError(t, j.Handle(t.Context(), &queue.JobEvent{
+		require.NoError(t, r.Handle(t.Context(), &queue.JobEvent{
 			JobName: "test-job",
 			Action:  exp,
 		}))
 		assert.Equal(t, 1, called)
 		assert.Equal(t, map[string]*counter{
 			"test-job": &counter{loop: loop},
-		}, j.counters)
+		}, r.counters)
 	})
 
 	t.Run("if handle event with non-existing counter, expect create and enqueue", func(t *testing.T) {
@@ -171,18 +171,18 @@ func Test_jobs(t *testing.T) {
 			},
 		}}
 
-		j := &jobs{
+		r := &router{
 			act: actionerfake.New(),
 			counters: map[string]*counter{
 				"test-job-2": &counter{},
 			},
 		}
 
-		require.NoError(t, j.Handle(t.Context(), &queue.JobEvent{
+		require.NoError(t, r.Handle(t.Context(), &queue.JobEvent{
 			JobName: "test-job",
 			Action:  exp,
 		}))
 
-		assert.Len(t, j.counters, 2)
+		assert.Len(t, r.counters, 2)
 	})
 }

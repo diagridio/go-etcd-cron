@@ -21,6 +21,9 @@ type Options struct {
 	Jobs     loops.Interface[*queue.JobEvent]
 }
 
+// control is the main outer control loop responsible for handling all control
+// signals, such as inform, execute, deliverable etc. Appropriate events are
+// routed to the jobs loop for processing.
 type control struct {
 	jobs loops.Interface[*queue.JobEvent]
 	act  actioner.Interface

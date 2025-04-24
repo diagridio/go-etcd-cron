@@ -3,7 +3,7 @@ Copyright (c) 2025 Diagrid Inc.
 Licensed under the MIT License.
 */
 
-package jobs
+package router
 
 import (
 	"context"
@@ -25,12 +25,11 @@ type Options struct {
 	Cancel   context.CancelFunc
 }
 
-type counter struct {
-	idx  *atomic.Int64
-	loop loops.Interface[*queue.JobAction]
-}
-
-type jobs struct {
+// router is a loop to handle Job events. It routes the event to the correct
+// counter loop. It creates and runs counter loops at inform instantiate time,
+// and garbage collects them after close.
+// TODO: @joshvanl: add sync.Pool for counters to reduce allocations.
+type router struct {
 	log    logr.Logger
 	cancel context.CancelFunc
 	act    actioner.Interface
@@ -39,11 +38,19 @@ type jobs struct {
 	wg       sync.WaitGroup
 }
 
+// counter is a single instance of a counter loop. Tracks the idx of the
+// associated key mod revision to track if the job event is still relevant for
+// the current live counter loop.
+type counter struct {
+	idx  *atomic.Int64
+	loop loops.Interface[*queue.JobAction]
+}
+
 func New(opts Options) loops.Interface[*queue.JobEvent] {
 	return loops.New(loops.Options[*queue.JobEvent]{
 		BufferSize: ptr.Of(uint64(1024)),
-		Handler: &jobs{
-			log:      opts.Log.WithName("jobs"),
+		Handler: &router{
+			log:      opts.Log.WithName("router"),
 			cancel:   opts.Cancel,
 			act:      opts.Actioner,
 			counters: make(map[string]*counter),
@@ -51,27 +58,27 @@ func New(opts Options) loops.Interface[*queue.JobEvent] {
 	})
 }
 
-func (j *jobs) Handle(ctx context.Context, event *queue.JobEvent) error {
+func (r *router) Handle(ctx context.Context, event *queue.JobEvent) error {
 	switch event.GetAction().Action.(type) {
 	case *queue.JobAction_CloseJob:
-		return j.handleCloseJob(event)
+		return r.handleCloseJob(event)
 
 	case *queue.JobAction_Close:
-		j.handleClose()
+		r.handleClose()
 		return nil
 
 	default:
-		return j.handleEvent(ctx, event)
+		return r.handleEvent(ctx, event)
 	}
 }
 
-func (j *jobs) handleEvent(ctx context.Context, event *queue.JobEvent) error {
+func (r *router) handleEvent(ctx context.Context, event *queue.JobEvent) error {
 	jobName := event.GetJobName()
 
 	// If the counter doesn't exist yet, create.
-	counter, ok := j.counters[jobName]
+	counter, ok := r.counters[jobName]
 	if !ok {
-		counter = j.newCounter(ctx, jobName)
+		counter = r.newCounter(ctx, jobName)
 	}
 
 	counter.loop.Enqueue(event.GetAction())
@@ -80,11 +87,11 @@ func (j *jobs) handleEvent(ctx context.Context, event *queue.JobEvent) error {
 }
 
 // Create a new counters loop, and start it.
-func (j *jobs) newCounter(ctx context.Context, jobName string) *counter {
+func (r *router) newCounter(ctx context.Context, jobName string) *counter {
 	var idx atomic.Int64
 	loop := counters.New(counters.Options{
 		IDx:      &idx,
-		Actioner: j.act,
+		Actioner: r.act,
 		Name:     jobName,
 	})
 
@@ -93,15 +100,15 @@ func (j *jobs) newCounter(ctx context.Context, jobName string) *counter {
 		idx:  &idx,
 	}
 
-	j.counters[jobName] = counter
+	r.counters[jobName] = counter
 
-	j.wg.Add(1)
+	r.wg.Add(1)
 	go func() {
-		defer j.wg.Done()
+		defer r.wg.Done()
 		err := loop.Run(ctx)
 		if err != nil && !errors.Is(err, context.Canceled) {
-			j.cancel()
-			j.log.Error(err, "failed to run inner loop", "job", jobName)
+			r.cancel()
+			r.log.Error(err, "failed to run inner loop", "job", jobName)
 		}
 	}()
 
@@ -110,10 +117,10 @@ func (j *jobs) newCounter(ctx context.Context, jobName string) *counter {
 
 // The inner job loop has been signalled to be closed to release its
 // resources.
-func (j *jobs) handleCloseJob(event *queue.JobEvent) error {
+func (r *router) handleCloseJob(event *queue.JobEvent) error {
 	jobName := event.GetJobName()
 
-	counter, ok := j.counters[jobName]
+	counter, ok := r.counters[jobName]
 	if !ok {
 		return errors.New("catastrophic state machine error: lost inner loop reference")
 	}
@@ -128,24 +135,24 @@ func (j *jobs) handleCloseJob(event *queue.JobEvent) error {
 	counter.loop.Close(&queue.JobAction{
 		Action: new(queue.JobAction_Close),
 	})
-	delete(j.counters, jobName)
+	delete(r.counters, jobName)
 
 	return nil
 }
 
-func (j *jobs) handleClose() {
-	defer j.wg.Wait()
+func (r *router) handleClose() {
+	defer r.wg.Wait()
 
-	j.wg.Add(len(j.counters))
+	r.wg.Add(len(r.counters))
 
 	action := &queue.JobAction{
 		Action: new(queue.JobAction_Close),
 	}
 
-	for _, c := range j.counters {
+	for _, c := range r.counters {
 		go func(c *counter) {
 			c.loop.Close(action)
-			j.wg.Done()
+			r.wg.Done()
 		}(c)
 	}
 }

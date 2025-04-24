@@ -21,7 +21,7 @@ import (
 	"github.com/diagridio/go-etcd-cron/internal/queue/actioner"
 	"github.com/diagridio/go-etcd-cron/internal/queue/loops"
 	"github.com/diagridio/go-etcd-cron/internal/queue/loops/control"
-	"github.com/diagridio/go-etcd-cron/internal/queue/loops/jobs"
+	"github.com/diagridio/go-etcd-cron/internal/queue/loops/router"
 	"github.com/diagridio/go-etcd-cron/internal/scheduler"
 )
 
@@ -91,7 +91,7 @@ func (q *Queue) Run(ctx context.Context) error {
 	})
 
 	ictx, cancel := context.WithCancel(context.Background())
-	jobsLoop := jobs.New(jobs.Options{
+	routerLoop := router.New(router.Options{
 		Actioner: act,
 		Log:      q.log,
 		Cancel:   cancel,
@@ -99,12 +99,12 @@ func (q *Queue) Run(ctx context.Context) error {
 
 	q.controlLoop = control.New(control.Options{
 		Actioner: act,
-		Jobs:     jobsLoop,
+		Jobs:     routerLoop,
 	})
 
 	errCh := make(chan error, 2)
 	go func() {
-		errCh <- jobsLoop.Run(ictx)
+		errCh <- routerLoop.Run(ictx)
 	}()
 	go func() {
 		errCh <- q.controlLoop.Run(ictx)
