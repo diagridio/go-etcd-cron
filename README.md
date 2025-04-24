@@ -110,7 +110,6 @@ Leadership keys are associated with an ETCD lease of 20s TTL to prevent stale le
 
 An associated `counters` key is used to track the current state of a job that is scheduled.
 It includes the last trigger time (if triggered), the number of times the job has been triggered, and the Partition ID of the associated job with the same name.
-Counters are lazily deleted in bulk by a garbage collector that runs every 180s in an effort to reduce pressure of jobs triggering.
 
 The scheduler will never miss triggering jobs.
 If the scheduler falls behind in time (for example, due to downtime), it will catch up and trigger all jobs that were missed in immediate succession.

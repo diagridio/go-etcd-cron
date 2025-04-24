@@ -23,7 +23,7 @@ import (
 	clientv3 "go.etcd.io/etcd/client/v3"
 	"go.etcd.io/etcd/client/v3/mirror"
 
-	"github.com/diagridio/go-etcd-cron/internal/client"
+	"github.com/diagridio/go-etcd-cron/internal/client/api"
 )
 
 const (
@@ -31,12 +31,12 @@ const (
 )
 
 // newSyncer creates a Syncer.
-func newSyncer(c client.Interface, prefix string, rev int64) mirror.Syncer {
+func newSyncer(c api.Interface, prefix string, rev int64) mirror.Syncer {
 	return &syncer{c: c, prefix: prefix, rev: rev}
 }
 
 type syncer struct {
-	c      client.Interface
+	c      api.Interface
 	rev    int64
 	prefix string
 }

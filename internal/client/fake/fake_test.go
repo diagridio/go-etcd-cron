@@ -8,10 +8,10 @@ package fake_test
 import (
 	"testing"
 
-	"github.com/diagridio/go-etcd-cron/internal/client"
+	"github.com/diagridio/go-etcd-cron/internal/client/api"
 	"github.com/diagridio/go-etcd-cron/internal/client/fake"
 )
 
 func Test_Fake(*testing.T) {
-	var _ client.Interface = fake.New()
+	var _ api.Interface = fake.New()
 }

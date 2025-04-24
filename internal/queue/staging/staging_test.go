@@ -3,17 +3,15 @@ Copyright (c) 2024 Diagrid Inc.
 Licensed under the MIT License.
 */
 
-package queue
+package staging
 
 import (
-	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/dapr/kit/concurrency/lock"
 	"github.com/dapr/kit/events/queue"
 	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 
 	"github.com/diagridio/go-etcd-cron/internal/counter"
 	"github.com/diagridio/go-etcd-cron/internal/counter/fake"
@@ -25,87 +23,81 @@ func Test_DeliverablePrefixes(t *testing.T) {
 	t.Run("registering empty prefixes should add nothing", func(t *testing.T) {
 		t.Parallel()
 
-		q := &Queue{
-			deliverablePrefixes: make(map[string]*atomic.Int32),
-			eventsLock:          lock.NewContext(),
+		s := &Staging{
+			deliverablePrefixes: make(map[string]*uint64),
+			queue:               new(queue.Processor[string, counter.Interface]),
 		}
-		assert.Empty(t, q.deliverablePrefixes)
+		assert.Empty(t, s.deliverablePrefixes)
 
-		cancel, err := q.DeliverablePrefixes(t.Context())
-		require.NoError(t, err)
-		assert.Empty(t, q.deliverablePrefixes)
-		cancel()
-		assert.Empty(t, q.deliverablePrefixes)
+		s.DeliverablePrefixes()
+		assert.Empty(t, s.deliverablePrefixes)
+		s.UnDeliverablePrefixes()
+		assert.Empty(t, s.deliverablePrefixes)
 	})
 
 	t.Run("registering and cancelling should add then remove the prefix", func(t *testing.T) {
 		t.Parallel()
 
-		q := &Queue{
-			deliverablePrefixes: make(map[string]*atomic.Int32),
-			eventsLock:          lock.NewContext(),
+		s := &Staging{
+			deliverablePrefixes: make(map[string]*uint64),
+			queue:               new(queue.Processor[string, counter.Interface]),
 		}
-		assert.Empty(t, q.deliverablePrefixes)
+		assert.Empty(t, s.deliverablePrefixes)
 
-		cancel, err := q.DeliverablePrefixes(t.Context(), "abc")
-		require.NoError(t, err)
-		assert.Len(t, q.deliverablePrefixes, 1)
-		cancel()
-		assert.Empty(t, q.deliverablePrefixes)
+		s.DeliverablePrefixes("abc")
+		assert.Len(t, s.deliverablePrefixes, 1)
+		s.UnDeliverablePrefixes("foo")
+		assert.Len(t, s.deliverablePrefixes, 1)
+		s.UnDeliverablePrefixes("abc")
+		assert.Empty(t, s.deliverablePrefixes)
 	})
 
 	t.Run("multiple: registering and cancelling should add then remove the prefix", func(t *testing.T) {
 		t.Parallel()
 
-		q := &Queue{
-			deliverablePrefixes: make(map[string]*atomic.Int32),
-			eventsLock:          lock.NewContext(),
+		s := &Staging{
+			deliverablePrefixes: make(map[string]*uint64),
+			queue:               new(queue.Processor[string, counter.Interface]),
 		}
-		assert.Empty(t, q.deliverablePrefixes)
+		assert.Empty(t, s.deliverablePrefixes)
 
-		cancel1, err := q.DeliverablePrefixes(t.Context(), "abc")
-		require.NoError(t, err)
-		assert.Len(t, q.deliverablePrefixes, 1)
-		cancel2, err := q.DeliverablePrefixes(t.Context(), "abc")
-		require.NoError(t, err)
-		assert.Len(t, q.deliverablePrefixes, 1)
+		s.DeliverablePrefixes("abc")
+		assert.Len(t, s.deliverablePrefixes, 1)
+		s.DeliverablePrefixes("abc")
+		assert.Len(t, s.deliverablePrefixes, 1)
 
-		cancel1()
-		assert.Len(t, q.deliverablePrefixes, 1)
-		cancel2()
-		assert.Empty(t, q.deliverablePrefixes)
+		s.UnDeliverablePrefixes("abc")
+		assert.Len(t, s.deliverablePrefixes, 1)
+		s.UnDeliverablePrefixes("abc")
+		assert.Empty(t, s.deliverablePrefixes)
 	})
 
 	t.Run("multiple with diff prefixes: registering and cancelling should add then remove the prefix", func(t *testing.T) {
 		t.Parallel()
 
-		q := &Queue{
-			deliverablePrefixes: make(map[string]*atomic.Int32),
-			eventsLock:          lock.NewContext(),
+		s := &Staging{
+			deliverablePrefixes: make(map[string]*uint64),
+			queue:               new(queue.Processor[string, counter.Interface]),
 		}
-		assert.Empty(t, q.deliverablePrefixes)
+		assert.Empty(t, s.deliverablePrefixes)
 
-		cancel1, err := q.DeliverablePrefixes(t.Context(), "abc")
-		require.NoError(t, err)
-		assert.Len(t, q.deliverablePrefixes, 1)
-		cancel2, err := q.DeliverablePrefixes(t.Context(), "abc")
-		require.NoError(t, err)
-		assert.Len(t, q.deliverablePrefixes, 1)
-		cancel3, err := q.DeliverablePrefixes(t.Context(), "def")
-		require.NoError(t, err)
-		assert.Len(t, q.deliverablePrefixes, 2)
-		cancel4, err := q.DeliverablePrefixes(t.Context(), "def")
-		require.NoError(t, err)
-		assert.Len(t, q.deliverablePrefixes, 2)
+		s.DeliverablePrefixes("abc")
+		assert.Len(t, s.deliverablePrefixes, 1)
+		s.DeliverablePrefixes("abc")
+		assert.Len(t, s.deliverablePrefixes, 1)
+		s.DeliverablePrefixes("def")
+		assert.Len(t, s.deliverablePrefixes, 2)
+		s.DeliverablePrefixes("def")
+		assert.Len(t, s.deliverablePrefixes, 2)
 
-		cancel1()
-		assert.Len(t, q.deliverablePrefixes, 2)
-		cancel4()
-		assert.Len(t, q.deliverablePrefixes, 2)
-		cancel2()
-		assert.Len(t, q.deliverablePrefixes, 1)
-		cancel3()
-		assert.Empty(t, q.deliverablePrefixes)
+		s.UnDeliverablePrefixes("abc")
+		assert.Len(t, s.deliverablePrefixes, 2)
+		s.UnDeliverablePrefixes("def")
+		assert.Len(t, s.deliverablePrefixes, 2)
+		s.UnDeliverablePrefixes("def")
+		assert.Len(t, s.deliverablePrefixes, 1)
+		s.UnDeliverablePrefixes("abc")
+		assert.Empty(t, s.deliverablePrefixes)
 	})
 
 	t.Run("staged counters should be enqueued if they match an added prefix", func(t *testing.T) {
@@ -113,18 +105,17 @@ func Test_DeliverablePrefixes(t *testing.T) {
 
 		lock := lock.NewContext()
 		var triggered []string
-		q := &Queue{
-			deliverablePrefixes: make(map[string]*atomic.Int32),
-			eventsLock:          lock,
+		s := &Staging{
+			deliverablePrefixes: make(map[string]*uint64),
 			staged:              make(map[string]counter.Interface),
-			queue: queue.NewProcessor[string, counter.Interface](
-				func(counter counter.Interface) {
+			queue: queue.NewProcessor[string, counter.Interface](queue.Options[string, counter.Interface]{
+				ExecuteFn: func(counter counter.Interface) {
 					//nolint:errcheck
 					lock.Lock(t.Context())
 					defer lock.Unlock()
 					triggered = append(triggered, counter.JobName())
 				},
-			),
+			}),
 		}
 
 		counter1 := fake.New().WithJobName("abc123").WithKey("abc123")
@@ -133,16 +124,14 @@ func Test_DeliverablePrefixes(t *testing.T) {
 		counter4 := fake.New().WithJobName("def234").WithKey("def234")
 		counter5 := fake.New().WithJobName("xyz123").WithKey("xyz123")
 		counter6 := fake.New().WithJobName("xyz234").WithKey("xyz234")
-		q.staged = map[string]counter.Interface{
+		s.staged = map[string]counter.Interface{
 			"abc123": counter1, "abc234": counter2,
 			"def123": counter3, "def234": counter4,
 			"xyz123": counter5, "xyz234": counter6,
 		}
 
-		cancel, err := q.DeliverablePrefixes(t.Context(), "abc", "xyz")
-		require.NoError(t, err)
-		t.Cleanup(cancel)
-		assert.Equal(t, map[string]counter.Interface{"def123": counter3, "def234": counter4}, q.staged)
+		s.DeliverablePrefixes("abc", "xyz")
+		assert.Equal(t, map[string]counter.Interface{"def123": counter3, "def234": counter4}, s.staged)
 		assert.EventuallyWithT(t, func(c *assert.CollectT) {
 			//nolint:errcheck
 			lock.Lock(t.Context())
@@ -150,10 +139,8 @@ func Test_DeliverablePrefixes(t *testing.T) {
 			assert.ElementsMatch(c, []string{"abc123", "abc234", "xyz123", "xyz234"}, triggered)
 		}, time.Second*10, time.Millisecond*10)
 
-		cancel, err = q.DeliverablePrefixes(t.Context(), "d")
-		require.NoError(t, err)
-		t.Cleanup(cancel)
-		assert.Empty(t, q.staged)
+		s.DeliverablePrefixes("d")
+		assert.Empty(t, s.staged)
 		assert.EventuallyWithT(t, func(c *assert.CollectT) {
 			//nolint:errcheck
 			lock.Lock(t.Context())
@@ -163,7 +150,7 @@ func Test_DeliverablePrefixes(t *testing.T) {
 	})
 }
 
-func Test_stage(t *testing.T) {
+func Test_Stage(t *testing.T) {
 	t.Parallel()
 
 	tests := map[string]struct {
@@ -207,21 +194,20 @@ func Test_stage(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 
-			q := &Queue{
-				deliverablePrefixes: make(map[string]*atomic.Int32),
-				eventsLock:          lock.NewContext(),
+			s := &Staging{
+				deliverablePrefixes: make(map[string]*uint64),
 				staged:              make(map[string]counter.Interface),
 			}
 
 			for _, prefix := range test.deliverablePrefixes {
-				q.deliverablePrefixes[prefix] = new(atomic.Int32)
-				q.deliverablePrefixes[prefix].Add(1)
+				s.deliverablePrefixes[prefix] = new(uint64)
+				(*s.deliverablePrefixes[prefix])++
 			}
 
-			got := q.stage(fake.New().WithJobName(test.jobName))
+			got := s.Stage(fake.New().WithJobName(test.jobName))
 
 			assert.Equal(t, test.expStaged, got)
-			assert.Equal(t, test.expStaged, len(q.staged) == 1)
+			assert.Equal(t, test.expStaged, len(s.staged) == 1)
 		})
 	}
 }

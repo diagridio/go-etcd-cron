@@ -13,7 +13,6 @@ import (
 	"time"
 
 	"github.com/dapr/kit/concurrency/slice"
-	"github.com/dapr/kit/ptr"
 	"github.com/go-logr/logr"
 	"github.com/stretchr/testify/require"
 	clientv3 "go.etcd.io/etcd/client/v3"
@@ -22,6 +21,7 @@ import (
 	"github.com/diagridio/go-etcd-cron/api"
 	"github.com/diagridio/go-etcd-cron/cron"
 	"github.com/diagridio/go-etcd-cron/internal/client"
+	clientapi "github.com/diagridio/go-etcd-cron/internal/client/api"
 	"github.com/diagridio/go-etcd-cron/tests/framework/etcd"
 )
 
@@ -35,7 +35,7 @@ type Options struct {
 type Integration struct {
 	ctx       context.Context
 	closeCron func()
-	client    client.Interface
+	client    clientapi.Interface
 	api       api.Interface
 	allCrons  []api.Interface
 	triggered slice.Slice[string]
@@ -78,8 +78,6 @@ func New(t *testing.T, opts Options) *Integration {
 				}
 				return &api.TriggerResponse{Result: api.TriggerResponseResult_SUCCESS}
 			},
-
-			CounterGarbageCollectionInterval: ptr.Of(time.Millisecond * 300),
 		}
 
 		if i == 0 {
@@ -93,7 +91,7 @@ func New(t *testing.T, opts Options) *Integration {
 	a := allCrns[0]
 
 	errCh := make(chan error, opts.Instances)
-	ctx, cancel := context.WithCancel(t.Context())
+	ctx, cancel := context.WithCancel(context.Background())
 
 	closeOnce := sync.OnceFunc(func() {
 		cancel()
@@ -144,7 +142,7 @@ func (i *Integration) Context() context.Context {
 	return i.ctx
 }
 
-func (i *Integration) Client() client.Interface {
+func (i *Integration) Client() clientapi.Interface {
 	return i.client
 }
 

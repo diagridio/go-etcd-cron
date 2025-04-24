@@ -12,6 +12,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/go-logr/logr"
 	clientv3 "go.etcd.io/etcd/client/v3"
 	"go.etcd.io/etcd/server/v3/etcdserver"
 
@@ -23,19 +24,25 @@ import (
 
 var errClosed = errors.New("cron is closed")
 
+type Options struct {
+	Log logr.Logger
+}
+
 // Retry is a engine wrapper for executing the cron API, which will retry calls
 // when the API is "closing". This ensures that caller API calls will be held
 // and eventually executed during leadership reshuffles.
 type Retry struct {
+	log    logr.Logger
 	engine atomic.Pointer[engine.Interface]
 
-	lock    sync.Mutex
+	lock    sync.RWMutex
 	readyCh chan struct{}
 	closeCh chan struct{}
 }
 
-func New() *Retry {
+func New(opts Options) *Retry {
 	return &Retry{
+		log:     opts.Log.WithName("retry"),
 		readyCh: make(chan struct{}),
 		closeCh: make(chan struct{}),
 	}
@@ -116,6 +123,8 @@ func (r *Retry) handle(ctx context.Context, fn func(internalapi.Interface) error
 			return err
 		}
 
+		r.log.V(3).Info("retrying cron API call", "error", err)
+
 		select {
 		case <-time.After(time.Millisecond * 300):
 		case <-r.closeCh:
@@ -172,9 +181,9 @@ func (r *Retry) Close() {
 }
 
 func (r *Retry) waitAPIReady(ctx context.Context) (internalapi.Interface, error) {
-	r.lock.Lock()
+	r.lock.RLock()
 	readyCh := r.readyCh
-	r.lock.Unlock()
+	r.lock.RUnlock()
 
 	select {
 	case <-readyCh:

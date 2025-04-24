@@ -15,10 +15,9 @@ import (
 	clientv3 "go.etcd.io/etcd/client/v3"
 	"google.golang.org/protobuf/proto"
 
+	"github.com/diagridio/go-etcd-cron/internal/api/queue"
 	"github.com/diagridio/go-etcd-cron/internal/api/stored"
-	"github.com/diagridio/go-etcd-cron/internal/client"
-	"github.com/diagridio/go-etcd-cron/internal/garbage"
-	"github.com/diagridio/go-etcd-cron/internal/grave"
+	"github.com/diagridio/go-etcd-cron/internal/client/api"
 	"github.com/diagridio/go-etcd-cron/internal/key"
 	"github.com/diagridio/go-etcd-cron/internal/leadership/partitioner"
 )
@@ -29,58 +28,33 @@ type Options struct {
 	Key *key.Key
 
 	// Client is the etcd client to use for storing cron entries.
-	Client client.Interface
+	Client api.Interface
 
 	// Partitioner determines if a job belongs to this partition.
 	Partitioner partitioner.Interface
-
-	// Yard is a graveyard to check whether a job has just been deleted, and
-	// therefore a delete informer event should be ignored.
-	Yard *grave.Yard
-
-	// Collector is the garbage collector to use for collecting counters which
-	// need to be deleted at some point. Used to prevent a counter from being
-	// deleted after a job gets re-created with the same name.
-	Collector garbage.Interface
 }
 
 // Informer informs when a job is either created or deleted in the etcd data
 // for this partition.
 type Informer struct {
-	key       *key.Key
-	client    client.Interface
-	part      partitioner.Interface
-	yard      *grave.Yard
-	collector garbage.Interface
+	key    *key.Key
+	client api.Interface
+	part   partitioner.Interface
 
 	eventsCalled atomic.Bool
-	ch           chan *Event
+	ch           chan *queue.Informed
 	readyCh      chan struct{}
 	running      atomic.Bool
-}
-
-// Event is the event that is sent.
-type Event struct {
-	// IsPut is true if the event is a put event, else it is a delete event.
-	IsPut bool
-
-	// Key is the ETCD key that was created or deleted.
-	Key []byte
-
-	// Job is the job that was created or deleted.
-	Job *stored.Job
 }
 
 // New creates a new Informer.
 func New(opts Options) *Informer {
 	return &Informer{
-		key:       opts.Key,
-		part:      opts.Partitioner,
-		client:    opts.Client,
-		yard:      opts.Yard,
-		collector: opts.Collector,
-		ch:        make(chan *Event, 1000),
-		readyCh:   make(chan struct{}),
+		key:     opts.Key,
+		part:    opts.Partitioner,
+		client:  opts.Client,
+		ch:      make(chan *queue.Informed),
+		readyCh: make(chan struct{}),
 	}
 }
 
@@ -146,20 +120,14 @@ func (i *Informer) Run(ctx context.Context) error {
 	}
 }
 
-func (i *Informer) handleEvent(ev *clientv3.Event) (*Event, error) {
+func (i *Informer) handleEvent(ev *clientv3.Event) (*queue.Informed, error) {
 	var isPut bool
 	var kv *mvccpb.KeyValue
 	switch ev.Type {
 	case clientv3.EventTypePut:
 		isPut = true
 		kv = ev.Kv
-		i.collector.Pop(i.key.CounterKey(i.key.JobName(ev.Kv.Key)))
 	case clientv3.EventTypeDelete:
-		// If this job key has just been deleted (by us as the collector ticked
-		// nil), return early and ignore the deletion.
-		if i.yard.HasJustDeleted(string(ev.PrevKv.Key)) {
-			return nil, nil
-		}
 
 		kv = ev.PrevKv
 	default:
@@ -171,22 +139,20 @@ func (i *Informer) handleEvent(ev *clientv3.Event) (*Event, error) {
 		return nil, fmt.Errorf("failed to unmarshal job: %w", err)
 	}
 
+	jobName := i.key.JobName(ev.Kv.Key)
 	if !i.part.IsJobManaged(job.GetPartitionId()) {
-		return &Event{
+		return &queue.Informed{
 			IsPut: false,
-			Key:   kv.Key,
-			Job:   nil,
+			Name:  jobName,
 		}, nil
 	}
 
-	if !isPut && ev.Kv != nil {
-		i.collector.Push(i.key.CounterKey(i.key.JobName(ev.Kv.Key)))
-	}
-
-	return &Event{
+	return &queue.Informed{
 		IsPut: isPut,
-		Key:   kv.Key,
+		Name:  jobName,
 		Job:   &job,
+
+		JobModRevision: kv.ModRevision,
 	}, nil
 }
 
@@ -199,7 +165,7 @@ func (i *Informer) Ready(ctx context.Context) error {
 	}
 }
 
-func (i *Informer) Events() (<-chan *Event, error) {
+func (i *Informer) Events() (<-chan *queue.Informed, error) {
 	if !i.eventsCalled.CompareAndSwap(false, true) {
 		return nil, errors.New("events already being consumed")
 	}

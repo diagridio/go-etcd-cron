@@ -3,7 +3,7 @@ module github.com/diagridio/go-etcd-cron
 go 1.24.2
 
 require (
-	github.com/dapr/kit v0.15.1
+	github.com/dapr/kit v0.15.2
 	github.com/go-logr/logr v1.4.2
 	github.com/go-logr/zapr v1.3.0
 	github.com/stretchr/testify v1.10.0

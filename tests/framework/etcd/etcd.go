@@ -17,9 +17,10 @@ import (
 	"go.etcd.io/etcd/server/v3/embed"
 
 	"github.com/diagridio/go-etcd-cron/internal/client"
+	"github.com/diagridio/go-etcd-cron/internal/client/api"
 )
 
-func Embedded(t *testing.T) client.Interface {
+func Embedded(t *testing.T) api.Interface {
 	t.Helper()
 	return client.New(client.Options{
 		Log:    logr.Discard(),
@@ -46,6 +47,7 @@ func EmbeddedBareClient(t *testing.T) *clientv3.Client {
 		Endpoints: []string{etcd.Clients[0].Addr().String()},
 	})
 	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, cl.Close()) })
 
 	select {
 	case <-etcd.Server.ReadyNotify():

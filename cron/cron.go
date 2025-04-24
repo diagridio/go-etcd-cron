@@ -9,7 +9,6 @@ import (
 	"context"
 	"errors"
 	"sync/atomic"
-	"time"
 
 	"github.com/dapr/kit/concurrency"
 	"github.com/go-logr/logr"
@@ -20,9 +19,10 @@ import (
 	"google.golang.org/protobuf/types/known/anypb"
 
 	"github.com/diagridio/go-etcd-cron/api"
+	"github.com/diagridio/go-etcd-cron/internal/api/retry"
 	"github.com/diagridio/go-etcd-cron/internal/client"
+	clientapi "github.com/diagridio/go-etcd-cron/internal/client/api"
 	"github.com/diagridio/go-etcd-cron/internal/engine"
-	"github.com/diagridio/go-etcd-cron/internal/engine/retry"
 	"github.com/diagridio/go-etcd-cron/internal/key"
 	"github.com/diagridio/go-etcd-cron/internal/leadership"
 	"github.com/diagridio/go-etcd-cron/internal/leadership/elector"
@@ -47,17 +47,6 @@ type Options struct {
 	// TriggerFn is the function to call when a cron job is triggered.
 	TriggerFn api.TriggerFunction
 
-	// CounterGarbageCollectionInterval is the interval at which to run the
-	// garbage collection for counters is run. Counters are also garbage
-	// collected on shutdown. Counters are batch deleted, so a larger value
-	// increases the counter bucket and reduces the number of database
-	// operations.
-	// This value rarely needs to be set and is mostly used for testing. A small
-	// interval value will increase database operations and thus degrade cron
-	// performance.
-	// Defaults to 180 seconds.
-	CounterGarbageCollectionInterval *time.Duration
-
 	// ReplicaData is custom data associated with the replica, for example,
 	// host + port for the active replica. This data will be written to the
 	// leadership keyspace, with the latest cluster values being returned from
@@ -76,9 +65,8 @@ type cron struct {
 	log logr.Logger
 
 	key         *key.Key
-	client      client.Interface
+	client      clientapi.Interface
 	triggerFn   api.TriggerFunction
-	gcgInterval *time.Duration
 	replicaData *anypb.Any
 
 	api       *retry.Retry
@@ -128,9 +116,8 @@ func New(opts Options) (api.Interface, error) {
 		replicaData: opts.ReplicaData,
 		client:      client,
 		triggerFn:   opts.TriggerFn,
-		gcgInterval: opts.CounterGarbageCollectionInterval,
 		wleaderCh:   opts.WatchLeadership,
-		api:         retry.New(),
+		api:         retry.New(retry.Options{Log: log}),
 	}, nil
 }
 
@@ -238,8 +225,6 @@ func (c *cron) runEngine(ctx context.Context, elected *elector.Elected) error {
 		Partitioner: elected.Partitioner,
 		Client:      c.client,
 		TriggerFn:   c.triggerFn,
-
-		CounterGarbageCollectionInterval: c.gcgInterval,
 	})
 	if err != nil {
 		return err
