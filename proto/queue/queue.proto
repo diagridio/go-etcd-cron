@@ -23,6 +23,30 @@ message ControlEvent {
     ExecuteResponse execute_response = 3;
     DeliverablePrefixes deliverable_prefixes = 4;
     UndeliverablePrefixes undeliverable_prefixes = 5;
+    CloseJob close_job = 6;
+    Close close = 7;
+  }
+}
+
+// JobEvent is are queue events which should be processed by the inner Job
+// event loop. These events are performed on per the per Job handler.
+message JobEvent {
+  // job_name is the name of the job associated with this event.
+  string job_name = 1;
+
+  // action is the typed action which should be executed by the job event.
+  JobAction action = 2;
+}
+
+message JobAction {
+  // action is the typed action which should be executed by the queue control
+  // loop.
+  oneof action {
+    Informed informed = 1;
+    ExecuteRequest execute_request = 2;
+    ExecuteResponse execute_response = 3;
+    DeliverableJob deliverable = 4;
+    CloseJob close_job = 5;
     Close close = 6;
   }
 }
@@ -62,7 +86,7 @@ message ExecuteResponse {
 
   // uid tracks the id of this execution to account for mid-execution
   // cancellations.
-  uint64 uid = 3;
+  int64 uid = 3;
 
   // result is the trigger result of executing this job counter.
   api.TriggerResponse result = 4;
@@ -85,3 +109,14 @@ message UndeliverablePrefixes {
 // Close is a queue event which instructs that the queue executor should
 // close.
 message Close {}
+
+// CloseJob is a queue event which instructs the given job name has been closed
+// and the associated resources should be released.
+message CloseJob {
+  // job_name is the job whose resources should be closed.
+  string job_name = 1;
+}
+
+// DeliverableJob is a job event which instructs that the given job can now be
+// executed by the queue executor.
+message DeliverableJob {}

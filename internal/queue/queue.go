@@ -1,5 +1,5 @@
 /*
-Copyright (c) 2024 Diagrid Inc.
+Copyright (c) 2025 Diagrid Inc.
 Licensed under the MIT License.
 */
 
@@ -18,10 +18,10 @@ import (
 	clientapi "github.com/diagridio/go-etcd-cron/internal/client/api"
 	"github.com/diagridio/go-etcd-cron/internal/counter"
 	"github.com/diagridio/go-etcd-cron/internal/key"
-	"github.com/diagridio/go-etcd-cron/internal/queue/cache"
-	"github.com/diagridio/go-etcd-cron/internal/queue/lineguide"
-	"github.com/diagridio/go-etcd-cron/internal/queue/loop"
-	"github.com/diagridio/go-etcd-cron/internal/queue/staging"
+	"github.com/diagridio/go-etcd-cron/internal/queue/actioner"
+	"github.com/diagridio/go-etcd-cron/internal/queue/loops"
+	"github.com/diagridio/go-etcd-cron/internal/queue/loops/control"
+	"github.com/diagridio/go-etcd-cron/internal/queue/loops/jobs"
 	"github.com/diagridio/go-etcd-cron/internal/scheduler"
 )
 
@@ -46,79 +46,90 @@ type Options struct {
 	TriggerFn api.TriggerFunction
 }
 
-// Queue is responsible for managing the cron queue and triggering jobs.
 type Queue struct {
 	log logr.Logger
 
-	queue *eventsqueue.Processor[string, counter.Interface]
-	loop  *loop.Loop
+	triggerFn        api.TriggerFunction
+	schedulerBuilder *scheduler.Builder
+	client           clientapi.Interface
+	key              *key.Key
+
+	ctrlloop loops.Interface[*queue.ControlEvent]
+	queue    *eventsqueue.Processor[string, counter.Interface]
+
+	readyCh chan struct{}
 }
 
 func New(opts Options) *Queue {
-	q := &Queue{log: opts.Log.WithName("queue")}
+	q := &Queue{
+		log:              opts.Log.WithName("manager"),
+		readyCh:          make(chan struct{}),
+		triggerFn:        opts.TriggerFn,
+		schedulerBuilder: opts.SchedulerBuilder,
+		client:           opts.Client,
+		key:              opts.Key,
+	}
 
 	q.queue = eventsqueue.NewProcessor[string, counter.Interface](
 		eventsqueue.Options[string, counter.Interface]{
-			ExecuteFn: func(counter counter.Interface) {
-				q.loop.Enqueue(&queue.ControlEvent{
-					Action: &queue.ControlEvent_ExecuteRequest{
-						ExecuteRequest: &queue.ExecuteRequest{
-							JobName:    counter.JobName(),
-							CounterKey: counter.Key(),
-						},
-					},
-				})
-			},
-			Clock: opts.Clock,
+			Clock:     opts.Clock,
+			ExecuteFn: q.execute,
 		},
 	)
-
-	cache := cache.New()
-
-	q.loop = loop.New(loop.Options{
-		Log:       q.log,
-		TriggerFn: opts.TriggerFn,
-		Queue:     q.queue,
-		Cache:     cache,
-		Staging: staging.New(staging.Options{
-			Queue: q.queue,
-		}),
-		LineGuide: lineguide.New(lineguide.Options{
-			Key:          opts.Key,
-			Client:       opts.Client,
-			SchedBuilder: opts.SchedulerBuilder,
-			Queue:        q.queue,
-			Cache:        cache,
-		}),
-	})
 
 	return q
 }
 
-// Run starts the cron queue.
 func (q *Queue) Run(ctx context.Context) error {
-	q.log.Info("queue is ready")
-	defer func() {
-		//nolint:errcheck
-		q.queue.Close()
-		q.log.Info("shut down queue")
+	act := actioner.New(actioner.Options{
+		Queue:        q.queue,
+		TriggerFn:    q.triggerFn,
+		ControlLoop:  &q.ctrlloop,
+		SchedBuilder: q.schedulerBuilder,
+		Client:       q.client,
+		Key:          q.key,
+	})
+
+	ictx, cancel := context.WithCancel(context.Background())
+	jobsLoop := jobs.New(jobs.Options{
+		Actioner: act,
+		Log:      q.log,
+		Cancel:   cancel,
+	})
+
+	q.ctrlloop = control.New(control.Options{
+		Actioner: act,
+		Jobs:     jobsLoop,
+	})
+
+	errCh := make(chan error, 2)
+	go func() {
+		errCh <- jobsLoop.Run(ictx)
+	}()
+	go func() {
+		errCh <- q.ctrlloop.Run(ictx)
 	}()
 
-	err := q.loop.Run(ctx)
-	if errors.Is(err, context.Canceled) {
-		return nil
-	}
-	return err
+	close(q.readyCh)
+	<-ctx.Done()
+
+	q.ctrlloop.Close(&queue.ControlEvent{
+		Action: new(queue.ControlEvent_Close),
+	})
+
+	return errors.Join(<-errCh, <-errCh)
 }
 
 func (q *Queue) Inform(event *queue.Informed) {
-	q.loop.Enqueue(&queue.ControlEvent{
+	<-q.readyCh
+	q.ctrlloop.Enqueue(&queue.ControlEvent{
 		Action: &queue.ControlEvent_Informed{Informed: event},
 	})
 }
 
 func (q *Queue) DeliverablePrefixes(prefixes ...string) context.CancelFunc {
-	q.loop.Enqueue(&queue.ControlEvent{
+	<-q.readyCh
+	q.ctrlloop.Enqueue(&queue.ControlEvent{
 		Action: &queue.ControlEvent_DeliverablePrefixes{
 			DeliverablePrefixes: &queue.DeliverablePrefixes{
 				Prefixes: prefixes,
@@ -127,7 +138,7 @@ func (q *Queue) DeliverablePrefixes(prefixes ...string) context.CancelFunc {
 	})
 
 	return func() {
-		q.loop.Enqueue(&queue.ControlEvent{
+		q.ctrlloop.Enqueue(&queue.ControlEvent{
 			Action: &queue.ControlEvent_UndeliverablePrefixes{
 				UndeliverablePrefixes: &queue.UndeliverablePrefixes{
 					Prefixes: prefixes,
@@ -135,4 +146,15 @@ func (q *Queue) DeliverablePrefixes(prefixes ...string) context.CancelFunc {
 			},
 		})
 	}
+}
+
+func (q *Queue) execute(counter counter.Interface) {
+	q.ctrlloop.Enqueue(&queue.ControlEvent{
+		Action: &queue.ControlEvent_ExecuteRequest{
+			ExecuteRequest: &queue.ExecuteRequest{
+				JobName:    counter.JobName(),
+				CounterKey: counter.Key(),
+			},
+		},
+	})
 }
