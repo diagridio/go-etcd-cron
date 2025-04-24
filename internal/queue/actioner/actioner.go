@@ -87,7 +87,7 @@ func (a *actioner) Schedule(ctx context.Context, jobName string, revision int64,
 	return counter, nil
 }
 
-// Deschedule adds a job to the scheduling queue.
+// Enqueue adds a job to the scheduling queue.
 func (a *actioner) Enqueue(counter counter.Interface) {
 	a.queue.Enqueue(counter)
 }

@@ -54,15 +54,15 @@ type Queue struct {
 	client           clientapi.Interface
 	key              *key.Key
 
-	ctrlloop loops.Interface[*queue.ControlEvent]
-	queue    *eventsqueue.Processor[string, counter.Interface]
+	controlLoop loops.Interface[*queue.ControlEvent]
+	queue       *eventsqueue.Processor[string, counter.Interface]
 
 	readyCh chan struct{}
 }
 
 func New(opts Options) *Queue {
 	q := &Queue{
-		log:              opts.Log.WithName("manager"),
+		log:              opts.Log.WithName("queue"),
 		readyCh:          make(chan struct{}),
 		triggerFn:        opts.TriggerFn,
 		schedulerBuilder: opts.SchedulerBuilder,
@@ -84,7 +84,7 @@ func (q *Queue) Run(ctx context.Context) error {
 	act := actioner.New(actioner.Options{
 		Queue:        q.queue,
 		TriggerFn:    q.triggerFn,
-		ControlLoop:  &q.ctrlloop,
+		ControlLoop:  &q.controlLoop,
 		SchedBuilder: q.schedulerBuilder,
 		Client:       q.client,
 		Key:          q.key,
@@ -97,7 +97,7 @@ func (q *Queue) Run(ctx context.Context) error {
 		Cancel:   cancel,
 	})
 
-	q.ctrlloop = control.New(control.Options{
+	q.controlLoop = control.New(control.Options{
 		Actioner: act,
 		Jobs:     jobsLoop,
 	})
@@ -107,13 +107,13 @@ func (q *Queue) Run(ctx context.Context) error {
 		errCh <- jobsLoop.Run(ictx)
 	}()
 	go func() {
-		errCh <- q.ctrlloop.Run(ictx)
+		errCh <- q.controlLoop.Run(ictx)
 	}()
 
 	close(q.readyCh)
 	<-ctx.Done()
 
-	q.ctrlloop.Close(&queue.ControlEvent{
+	q.controlLoop.Close(&queue.ControlEvent{
 		Action: new(queue.ControlEvent_Close),
 	})
 
@@ -122,14 +122,14 @@ func (q *Queue) Run(ctx context.Context) error {
 
 func (q *Queue) Inform(event *queue.Informed) {
 	<-q.readyCh
-	q.ctrlloop.Enqueue(&queue.ControlEvent{
+	q.controlLoop.Enqueue(&queue.ControlEvent{
 		Action: &queue.ControlEvent_Informed{Informed: event},
 	})
 }
 
 func (q *Queue) DeliverablePrefixes(prefixes ...string) context.CancelFunc {
 	<-q.readyCh
-	q.ctrlloop.Enqueue(&queue.ControlEvent{
+	q.controlLoop.Enqueue(&queue.ControlEvent{
 		Action: &queue.ControlEvent_DeliverablePrefixes{
 			DeliverablePrefixes: &queue.DeliverablePrefixes{
 				Prefixes: prefixes,
@@ -138,7 +138,7 @@ func (q *Queue) DeliverablePrefixes(prefixes ...string) context.CancelFunc {
 	})
 
 	return func() {
-		q.ctrlloop.Enqueue(&queue.ControlEvent{
+		q.controlLoop.Enqueue(&queue.ControlEvent{
 			Action: &queue.ControlEvent_UndeliverablePrefixes{
 				UndeliverablePrefixes: &queue.UndeliverablePrefixes{
 					Prefixes: prefixes,
@@ -149,7 +149,7 @@ func (q *Queue) DeliverablePrefixes(prefixes ...string) context.CancelFunc {
 }
 
 func (q *Queue) execute(counter counter.Interface) {
-	q.ctrlloop.Enqueue(&queue.ControlEvent{
+	q.controlLoop.Enqueue(&queue.ControlEvent{
 		Action: &queue.ControlEvent_ExecuteRequest{
 			ExecuteRequest: &queue.ExecuteRequest{
 				JobName:    counter.JobName(),

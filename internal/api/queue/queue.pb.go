@@ -182,8 +182,8 @@ func (*ControlEvent_CloseJob) isControlEvent_Action() {}
 
 func (*ControlEvent_Close) isControlEvent_Action() {}
 
-// JobEvent is are queue events which should be processed by the inner Job
-// event loop. These events are performed on per the per Job handler.
+// JobEvent is queue events that should be processed by the inner Job event
+// loop. These events are performed on a per-job handler.
 type JobEvent struct {
 	state         protoimpl.MessageState
 	sizeCache     protoimpl.SizeCache

@@ -14,18 +14,6 @@ import (
 	"github.com/diagridio/go-etcd-cron/internal/counter"
 )
 
-type Interface interface {
-	Schedule(context.Context, string, int64, *stored.Job) (counter.Interface, error)
-	Enqueue(counter.Interface)
-	Deschedule(counter.Interface)
-	Trigger(context.Context, *api.TriggerRequest) *api.TriggerResponse
-	AddToControlLoop(*queue.ControlEvent)
-	DeliverablePrefixes(...string) []string
-	UnDeliverablePrefixes(...string)
-	Stage(string) bool
-	Unstage(string)
-}
-
 type Fake struct {
 	scheduleFn              func(context.Context, string, int64, *stored.Job) (counter.Interface, error)
 	enqueueFn               func(counter.Interface)

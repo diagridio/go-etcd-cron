@@ -28,8 +28,8 @@ message ControlEvent {
   }
 }
 
-// JobEvent is are queue events which should be processed by the inner Job
-// event loop. These events are performed on per the per Job handler.
+// JobEvent is queue events that should be processed by the inner Job event
+// loop. These events are performed on a per-job handler.
 message JobEvent {
   // job_name is the name of the job associated with this event.
   string job_name = 1;

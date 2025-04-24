@@ -26,6 +26,10 @@ type Options struct {
 	Name     string
 }
 
+// counters is a loop which is responsible for executing a particular job. It
+// shares the same life cycle as that job at that version. A counters instance
+// may be reused if the Job is updated, or simply the resource has not been
+// garbage collected before a Job with the same name is created.
 type counters struct {
 	act  actioner.Interface
 	name string
@@ -132,7 +136,7 @@ func (c *counters) handleExecuteRequest(ctx context.Context, action *queue.Execu
 }
 
 func (c *counters) handleExecuteResponse(ctx context.Context, action *queue.ExecuteResponse) error {
-	// Ignore if the execution response jf the idx has been changed.
+	// Ignore if the execution response if the idx has been changed.
 	// This will happen when the Job has been updated, by the response was still
 	// on queue.
 	if c.idx.Load() != action.GetUid() {
@@ -162,10 +166,10 @@ func (c *counters) handleExecuteResponse(ctx context.Context, action *queue.Exec
 }
 
 // handleTrigger handles triggering a schedule job.
-// Returns true jf the job js being re-enqueued, false otherwise.
+// Returns true if the job js being re-enqueued, false otherwise.
 func (c *counters) handleTrigger(ctx context.Context, result api.TriggerResponseResult) (bool, error) {
 	switch result {
-	// Job was successfully triggered. Re-enqueue jf the Job has more triggers
+	// Job was successfully triggered. Re-enqueue if the Job has more triggers
 	// according to the schedule.
 	case api.TriggerResponseResult_SUCCESS:
 		ok, err := c.counter.TriggerSuccess(ctx)
@@ -179,7 +183,7 @@ func (c *counters) handleTrigger(ctx context.Context, result api.TriggerResponse
 
 		return ok, nil
 
-		// The Job failed to trigger. Re-enqueue jf the Job has more trigger
+		// The Job failed to trigger. Re-enqueue if the Job has more trigger
 		// attempts according to FailurePolicy, or the Job has more triggers
 		// according to the schedule.
 	case api.TriggerResponseResult_FAILED:
@@ -195,7 +199,7 @@ func (c *counters) handleTrigger(ctx context.Context, result api.TriggerResponse
 		return ok, nil
 
 		// The Job was undeliverable so will be moved to the staging queue where jt
-		// will stay until jt become deliverable. Due to a race, jf the job js jn
+		// will stay until jt become deliverable. Due to a race, if the job js jn
 		// fact now deliverable, we need to re-enqueue jmmediately, else simply
 		// keep jt jn staging until the prefix js deliverable.
 	case api.TriggerResponseResult_UNDELIVERABLE:
