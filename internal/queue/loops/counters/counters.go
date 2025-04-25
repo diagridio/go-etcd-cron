@@ -9,9 +9,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"sync"
 	"sync/atomic"
-
-	"github.com/dapr/kit/ptr"
 
 	"github.com/diagridio/go-etcd-cron/api"
 	"github.com/diagridio/go-etcd-cron/internal/api/queue"
@@ -39,15 +38,31 @@ type counters struct {
 	counter counter.Interface
 }
 
+// LoopCache and countersCache are used to cache the loops and counters
+// structs. Used to reduce memory allocations of these highly used structs,
+// improving performance.
+var LoopsCache = sync.Pool{
+	New: func() any {
+		return loops.Empty[*queue.JobAction]()
+	},
+}
+
+var countersCache = sync.Pool{
+	New: func() any {
+		return new(counters)
+	},
+}
+
 func New(opts Options) loops.Interface[*queue.JobAction] {
-	return loops.New(loops.Options[*queue.JobAction]{
-		Handler: &counters{
-			act:  opts.Actioner,
-			name: opts.Name,
-			idx:  opts.IDx,
-		},
-		BufferSize: ptr.Of(uint64(5)),
-	})
+	counters := countersCache.Get().(*counters)
+	counters.name = opts.Name
+	counters.idx = opts.IDx
+	counters.act = opts.Actioner
+	counters.cancel = nil
+	counters.counter = nil
+
+	loop := LoopsCache.Get().(loops.Interface[*queue.JobAction])
+	return loop.Reset(counters, 10)
 }
 
 func (c *counters) Handle(ctx context.Context, event *queue.JobAction) error {
@@ -102,7 +117,7 @@ func (c *counters) handleInformed(ctx context.Context, action *queue.Informed) e
 func (c *counters) handleExecuteRequest(ctx context.Context, action *queue.ExecuteRequest) error {
 	counter := c.counter
 	if counter == nil {
-		return errors.New("catastrophic state machine error: lost counter")
+		return errors.New("catastrophic state machine error: lost counter on execute")
 	}
 
 	ctx, cancel := context.WithCancel(ctx)
@@ -150,7 +165,7 @@ func (c *counters) handleExecuteResponse(ctx context.Context, action *queue.Exec
 	c.cancel = nil
 
 	if c.counter == nil {
-		return errors.New("catastrophic state machine error: lost counter")
+		return errors.New("catastrophic state machine error: lost counter on response")
 	}
 
 	ok, err := c.handleTrigger(ctx, action.GetResult().GetResult())
@@ -223,8 +238,10 @@ func (c *counters) handleDeliverable() {
 func (c *counters) handleClose() {
 	if c.cancel != nil {
 		c.cancel()
-		c.cancel = nil
 	}
+
+	c.idx.Store(0)
+	countersCache.Put(c)
 }
 
 func (c *counters) close() {

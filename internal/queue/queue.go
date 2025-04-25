@@ -120,15 +120,25 @@ func (q *Queue) Run(ctx context.Context) error {
 		}).Run(ictx)
 }
 
-func (q *Queue) Inform(event *queue.Informed) {
-	<-q.readyCh
+func (q *Queue) Inform(ctx context.Context, event *queue.Informed) {
+	select {
+	case <-q.readyCh:
+	case <-ctx.Done():
+		return
+	}
+
 	q.controlLoop.Enqueue(&queue.ControlEvent{
 		Action: &queue.ControlEvent_Informed{Informed: event},
 	})
 }
 
-func (q *Queue) DeliverablePrefixes(prefixes ...string) context.CancelFunc {
-	<-q.readyCh
+func (q *Queue) DeliverablePrefixes(ctx context.Context, prefixes ...string) (context.CancelFunc, error) {
+	select {
+	case <-q.readyCh:
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	}
+
 	q.controlLoop.Enqueue(&queue.ControlEvent{
 		Action: &queue.ControlEvent_DeliverablePrefixes{
 			DeliverablePrefixes: &queue.DeliverablePrefixes{
@@ -145,7 +155,7 @@ func (q *Queue) DeliverablePrefixes(prefixes ...string) context.CancelFunc {
 				},
 			},
 		})
-	}
+	}, nil
 }
 
 func (q *Queue) execute(counter counter.Interface) {
