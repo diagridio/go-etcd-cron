@@ -117,7 +117,7 @@ func (e *engine) Run(ctx context.Context) error {
 				case <-ctx.Done():
 					return nil
 				case event := <-ev:
-					e.queue.Inform(event)
+					e.queue.Inform(ctx, event)
 				}
 			}
 		},

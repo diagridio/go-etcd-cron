@@ -14,15 +14,11 @@ type Handler[T any] interface {
 	Handle(context.Context, T) error
 }
 
-type Options[T any] struct {
-	Handler    Handler[T]
-	BufferSize *uint64
-}
-
 type Interface[T any] interface {
-	Run(ctx context.Context) error
-	Enqueue(req T)
-	Close(req T)
+	Run(context.Context) error
+	Enqueue(T)
+	Close(T)
+	Reset(h Handler[T], size uint64) Interface[T]
 }
 
 type looper[T any] struct {
@@ -34,17 +30,16 @@ type looper[T any] struct {
 	lock    sync.RWMutex
 }
 
-func New[T any](opts Options[T]) Interface[T] {
-	size := 1
-	if opts.BufferSize != nil {
-		size = int(*opts.BufferSize)
-	}
-
+func New[T any](h Handler[T], size uint64) Interface[T] {
 	return &looper[T]{
 		queue:   make(chan T, size),
-		handler: opts.Handler,
+		handler: h,
 		closeCh: make(chan struct{}),
 	}
+}
+
+func Empty[T any]() Interface[T] {
+	return new(looper[T])
 }
 
 func (l *looper[T]) Run(ctx context.Context) error {
@@ -78,16 +73,25 @@ func (l *looper[T]) Enqueue(req T) {
 
 func (l *looper[T]) Close(req T) {
 	l.lock.Lock()
+	l.closed = true
 	l.queue <- req
 	close(l.queue)
-	l.closed = true
 	l.lock.Unlock()
 	<-l.closeCh
 }
 
-func (l *looper[T]) Reset(h Handler[T]) {
-	l.queue = make(chan T, cap(l.queue))
+func (l *looper[T]) Reset(h Handler[T], size uint64) Interface[T] {
+	if l == nil {
+		return New[T](h, size)
+	}
+
 	l.closed = false
 	l.closeCh = make(chan struct{})
 	l.handler = h
+
+	// TODO: @joshvanl: use a ring buffer so that we don't need to reallocate and
+	// improve performance.
+	l.queue = make(chan T, size)
+
+	return l
 }

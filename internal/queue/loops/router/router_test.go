@@ -66,7 +66,9 @@ func Test_router(t *testing.T) {
 		var called int
 		loop := fake.New[*queue.JobAction]().WithClose(func(action *queue.JobAction) {
 			assert.Equal(t, &queue.JobAction{
-				Action: new(queue.JobAction_Close),
+				Action: &queue.JobAction_Close{
+					Close: new(queue.Close),
+				},
 			}, action)
 			called++
 		})

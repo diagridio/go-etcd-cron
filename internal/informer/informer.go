@@ -139,6 +139,9 @@ func (i *Informer) handleEvent(ev *clientv3.Event) (*queue.Informed, error) {
 		return nil, fmt.Errorf("failed to unmarshal job: %w", err)
 	}
 
+	// TODO: @joshvanl: remove the need to serialize the job name here- we should
+	// attempt to only serialize the job name on `Get` etc. API calls, since this
+	// uses a large number of allocations.
 	jobName := i.key.JobName(ev.Kv.Key)
 	if !i.part.IsJobManaged(job.GetPartitionId()) {
 		return &queue.Informed{

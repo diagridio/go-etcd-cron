@@ -11,7 +11,6 @@ import (
 	"sync"
 	"sync/atomic"
 
-	"github.com/dapr/kit/ptr"
 	"github.com/go-logr/logr"
 
 	"github.com/diagridio/go-etcd-cron/internal/api/queue"
@@ -48,15 +47,12 @@ type counter struct {
 }
 
 func New(opts Options) loops.Interface[*queue.JobEvent] {
-	return loops.New(loops.Options[*queue.JobEvent]{
-		BufferSize: ptr.Of(uint64(1024)),
-		Handler: &router{
-			log:      opts.Log.WithName("router"),
-			cancel:   opts.Cancel,
-			act:      opts.Actioner,
-			counters: make(map[string]*counter),
-		},
-	})
+	return loops.New(&router{
+		log:      opts.Log.WithName("router"),
+		cancel:   opts.Cancel,
+		act:      opts.Actioner,
+		counters: make(map[string]*counter),
+	}, 1024)
 }
 
 func (r *router) Handle(ctx context.Context, event *queue.JobEvent) error {
@@ -134,9 +130,12 @@ func (r *router) handleCloseJob(event *queue.JobEvent) error {
 	// If idx is 0, then the inner loop is still not being used and resources can
 	// be released.
 	counter.loop.Close(&queue.JobAction{
-		Action: new(queue.JobAction_Close),
+		Action: &queue.JobAction_Close{
+			Close: new(queue.Close),
+		},
 	})
 	delete(r.counters, jobName)
+	counters.LoopsCache.Put(counter.loop)
 
 	return nil
 }

@@ -313,6 +313,7 @@ func Test_counters(t *testing.T) {
 
 		var called int
 		c := &counters{
+			idx: new(atomic.Int64),
 			cancel: func() {
 				called++
 			},

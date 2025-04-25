@@ -304,7 +304,7 @@ func (a *api) DeliverablePrefixes(ctx context.Context, prefixes ...string) (cont
 		return nil, errors.New("no prefixes provided")
 	}
 
-	return a.queue.DeliverablePrefixes(prefixes...), nil
+	return a.queue.DeliverablePrefixes(ctx, prefixes...)
 }
 
 func (a *api) waitReady(ctx context.Context) error {

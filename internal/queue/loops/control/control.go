@@ -9,8 +9,6 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/dapr/kit/ptr"
-
 	"github.com/diagridio/go-etcd-cron/internal/api/queue"
 	"github.com/diagridio/go-etcd-cron/internal/queue/actioner"
 	"github.com/diagridio/go-etcd-cron/internal/queue/loops"
@@ -30,13 +28,10 @@ type control struct {
 }
 
 func New(opts Options) loops.Interface[*queue.ControlEvent] {
-	return loops.New(loops.Options[*queue.ControlEvent]{
-		Handler: &control{
-			jobs: opts.Jobs,
-			act:  opts.Actioner,
-		},
-		BufferSize: ptr.Of(uint64(1024)),
-	})
+	return loops.New(&control{
+		jobs: opts.Jobs,
+		act:  opts.Actioner,
+	}, 1024)
 }
 
 func (c *control) Handle(_ context.Context, event *queue.ControlEvent) error {

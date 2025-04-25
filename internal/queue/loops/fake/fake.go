@@ -7,6 +7,8 @@ package fake
 
 import (
 	"context"
+
+	"github.com/diagridio/go-etcd-cron/internal/queue/loops"
 )
 
 type Fake[T any] struct {
@@ -48,4 +50,8 @@ func (f *Fake[T]) Enqueue(t T) {
 
 func (f *Fake[T]) Close(t T) {
 	f.closeFn(t)
+}
+
+func (f *Fake[T]) Reset(loops.Handler[T], uint64) loops.Interface[T] {
+	return f
 }
