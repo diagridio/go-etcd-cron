@@ -43,6 +43,7 @@ type ControlEvent struct {
 	//	*ControlEvent_ExecuteResponse
 	//	*ControlEvent_DeliverablePrefixes
 	//	*ControlEvent_UndeliverablePrefixes
+	//	*ControlEvent_CloseJob
 	//	*ControlEvent_Close
 	Action isControlEvent_Action `protobuf_oneof:"action"`
 }
@@ -121,6 +122,13 @@ func (x *ControlEvent) GetUndeliverablePrefixes() *UndeliverablePrefixes {
 	return nil
 }
 
+func (x *ControlEvent) GetCloseJob() *CloseJob {
+	if x, ok := x.GetAction().(*ControlEvent_CloseJob); ok {
+		return x.CloseJob
+	}
+	return nil
+}
+
 func (x *ControlEvent) GetClose() *Close {
 	if x, ok := x.GetAction().(*ControlEvent_Close); ok {
 		return x.Close
@@ -152,8 +160,12 @@ type ControlEvent_UndeliverablePrefixes struct {
 	UndeliverablePrefixes *UndeliverablePrefixes `protobuf:"bytes,5,opt,name=undeliverable_prefixes,json=undeliverablePrefixes,proto3,oneof"`
 }
 
+type ControlEvent_CloseJob struct {
+	CloseJob *CloseJob `protobuf:"bytes,6,opt,name=close_job,json=closeJob,proto3,oneof"`
+}
+
 type ControlEvent_Close struct {
-	Close *Close `protobuf:"bytes,6,opt,name=close,proto3,oneof"`
+	Close *Close `protobuf:"bytes,7,opt,name=close,proto3,oneof"`
 }
 
 func (*ControlEvent_Informed) isControlEvent_Action() {}
@@ -166,7 +178,208 @@ func (*ControlEvent_DeliverablePrefixes) isControlEvent_Action() {}
 
 func (*ControlEvent_UndeliverablePrefixes) isControlEvent_Action() {}
 
+func (*ControlEvent_CloseJob) isControlEvent_Action() {}
+
 func (*ControlEvent_Close) isControlEvent_Action() {}
+
+// JobEvent is queue events that should be processed by the inner Job event
+// loop. These events are performed on a per-job handler.
+type JobEvent struct {
+	state         protoimpl.MessageState
+	sizeCache     protoimpl.SizeCache
+	unknownFields protoimpl.UnknownFields
+
+	// job_name is the name of the job associated with this event.
+	JobName string `protobuf:"bytes,1,opt,name=job_name,json=jobName,proto3" json:"job_name,omitempty"`
+	// action is the typed action which should be executed by the job event.
+	Action *JobAction `protobuf:"bytes,2,opt,name=action,proto3" json:"action,omitempty"`
+}
+
+func (x *JobEvent) Reset() {
+	*x = JobEvent{}
+	if protoimpl.UnsafeEnabled {
+		mi := &file_proto_queue_queue_proto_msgTypes[1]
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		ms.StoreMessageInfo(mi)
+	}
+}
+
+func (x *JobEvent) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*JobEvent) ProtoMessage() {}
+
+func (x *JobEvent) ProtoReflect() protoreflect.Message {
+	mi := &file_proto_queue_queue_proto_msgTypes[1]
+	if protoimpl.UnsafeEnabled && x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use JobEvent.ProtoReflect.Descriptor instead.
+func (*JobEvent) Descriptor() ([]byte, []int) {
+	return file_proto_queue_queue_proto_rawDescGZIP(), []int{1}
+}
+
+func (x *JobEvent) GetJobName() string {
+	if x != nil {
+		return x.JobName
+	}
+	return ""
+}
+
+func (x *JobEvent) GetAction() *JobAction {
+	if x != nil {
+		return x.Action
+	}
+	return nil
+}
+
+type JobAction struct {
+	state         protoimpl.MessageState
+	sizeCache     protoimpl.SizeCache
+	unknownFields protoimpl.UnknownFields
+
+	// action is the typed action which should be executed by the queue control
+	// loop.
+	//
+	// Types that are assignable to Action:
+	//
+	//	*JobAction_Informed
+	//	*JobAction_ExecuteRequest
+	//	*JobAction_ExecuteResponse
+	//	*JobAction_Deliverable
+	//	*JobAction_CloseJob
+	//	*JobAction_Close
+	Action isJobAction_Action `protobuf_oneof:"action"`
+}
+
+func (x *JobAction) Reset() {
+	*x = JobAction{}
+	if protoimpl.UnsafeEnabled {
+		mi := &file_proto_queue_queue_proto_msgTypes[2]
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		ms.StoreMessageInfo(mi)
+	}
+}
+
+func (x *JobAction) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*JobAction) ProtoMessage() {}
+
+func (x *JobAction) ProtoReflect() protoreflect.Message {
+	mi := &file_proto_queue_queue_proto_msgTypes[2]
+	if protoimpl.UnsafeEnabled && x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use JobAction.ProtoReflect.Descriptor instead.
+func (*JobAction) Descriptor() ([]byte, []int) {
+	return file_proto_queue_queue_proto_rawDescGZIP(), []int{2}
+}
+
+func (m *JobAction) GetAction() isJobAction_Action {
+	if m != nil {
+		return m.Action
+	}
+	return nil
+}
+
+func (x *JobAction) GetInformed() *Informed {
+	if x, ok := x.GetAction().(*JobAction_Informed); ok {
+		return x.Informed
+	}
+	return nil
+}
+
+func (x *JobAction) GetExecuteRequest() *ExecuteRequest {
+	if x, ok := x.GetAction().(*JobAction_ExecuteRequest); ok {
+		return x.ExecuteRequest
+	}
+	return nil
+}
+
+func (x *JobAction) GetExecuteResponse() *ExecuteResponse {
+	if x, ok := x.GetAction().(*JobAction_ExecuteResponse); ok {
+		return x.ExecuteResponse
+	}
+	return nil
+}
+
+func (x *JobAction) GetDeliverable() *DeliverableJob {
+	if x, ok := x.GetAction().(*JobAction_Deliverable); ok {
+		return x.Deliverable
+	}
+	return nil
+}
+
+func (x *JobAction) GetCloseJob() *CloseJob {
+	if x, ok := x.GetAction().(*JobAction_CloseJob); ok {
+		return x.CloseJob
+	}
+	return nil
+}
+
+func (x *JobAction) GetClose() *Close {
+	if x, ok := x.GetAction().(*JobAction_Close); ok {
+		return x.Close
+	}
+	return nil
+}
+
+type isJobAction_Action interface {
+	isJobAction_Action()
+}
+
+type JobAction_Informed struct {
+	Informed *Informed `protobuf:"bytes,1,opt,name=informed,proto3,oneof"`
+}
+
+type JobAction_ExecuteRequest struct {
+	ExecuteRequest *ExecuteRequest `protobuf:"bytes,2,opt,name=execute_request,json=executeRequest,proto3,oneof"`
+}
+
+type JobAction_ExecuteResponse struct {
+	ExecuteResponse *ExecuteResponse `protobuf:"bytes,3,opt,name=execute_response,json=executeResponse,proto3,oneof"`
+}
+
+type JobAction_Deliverable struct {
+	Deliverable *DeliverableJob `protobuf:"bytes,4,opt,name=deliverable,proto3,oneof"`
+}
+
+type JobAction_CloseJob struct {
+	CloseJob *CloseJob `protobuf:"bytes,5,opt,name=close_job,json=closeJob,proto3,oneof"`
+}
+
+type JobAction_Close struct {
+	Close *Close `protobuf:"bytes,6,opt,name=close,proto3,oneof"`
+}
+
+func (*JobAction_Informed) isJobAction_Action() {}
+
+func (*JobAction_ExecuteRequest) isJobAction_Action() {}
+
+func (*JobAction_ExecuteResponse) isJobAction_Action() {}
+
+func (*JobAction_Deliverable) isJobAction_Action() {}
+
+func (*JobAction_CloseJob) isJobAction_Action() {}
+
+func (*JobAction_Close) isJobAction_Action() {}
 
 // Informed is the event that is sent to the queue when a job is added or
 // deleted from the storage informer.
@@ -188,7 +401,7 @@ type Informed struct {
 func (x *Informed) Reset() {
 	*x = Informed{}
 	if protoimpl.UnsafeEnabled {
-		mi := &file_proto_queue_queue_proto_msgTypes[1]
+		mi := &file_proto_queue_queue_proto_msgTypes[3]
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		ms.StoreMessageInfo(mi)
 	}
@@ -201,7 +414,7 @@ func (x *Informed) String() string {
 func (*Informed) ProtoMessage() {}
 
 func (x *Informed) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_queue_queue_proto_msgTypes[1]
+	mi := &file_proto_queue_queue_proto_msgTypes[3]
 	if protoimpl.UnsafeEnabled && x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -214,7 +427,7 @@ func (x *Informed) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Informed.ProtoReflect.Descriptor instead.
 func (*Informed) Descriptor() ([]byte, []int) {
-	return file_proto_queue_queue_proto_rawDescGZIP(), []int{1}
+	return file_proto_queue_queue_proto_rawDescGZIP(), []int{3}
 }
 
 func (x *Informed) GetJob() *stored.Job {
@@ -260,7 +473,7 @@ type ExecuteRequest struct {
 func (x *ExecuteRequest) Reset() {
 	*x = ExecuteRequest{}
 	if protoimpl.UnsafeEnabled {
-		mi := &file_proto_queue_queue_proto_msgTypes[2]
+		mi := &file_proto_queue_queue_proto_msgTypes[4]
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		ms.StoreMessageInfo(mi)
 	}
@@ -273,7 +486,7 @@ func (x *ExecuteRequest) String() string {
 func (*ExecuteRequest) ProtoMessage() {}
 
 func (x *ExecuteRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_queue_queue_proto_msgTypes[2]
+	mi := &file_proto_queue_queue_proto_msgTypes[4]
 	if protoimpl.UnsafeEnabled && x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -286,7 +499,7 @@ func (x *ExecuteRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ExecuteRequest.ProtoReflect.Descriptor instead.
 func (*ExecuteRequest) Descriptor() ([]byte, []int) {
-	return file_proto_queue_queue_proto_rawDescGZIP(), []int{2}
+	return file_proto_queue_queue_proto_rawDescGZIP(), []int{4}
 }
 
 func (x *ExecuteRequest) GetJobName() string {
@@ -315,7 +528,7 @@ type ExecuteResponse struct {
 	CounterKey string `protobuf:"bytes,2,opt,name=counter_key,json=counterKey,proto3" json:"counter_key,omitempty"`
 	// uid tracks the id of this execution to account for mid-execution
 	// cancellations.
-	Uid uint64 `protobuf:"varint,3,opt,name=uid,proto3" json:"uid,omitempty"`
+	Uid int64 `protobuf:"varint,3,opt,name=uid,proto3" json:"uid,omitempty"`
 	// result is the trigger result of executing this job counter.
 	Result *api.TriggerResponse `protobuf:"bytes,4,opt,name=result,proto3" json:"result,omitempty"`
 }
@@ -323,7 +536,7 @@ type ExecuteResponse struct {
 func (x *ExecuteResponse) Reset() {
 	*x = ExecuteResponse{}
 	if protoimpl.UnsafeEnabled {
-		mi := &file_proto_queue_queue_proto_msgTypes[3]
+		mi := &file_proto_queue_queue_proto_msgTypes[5]
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		ms.StoreMessageInfo(mi)
 	}
@@ -336,7 +549,7 @@ func (x *ExecuteResponse) String() string {
 func (*ExecuteResponse) ProtoMessage() {}
 
 func (x *ExecuteResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_queue_queue_proto_msgTypes[3]
+	mi := &file_proto_queue_queue_proto_msgTypes[5]
 	if protoimpl.UnsafeEnabled && x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -349,7 +562,7 @@ func (x *ExecuteResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ExecuteResponse.ProtoReflect.Descriptor instead.
 func (*ExecuteResponse) Descriptor() ([]byte, []int) {
-	return file_proto_queue_queue_proto_rawDescGZIP(), []int{3}
+	return file_proto_queue_queue_proto_rawDescGZIP(), []int{5}
 }
 
 func (x *ExecuteResponse) GetJobName() string {
@@ -366,7 +579,7 @@ func (x *ExecuteResponse) GetCounterKey() string {
 	return ""
 }
 
-func (x *ExecuteResponse) GetUid() uint64 {
+func (x *ExecuteResponse) GetUid() int64 {
 	if x != nil {
 		return x.Uid
 	}
@@ -394,7 +607,7 @@ type DeliverablePrefixes struct {
 func (x *DeliverablePrefixes) Reset() {
 	*x = DeliverablePrefixes{}
 	if protoimpl.UnsafeEnabled {
-		mi := &file_proto_queue_queue_proto_msgTypes[4]
+		mi := &file_proto_queue_queue_proto_msgTypes[6]
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		ms.StoreMessageInfo(mi)
 	}
@@ -407,7 +620,7 @@ func (x *DeliverablePrefixes) String() string {
 func (*DeliverablePrefixes) ProtoMessage() {}
 
 func (x *DeliverablePrefixes) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_queue_queue_proto_msgTypes[4]
+	mi := &file_proto_queue_queue_proto_msgTypes[6]
 	if protoimpl.UnsafeEnabled && x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -420,7 +633,7 @@ func (x *DeliverablePrefixes) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DeliverablePrefixes.ProtoReflect.Descriptor instead.
 func (*DeliverablePrefixes) Descriptor() ([]byte, []int) {
-	return file_proto_queue_queue_proto_rawDescGZIP(), []int{4}
+	return file_proto_queue_queue_proto_rawDescGZIP(), []int{6}
 }
 
 func (x *DeliverablePrefixes) GetPrefixes() []string {
@@ -444,7 +657,7 @@ type UndeliverablePrefixes struct {
 func (x *UndeliverablePrefixes) Reset() {
 	*x = UndeliverablePrefixes{}
 	if protoimpl.UnsafeEnabled {
-		mi := &file_proto_queue_queue_proto_msgTypes[5]
+		mi := &file_proto_queue_queue_proto_msgTypes[7]
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		ms.StoreMessageInfo(mi)
 	}
@@ -457,7 +670,7 @@ func (x *UndeliverablePrefixes) String() string {
 func (*UndeliverablePrefixes) ProtoMessage() {}
 
 func (x *UndeliverablePrefixes) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_queue_queue_proto_msgTypes[5]
+	mi := &file_proto_queue_queue_proto_msgTypes[7]
 	if protoimpl.UnsafeEnabled && x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -470,7 +683,7 @@ func (x *UndeliverablePrefixes) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UndeliverablePrefixes.ProtoReflect.Descriptor instead.
 func (*UndeliverablePrefixes) Descriptor() ([]byte, []int) {
-	return file_proto_queue_queue_proto_rawDescGZIP(), []int{5}
+	return file_proto_queue_queue_proto_rawDescGZIP(), []int{7}
 }
 
 func (x *UndeliverablePrefixes) GetPrefixes() []string {
@@ -491,7 +704,7 @@ type Close struct {
 func (x *Close) Reset() {
 	*x = Close{}
 	if protoimpl.UnsafeEnabled {
-		mi := &file_proto_queue_queue_proto_msgTypes[6]
+		mi := &file_proto_queue_queue_proto_msgTypes[8]
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		ms.StoreMessageInfo(mi)
 	}
@@ -504,7 +717,7 @@ func (x *Close) String() string {
 func (*Close) ProtoMessage() {}
 
 func (x *Close) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_queue_queue_proto_msgTypes[6]
+	mi := &file_proto_queue_queue_proto_msgTypes[8]
 	if protoimpl.UnsafeEnabled && x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -517,7 +730,97 @@ func (x *Close) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Close.ProtoReflect.Descriptor instead.
 func (*Close) Descriptor() ([]byte, []int) {
-	return file_proto_queue_queue_proto_rawDescGZIP(), []int{6}
+	return file_proto_queue_queue_proto_rawDescGZIP(), []int{8}
+}
+
+// CloseJob is a queue event which instructs the given job name has been closed
+// and the associated resources should be released.
+type CloseJob struct {
+	state         protoimpl.MessageState
+	sizeCache     protoimpl.SizeCache
+	unknownFields protoimpl.UnknownFields
+
+	// job_name is the job whose resources should be closed.
+	JobName string `protobuf:"bytes,1,opt,name=job_name,json=jobName,proto3" json:"job_name,omitempty"`
+}
+
+func (x *CloseJob) Reset() {
+	*x = CloseJob{}
+	if protoimpl.UnsafeEnabled {
+		mi := &file_proto_queue_queue_proto_msgTypes[9]
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		ms.StoreMessageInfo(mi)
+	}
+}
+
+func (x *CloseJob) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*CloseJob) ProtoMessage() {}
+
+func (x *CloseJob) ProtoReflect() protoreflect.Message {
+	mi := &file_proto_queue_queue_proto_msgTypes[9]
+	if protoimpl.UnsafeEnabled && x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use CloseJob.ProtoReflect.Descriptor instead.
+func (*CloseJob) Descriptor() ([]byte, []int) {
+	return file_proto_queue_queue_proto_rawDescGZIP(), []int{9}
+}
+
+func (x *CloseJob) GetJobName() string {
+	if x != nil {
+		return x.JobName
+	}
+	return ""
+}
+
+// DeliverableJob is a job event which instructs that the given job can now be
+// executed by the queue executor.
+type DeliverableJob struct {
+	state         protoimpl.MessageState
+	sizeCache     protoimpl.SizeCache
+	unknownFields protoimpl.UnknownFields
+}
+
+func (x *DeliverableJob) Reset() {
+	*x = DeliverableJob{}
+	if protoimpl.UnsafeEnabled {
+		mi := &file_proto_queue_queue_proto_msgTypes[10]
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		ms.StoreMessageInfo(mi)
+	}
+}
+
+func (x *DeliverableJob) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*DeliverableJob) ProtoMessage() {}
+
+func (x *DeliverableJob) ProtoReflect() protoreflect.Message {
+	mi := &file_proto_queue_queue_proto_msgTypes[10]
+	if protoimpl.UnsafeEnabled && x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use DeliverableJob.ProtoReflect.Descriptor instead.
+func (*DeliverableJob) Descriptor() ([]byte, []int) {
+	return file_proto_queue_queue_proto_rawDescGZIP(), []int{10}
 }
 
 var File_proto_queue_queue_proto protoreflect.FileDescriptor
@@ -528,7 +831,7 @@ var file_proto_queue_queue_proto_rawDesc = []byte{
 	0x1a, 0x16, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x2f, 0x73, 0x74, 0x6f, 0x72, 0x65, 0x64, 0x2f, 0x6a,
 	0x6f, 0x62, 0x2e, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x1a, 0x17, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x2f,
 	0x61, 0x70, 0x69, 0x2f, 0x74, 0x72, 0x69, 0x67, 0x67, 0x65, 0x72, 0x2e, 0x70, 0x72, 0x6f, 0x74,
-	0x6f, 0x22, 0x9c, 0x03, 0x0a, 0x0c, 0x43, 0x6f, 0x6e, 0x74, 0x72, 0x6f, 0x6c, 0x45, 0x76, 0x65,
+	0x6f, 0x22, 0xcc, 0x03, 0x0a, 0x0c, 0x43, 0x6f, 0x6e, 0x74, 0x72, 0x6f, 0x6c, 0x45, 0x76, 0x65,
 	0x6e, 0x74, 0x12, 0x2d, 0x0a, 0x08, 0x69, 0x6e, 0x66, 0x6f, 0x72, 0x6d, 0x65, 0x64, 0x18, 0x01,
 	0x20, 0x01, 0x28, 0x0b, 0x32, 0x0f, 0x2e, 0x71, 0x75, 0x65, 0x75, 0x65, 0x2e, 0x49, 0x6e, 0x66,
 	0x6f, 0x72, 0x6d, 0x65, 0x64, 0x48, 0x00, 0x52, 0x08, 0x69, 0x6e, 0x66, 0x6f, 0x72, 0x6d, 0x65,
@@ -551,6 +854,36 @@ var file_proto_queue_queue_proto_rawDesc = []byte{
 	0x65, 0x2e, 0x55, 0x6e, 0x64, 0x65, 0x6c, 0x69, 0x76, 0x65, 0x72, 0x61, 0x62, 0x6c, 0x65, 0x50,
 	0x72, 0x65, 0x66, 0x69, 0x78, 0x65, 0x73, 0x48, 0x00, 0x52, 0x15, 0x75, 0x6e, 0x64, 0x65, 0x6c,
 	0x69, 0x76, 0x65, 0x72, 0x61, 0x62, 0x6c, 0x65, 0x50, 0x72, 0x65, 0x66, 0x69, 0x78, 0x65, 0x73,
+	0x12, 0x2e, 0x0a, 0x09, 0x63, 0x6c, 0x6f, 0x73, 0x65, 0x5f, 0x6a, 0x6f, 0x62, 0x18, 0x06, 0x20,
+	0x01, 0x28, 0x0b, 0x32, 0x0f, 0x2e, 0x71, 0x75, 0x65, 0x75, 0x65, 0x2e, 0x43, 0x6c, 0x6f, 0x73,
+	0x65, 0x4a, 0x6f, 0x62, 0x48, 0x00, 0x52, 0x08, 0x63, 0x6c, 0x6f, 0x73, 0x65, 0x4a, 0x6f, 0x62,
+	0x12, 0x24, 0x0a, 0x05, 0x63, 0x6c, 0x6f, 0x73, 0x65, 0x18, 0x07, 0x20, 0x01, 0x28, 0x0b, 0x32,
+	0x0c, 0x2e, 0x71, 0x75, 0x65, 0x75, 0x65, 0x2e, 0x43, 0x6c, 0x6f, 0x73, 0x65, 0x48, 0x00, 0x52,
+	0x05, 0x63, 0x6c, 0x6f, 0x73, 0x65, 0x42, 0x08, 0x0a, 0x06, 0x61, 0x63, 0x74, 0x69, 0x6f, 0x6e,
+	0x22, 0x4f, 0x0a, 0x08, 0x4a, 0x6f, 0x62, 0x45, 0x76, 0x65, 0x6e, 0x74, 0x12, 0x19, 0x0a, 0x08,
+	0x6a, 0x6f, 0x62, 0x5f, 0x6e, 0x61, 0x6d, 0x65, 0x18, 0x01, 0x20, 0x01, 0x28, 0x09, 0x52, 0x07,
+	0x6a, 0x6f, 0x62, 0x4e, 0x61, 0x6d, 0x65, 0x12, 0x28, 0x0a, 0x06, 0x61, 0x63, 0x74, 0x69, 0x6f,
+	0x6e, 0x18, 0x02, 0x20, 0x01, 0x28, 0x0b, 0x32, 0x10, 0x2e, 0x71, 0x75, 0x65, 0x75, 0x65, 0x2e,
+	0x4a, 0x6f, 0x62, 0x41, 0x63, 0x74, 0x69, 0x6f, 0x6e, 0x52, 0x06, 0x61, 0x63, 0x74, 0x69, 0x6f,
+	0x6e, 0x22, 0xdc, 0x02, 0x0a, 0x09, 0x4a, 0x6f, 0x62, 0x41, 0x63, 0x74, 0x69, 0x6f, 0x6e, 0x12,
+	0x2d, 0x0a, 0x08, 0x69, 0x6e, 0x66, 0x6f, 0x72, 0x6d, 0x65, 0x64, 0x18, 0x01, 0x20, 0x01, 0x28,
+	0x0b, 0x32, 0x0f, 0x2e, 0x71, 0x75, 0x65, 0x75, 0x65, 0x2e, 0x49, 0x6e, 0x66, 0x6f, 0x72, 0x6d,
+	0x65, 0x64, 0x48, 0x00, 0x52, 0x08, 0x69, 0x6e, 0x66, 0x6f, 0x72, 0x6d, 0x65, 0x64, 0x12, 0x40,
+	0x0a, 0x0f, 0x65, 0x78, 0x65, 0x63, 0x75, 0x74, 0x65, 0x5f, 0x72, 0x65, 0x71, 0x75, 0x65, 0x73,
+	0x74, 0x18, 0x02, 0x20, 0x01, 0x28, 0x0b, 0x32, 0x15, 0x2e, 0x71, 0x75, 0x65, 0x75, 0x65, 0x2e,
+	0x45, 0x78, 0x65, 0x63, 0x75, 0x74, 0x65, 0x52, 0x65, 0x71, 0x75, 0x65, 0x73, 0x74, 0x48, 0x00,
+	0x52, 0x0e, 0x65, 0x78, 0x65, 0x63, 0x75, 0x74, 0x65, 0x52, 0x65, 0x71, 0x75, 0x65, 0x73, 0x74,
+	0x12, 0x43, 0x0a, 0x10, 0x65, 0x78, 0x65, 0x63, 0x75, 0x74, 0x65, 0x5f, 0x72, 0x65, 0x73, 0x70,
+	0x6f, 0x6e, 0x73, 0x65, 0x18, 0x03, 0x20, 0x01, 0x28, 0x0b, 0x32, 0x16, 0x2e, 0x71, 0x75, 0x65,
+	0x75, 0x65, 0x2e, 0x45, 0x78, 0x65, 0x63, 0x75, 0x74, 0x65, 0x52, 0x65, 0x73, 0x70, 0x6f, 0x6e,
+	0x73, 0x65, 0x48, 0x00, 0x52, 0x0f, 0x65, 0x78, 0x65, 0x63, 0x75, 0x74, 0x65, 0x52, 0x65, 0x73,
+	0x70, 0x6f, 0x6e, 0x73, 0x65, 0x12, 0x39, 0x0a, 0x0b, 0x64, 0x65, 0x6c, 0x69, 0x76, 0x65, 0x72,
+	0x61, 0x62, 0x6c, 0x65, 0x18, 0x04, 0x20, 0x01, 0x28, 0x0b, 0x32, 0x15, 0x2e, 0x71, 0x75, 0x65,
+	0x75, 0x65, 0x2e, 0x44, 0x65, 0x6c, 0x69, 0x76, 0x65, 0x72, 0x61, 0x62, 0x6c, 0x65, 0x4a, 0x6f,
+	0x62, 0x48, 0x00, 0x52, 0x0b, 0x64, 0x65, 0x6c, 0x69, 0x76, 0x65, 0x72, 0x61, 0x62, 0x6c, 0x65,
+	0x12, 0x2e, 0x0a, 0x09, 0x63, 0x6c, 0x6f, 0x73, 0x65, 0x5f, 0x6a, 0x6f, 0x62, 0x18, 0x05, 0x20,
+	0x01, 0x28, 0x0b, 0x32, 0x0f, 0x2e, 0x71, 0x75, 0x65, 0x75, 0x65, 0x2e, 0x43, 0x6c, 0x6f, 0x73,
+	0x65, 0x4a, 0x6f, 0x62, 0x48, 0x00, 0x52, 0x08, 0x63, 0x6c, 0x6f, 0x73, 0x65, 0x4a, 0x6f, 0x62,
 	0x12, 0x24, 0x0a, 0x05, 0x63, 0x6c, 0x6f, 0x73, 0x65, 0x18, 0x06, 0x20, 0x01, 0x28, 0x0b, 0x32,
 	0x0c, 0x2e, 0x71, 0x75, 0x65, 0x75, 0x65, 0x2e, 0x43, 0x6c, 0x6f, 0x73, 0x65, 0x48, 0x00, 0x52,
 	0x05, 0x63, 0x6c, 0x6f, 0x73, 0x65, 0x42, 0x08, 0x0a, 0x06, 0x61, 0x63, 0x74, 0x69, 0x6f, 0x6e,
@@ -572,7 +905,7 @@ var file_proto_queue_queue_proto_rawDesc = []byte{
 	0x20, 0x01, 0x28, 0x09, 0x52, 0x07, 0x6a, 0x6f, 0x62, 0x4e, 0x61, 0x6d, 0x65, 0x12, 0x1f, 0x0a,
 	0x0b, 0x63, 0x6f, 0x75, 0x6e, 0x74, 0x65, 0x72, 0x5f, 0x6b, 0x65, 0x79, 0x18, 0x02, 0x20, 0x01,
 	0x28, 0x09, 0x52, 0x0a, 0x63, 0x6f, 0x75, 0x6e, 0x74, 0x65, 0x72, 0x4b, 0x65, 0x79, 0x12, 0x10,
-	0x0a, 0x03, 0x75, 0x69, 0x64, 0x18, 0x03, 0x20, 0x01, 0x28, 0x04, 0x52, 0x03, 0x75, 0x69, 0x64,
+	0x0a, 0x03, 0x75, 0x69, 0x64, 0x18, 0x03, 0x20, 0x01, 0x28, 0x03, 0x52, 0x03, 0x75, 0x69, 0x64,
 	0x12, 0x2c, 0x0a, 0x06, 0x72, 0x65, 0x73, 0x75, 0x6c, 0x74, 0x18, 0x04, 0x20, 0x01, 0x28, 0x0b,
 	0x32, 0x14, 0x2e, 0x61, 0x70, 0x69, 0x2e, 0x54, 0x72, 0x69, 0x67, 0x67, 0x65, 0x72, 0x52, 0x65,
 	0x73, 0x70, 0x6f, 0x6e, 0x73, 0x65, 0x52, 0x06, 0x72, 0x65, 0x73, 0x75, 0x6c, 0x74, 0x22, 0x31,
@@ -582,11 +915,15 @@ var file_proto_queue_queue_proto_rawDesc = []byte{
 	0x73, 0x22, 0x33, 0x0a, 0x15, 0x55, 0x6e, 0x64, 0x65, 0x6c, 0x69, 0x76, 0x65, 0x72, 0x61, 0x62,
 	0x6c, 0x65, 0x50, 0x72, 0x65, 0x66, 0x69, 0x78, 0x65, 0x73, 0x12, 0x1a, 0x0a, 0x08, 0x70, 0x72,
 	0x65, 0x66, 0x69, 0x78, 0x65, 0x73, 0x18, 0x01, 0x20, 0x03, 0x28, 0x09, 0x52, 0x08, 0x70, 0x72,
-	0x65, 0x66, 0x69, 0x78, 0x65, 0x73, 0x22, 0x07, 0x0a, 0x05, 0x43, 0x6c, 0x6f, 0x73, 0x65, 0x42,
-	0x36, 0x5a, 0x34, 0x67, 0x69, 0x74, 0x68, 0x75, 0x62, 0x2e, 0x63, 0x6f, 0x6d, 0x2f, 0x64, 0x69,
-	0x61, 0x67, 0x72, 0x69, 0x64, 0x69, 0x6f, 0x2f, 0x67, 0x6f, 0x2d, 0x65, 0x74, 0x63, 0x64, 0x2d,
-	0x63, 0x72, 0x6f, 0x6e, 0x2f, 0x69, 0x6e, 0x74, 0x65, 0x72, 0x6e, 0x61, 0x6c, 0x2f, 0x61, 0x70,
-	0x69, 0x2f, 0x71, 0x75, 0x65, 0x75, 0x65, 0x62, 0x06, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x33,
+	0x65, 0x66, 0x69, 0x78, 0x65, 0x73, 0x22, 0x07, 0x0a, 0x05, 0x43, 0x6c, 0x6f, 0x73, 0x65, 0x22,
+	0x25, 0x0a, 0x08, 0x43, 0x6c, 0x6f, 0x73, 0x65, 0x4a, 0x6f, 0x62, 0x12, 0x19, 0x0a, 0x08, 0x6a,
+	0x6f, 0x62, 0x5f, 0x6e, 0x61, 0x6d, 0x65, 0x18, 0x01, 0x20, 0x01, 0x28, 0x09, 0x52, 0x07, 0x6a,
+	0x6f, 0x62, 0x4e, 0x61, 0x6d, 0x65, 0x22, 0x10, 0x0a, 0x0e, 0x44, 0x65, 0x6c, 0x69, 0x76, 0x65,
+	0x72, 0x61, 0x62, 0x6c, 0x65, 0x4a, 0x6f, 0x62, 0x42, 0x36, 0x5a, 0x34, 0x67, 0x69, 0x74, 0x68,
+	0x75, 0x62, 0x2e, 0x63, 0x6f, 0x6d, 0x2f, 0x64, 0x69, 0x61, 0x67, 0x72, 0x69, 0x64, 0x69, 0x6f,
+	0x2f, 0x67, 0x6f, 0x2d, 0x65, 0x74, 0x63, 0x64, 0x2d, 0x63, 0x72, 0x6f, 0x6e, 0x2f, 0x69, 0x6e,
+	0x74, 0x65, 0x72, 0x6e, 0x61, 0x6c, 0x2f, 0x61, 0x70, 0x69, 0x2f, 0x71, 0x75, 0x65, 0x75, 0x65,
+	0x62, 0x06, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x33,
 }
 
 var (
@@ -601,32 +938,44 @@ func file_proto_queue_queue_proto_rawDescGZIP() []byte {
 	return file_proto_queue_queue_proto_rawDescData
 }
 
-var file_proto_queue_queue_proto_msgTypes = make([]protoimpl.MessageInfo, 7)
+var file_proto_queue_queue_proto_msgTypes = make([]protoimpl.MessageInfo, 11)
 var file_proto_queue_queue_proto_goTypes = []interface{}{
 	(*ControlEvent)(nil),          // 0: queue.ControlEvent
-	(*Informed)(nil),              // 1: queue.Informed
-	(*ExecuteRequest)(nil),        // 2: queue.ExecuteRequest
-	(*ExecuteResponse)(nil),       // 3: queue.ExecuteResponse
-	(*DeliverablePrefixes)(nil),   // 4: queue.DeliverablePrefixes
-	(*UndeliverablePrefixes)(nil), // 5: queue.UndeliverablePrefixes
-	(*Close)(nil),                 // 6: queue.Close
-	(*stored.Job)(nil),            // 7: stored.Job
-	(*api.TriggerResponse)(nil),   // 8: api.TriggerResponse
+	(*JobEvent)(nil),              // 1: queue.JobEvent
+	(*JobAction)(nil),             // 2: queue.JobAction
+	(*Informed)(nil),              // 3: queue.Informed
+	(*ExecuteRequest)(nil),        // 4: queue.ExecuteRequest
+	(*ExecuteResponse)(nil),       // 5: queue.ExecuteResponse
+	(*DeliverablePrefixes)(nil),   // 6: queue.DeliverablePrefixes
+	(*UndeliverablePrefixes)(nil), // 7: queue.UndeliverablePrefixes
+	(*Close)(nil),                 // 8: queue.Close
+	(*CloseJob)(nil),              // 9: queue.CloseJob
+	(*DeliverableJob)(nil),        // 10: queue.DeliverableJob
+	(*stored.Job)(nil),            // 11: stored.Job
+	(*api.TriggerResponse)(nil),   // 12: api.TriggerResponse
 }
 var file_proto_queue_queue_proto_depIdxs = []int32{
-	1, // 0: queue.ControlEvent.informed:type_name -> queue.Informed
-	2, // 1: queue.ControlEvent.execute_request:type_name -> queue.ExecuteRequest
-	3, // 2: queue.ControlEvent.execute_response:type_name -> queue.ExecuteResponse
-	4, // 3: queue.ControlEvent.deliverable_prefixes:type_name -> queue.DeliverablePrefixes
-	5, // 4: queue.ControlEvent.undeliverable_prefixes:type_name -> queue.UndeliverablePrefixes
-	6, // 5: queue.ControlEvent.close:type_name -> queue.Close
-	7, // 6: queue.Informed.job:type_name -> stored.Job
-	8, // 7: queue.ExecuteResponse.result:type_name -> api.TriggerResponse
-	8, // [8:8] is the sub-list for method output_type
-	8, // [8:8] is the sub-list for method input_type
-	8, // [8:8] is the sub-list for extension type_name
-	8, // [8:8] is the sub-list for extension extendee
-	0, // [0:8] is the sub-list for field type_name
+	3,  // 0: queue.ControlEvent.informed:type_name -> queue.Informed
+	4,  // 1: queue.ControlEvent.execute_request:type_name -> queue.ExecuteRequest
+	5,  // 2: queue.ControlEvent.execute_response:type_name -> queue.ExecuteResponse
+	6,  // 3: queue.ControlEvent.deliverable_prefixes:type_name -> queue.DeliverablePrefixes
+	7,  // 4: queue.ControlEvent.undeliverable_prefixes:type_name -> queue.UndeliverablePrefixes
+	9,  // 5: queue.ControlEvent.close_job:type_name -> queue.CloseJob
+	8,  // 6: queue.ControlEvent.close:type_name -> queue.Close
+	2,  // 7: queue.JobEvent.action:type_name -> queue.JobAction
+	3,  // 8: queue.JobAction.informed:type_name -> queue.Informed
+	4,  // 9: queue.JobAction.execute_request:type_name -> queue.ExecuteRequest
+	5,  // 10: queue.JobAction.execute_response:type_name -> queue.ExecuteResponse
+	10, // 11: queue.JobAction.deliverable:type_name -> queue.DeliverableJob
+	9,  // 12: queue.JobAction.close_job:type_name -> queue.CloseJob
+	8,  // 13: queue.JobAction.close:type_name -> queue.Close
+	11, // 14: queue.Informed.job:type_name -> stored.Job
+	12, // 15: queue.ExecuteResponse.result:type_name -> api.TriggerResponse
+	16, // [16:16] is the sub-list for method output_type
+	16, // [16:16] is the sub-list for method input_type
+	16, // [16:16] is the sub-list for extension type_name
+	16, // [16:16] is the sub-list for extension extendee
+	0,  // [0:16] is the sub-list for field type_name
 }
 
 func init() { file_proto_queue_queue_proto_init() }
@@ -648,7 +997,7 @@ func file_proto_queue_queue_proto_init() {
 			}
 		}
 		file_proto_queue_queue_proto_msgTypes[1].Exporter = func(v interface{}, i int) interface{} {
-			switch v := v.(*Informed); i {
+			switch v := v.(*JobEvent); i {
 			case 0:
 				return &v.state
 			case 1:
@@ -660,7 +1009,7 @@ func file_proto_queue_queue_proto_init() {
 			}
 		}
 		file_proto_queue_queue_proto_msgTypes[2].Exporter = func(v interface{}, i int) interface{} {
-			switch v := v.(*ExecuteRequest); i {
+			switch v := v.(*JobAction); i {
 			case 0:
 				return &v.state
 			case 1:
@@ -672,7 +1021,7 @@ func file_proto_queue_queue_proto_init() {
 			}
 		}
 		file_proto_queue_queue_proto_msgTypes[3].Exporter = func(v interface{}, i int) interface{} {
-			switch v := v.(*ExecuteResponse); i {
+			switch v := v.(*Informed); i {
 			case 0:
 				return &v.state
 			case 1:
@@ -684,7 +1033,7 @@ func file_proto_queue_queue_proto_init() {
 			}
 		}
 		file_proto_queue_queue_proto_msgTypes[4].Exporter = func(v interface{}, i int) interface{} {
-			switch v := v.(*DeliverablePrefixes); i {
+			switch v := v.(*ExecuteRequest); i {
 			case 0:
 				return &v.state
 			case 1:
@@ -696,7 +1045,7 @@ func file_proto_queue_queue_proto_init() {
 			}
 		}
 		file_proto_queue_queue_proto_msgTypes[5].Exporter = func(v interface{}, i int) interface{} {
-			switch v := v.(*UndeliverablePrefixes); i {
+			switch v := v.(*ExecuteResponse); i {
 			case 0:
 				return &v.state
 			case 1:
@@ -708,7 +1057,55 @@ func file_proto_queue_queue_proto_init() {
 			}
 		}
 		file_proto_queue_queue_proto_msgTypes[6].Exporter = func(v interface{}, i int) interface{} {
+			switch v := v.(*DeliverablePrefixes); i {
+			case 0:
+				return &v.state
+			case 1:
+				return &v.sizeCache
+			case 2:
+				return &v.unknownFields
+			default:
+				return nil
+			}
+		}
+		file_proto_queue_queue_proto_msgTypes[7].Exporter = func(v interface{}, i int) interface{} {
+			switch v := v.(*UndeliverablePrefixes); i {
+			case 0:
+				return &v.state
+			case 1:
+				return &v.sizeCache
+			case 2:
+				return &v.unknownFields
+			default:
+				return nil
+			}
+		}
+		file_proto_queue_queue_proto_msgTypes[8].Exporter = func(v interface{}, i int) interface{} {
 			switch v := v.(*Close); i {
+			case 0:
+				return &v.state
+			case 1:
+				return &v.sizeCache
+			case 2:
+				return &v.unknownFields
+			default:
+				return nil
+			}
+		}
+		file_proto_queue_queue_proto_msgTypes[9].Exporter = func(v interface{}, i int) interface{} {
+			switch v := v.(*CloseJob); i {
+			case 0:
+				return &v.state
+			case 1:
+				return &v.sizeCache
+			case 2:
+				return &v.unknownFields
+			default:
+				return nil
+			}
+		}
+		file_proto_queue_queue_proto_msgTypes[10].Exporter = func(v interface{}, i int) interface{} {
+			switch v := v.(*DeliverableJob); i {
 			case 0:
 				return &v.state
 			case 1:
@@ -726,7 +1123,16 @@ func file_proto_queue_queue_proto_init() {
 		(*ControlEvent_ExecuteResponse)(nil),
 		(*ControlEvent_DeliverablePrefixes)(nil),
 		(*ControlEvent_UndeliverablePrefixes)(nil),
+		(*ControlEvent_CloseJob)(nil),
 		(*ControlEvent_Close)(nil),
+	}
+	file_proto_queue_queue_proto_msgTypes[2].OneofWrappers = []interface{}{
+		(*JobAction_Informed)(nil),
+		(*JobAction_ExecuteRequest)(nil),
+		(*JobAction_ExecuteResponse)(nil),
+		(*JobAction_Deliverable)(nil),
+		(*JobAction_CloseJob)(nil),
+		(*JobAction_Close)(nil),
 	}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
@@ -734,7 +1140,7 @@ func file_proto_queue_queue_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: file_proto_queue_queue_proto_rawDesc,
 			NumEnums:      0,
-			NumMessages:   7,
+			NumMessages:   11,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

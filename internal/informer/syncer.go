@@ -27,7 +27,7 @@ import (
 )
 
 const (
-	batchLimit = 1000
+	batchLimit = 1024
 )
 
 // newSyncer creates a Syncer.

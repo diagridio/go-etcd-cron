@@ -16,9 +16,6 @@ schema = 3
   [mod."github.com/coreos/go-systemd/v22"]
     version = "v22.3.2"
     hash = "sha256-rPrbVhxorJrdhUCrTH67imhVIuu4j5brPf4fJtpgnA4="
-  [mod."github.com/dapr/kit"]
-    version = "v0.13.0"
-    hash = "sha256-P9Hd/tY1oN9Jkw8Bfbo57WAYC4WrUb+RkJTJVrsVV/g="
   [mod."github.com/davecgh/go-spew"]
     version = "v1.1.1"
     hash = "sha256-nhzSUrE1fCkN0+RL04N4h8jWmRFPPPWbCuDc7Ss0akI="

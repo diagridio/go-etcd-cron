@@ -482,14 +482,14 @@ func Test_undeliverable(t *testing.T) {
 		}))
 		require.NoError(t, cron.API().Delete(cron.Context(), "abc1"))
 		assert.EventuallyWithT(t, func(c *assert.CollectT) {
-			assert.Equal(c, []string{"abc1", "xyz1"}, triggered.Slice())
+			assert.ElementsMatch(c, []string{"abc1", "xyz1"}, triggered.Slice())
 		}, time.Second*10, time.Millisecond*10)
 
 		cancel, err := cron.API().DeliverablePrefixes(cron.Context(), "abc")
 		require.NoError(t, err)
 		t.Cleanup(cancel)
 		time.Sleep(time.Second * 2)
-		assert.Equal(t, []string{"abc1", "xyz1"}, triggered.Slice())
+		assert.ElementsMatch(t, []string{"abc1", "xyz1"}, triggered.Slice())
 	})
 
 	t.Run("Deleting prefixed staged jobs should not be triggered once it has been marked as deliverable", func(t *testing.T) {
@@ -598,9 +598,13 @@ func Test_undeliverable(t *testing.T) {
 		assert.EventuallyWithT(t, func(c *assert.CollectT) {
 			assert.Equal(c, uint32(2), triggered.Load())
 		}, time.Second*10, time.Millisecond*10)
-		resp, err := cron.API().Get(cron.Context(), "abc1")
-		require.NoError(t, err)
-		assert.Nil(t, resp)
+
+		assert.EventuallyWithT(t, func(c *assert.CollectT) {
+			resp, err := cron.API().Get(cron.Context(), "abc1")
+			assert.NoError(c, err)
+			assert.Nil(c, resp)
+		}, time.Second*10, time.Millisecond*10)
+
 		cancel()
 
 		ret.Store(api.TriggerResponseResult_UNDELIVERABLE)
@@ -614,7 +618,7 @@ func Test_undeliverable(t *testing.T) {
 		assert.EventuallyWithT(t, func(c *assert.CollectT) {
 			assert.Equal(c, uint32(4), triggered.Load())
 		}, time.Second*10, time.Millisecond*10)
-		resp, err = cron.API().Get(cron.Context(), "abc1")
+		resp, err := cron.API().Get(cron.Context(), "abc1")
 		require.NoError(t, err)
 		assert.Nil(t, resp)
 
