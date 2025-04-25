@@ -62,7 +62,7 @@ func New(opts Options) loops.Interface[*queue.JobAction] {
 	counters.counter = nil
 
 	loop := LoopsCache.Get().(loops.Interface[*queue.JobAction])
-	return loop.Reset(counters, 10)
+	return loop.Reset(counters, 5)
 }
 
 func (c *counters) Handle(ctx context.Context, event *queue.JobAction) error {
