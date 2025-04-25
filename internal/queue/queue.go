@@ -7,8 +7,8 @@ package queue
 
 import (
 	"context"
-	"errors"
 
+	"github.com/dapr/kit/concurrency"
 	eventsqueue "github.com/dapr/kit/events/queue"
 	"github.com/go-logr/logr"
 	"k8s.io/utils/clock"
@@ -102,22 +102,22 @@ func (q *Queue) Run(ctx context.Context) error {
 		Jobs:     routerLoop,
 	})
 
-	errCh := make(chan error, 2)
-	go func() {
-		errCh <- routerLoop.Run(ictx)
-	}()
-	go func() {
-		errCh <- q.controlLoop.Run(ictx)
-	}()
-
 	close(q.readyCh)
-	<-ctx.Done()
 
-	q.controlLoop.Close(&queue.ControlEvent{
-		Action: new(queue.ControlEvent_Close),
-	})
+	return concurrency.NewRunnerManager(
+		routerLoop.Run,
+		q.controlLoop.Run,
+		func(context.Context) error {
+			// Use the real func context here, rather than the background one we control
+			// cancelling in-loop.
+			<-ctx.Done()
 
-	return errors.Join(<-errCh, <-errCh)
+			q.controlLoop.Close(&queue.ControlEvent{
+				Action: new(queue.ControlEvent_Close),
+			})
+
+			return nil
+		}).Run(ictx)
 }
 
 func (q *Queue) Inform(event *queue.Informed) {

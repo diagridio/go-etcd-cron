@@ -12,11 +12,12 @@ import (
 	"sync/atomic"
 
 	"github.com/dapr/kit/ptr"
+	"github.com/go-logr/logr"
+
 	"github.com/diagridio/go-etcd-cron/internal/api/queue"
 	"github.com/diagridio/go-etcd-cron/internal/queue/actioner"
 	"github.com/diagridio/go-etcd-cron/internal/queue/loops"
 	"github.com/diagridio/go-etcd-cron/internal/queue/loops/counters"
-	"github.com/go-logr/logr"
 )
 
 type Options struct {

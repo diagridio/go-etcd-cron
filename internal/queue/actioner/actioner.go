@@ -87,12 +87,12 @@ func (a *actioner) Schedule(ctx context.Context, jobName string, revision int64,
 	return counter, nil
 }
 
-// Enqueue adds a job to the scheduling queue.
+// Enqueue adds a counter to the counter scheduling queue.
 func (a *actioner) Enqueue(counter counter.Interface) {
 	a.queue.Enqueue(counter)
 }
 
-// Deschedule removes a job from the scheduling queue.
+// Deschedule removes a counter job from the counter scheduling queue.
 func (a *actioner) Deschedule(counter counter.Interface) {
 	a.queue.Dequeue(counter.Key())
 }

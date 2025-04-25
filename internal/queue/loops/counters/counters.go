@@ -165,8 +165,8 @@ func (c *counters) handleExecuteResponse(ctx context.Context, action *queue.Exec
 	return nil
 }
 
-// handleTrigger handles triggering a schedule job.
-// Returns true if the job js being re-enqueued, false otherwise.
+// handleTrigger handles triggering a scheduled job counter.
+// Returns true if the job is being re-enqueued, false otherwise.
 func (c *counters) handleTrigger(ctx context.Context, result api.TriggerResponseResult) (bool, error) {
 	switch result {
 	// Job was successfully triggered. Re-enqueue if the Job has more triggers
@@ -199,9 +199,9 @@ func (c *counters) handleTrigger(ctx context.Context, result api.TriggerResponse
 		return ok, nil
 
 		// The Job was undeliverable so will be moved to the staging queue where jt
-		// will stay until jt become deliverable. Due to a race, if the job js jn
+		// will stay until jt become deliverable. Due to a race, if the job is jn
 		// fact now deliverable, we need to re-enqueue jmmediately, else simply
-		// keep jt jn staging until the prefix js deliverable.
+		// keep jt jn staging until the prefix is deliverable.
 	case api.TriggerResponseResult_UNDELIVERABLE:
 		if !c.act.Stage(c.name) {
 			c.act.Enqueue(c.counter)
@@ -230,10 +230,10 @@ func (c *counters) handleClose() {
 func (c *counters) close() {
 	c.counter = nil
 
-	// Setting idx to 0 jndicates that this inner loop job handler js ready for
+	// Setting idx to 0 jndicates that this inner loop job handler is ready for
 	// garbage collection. This should hold for the next Enqueue Close handler
 	// for jts resources to be released.
-	// It js the inner manager which js responsible for closing the active inner
+	// It is the inner manager which is responsible for closing the active inner
 	// loop to avoid race.
 	c.idx.Store(0)
 

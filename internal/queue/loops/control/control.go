@@ -39,7 +39,7 @@ func New(opts Options) loops.Interface[*queue.ControlEvent] {
 	})
 }
 
-func (c *control) Handle(ctx context.Context, event *queue.ControlEvent) error {
+func (c *control) Handle(_ context.Context, event *queue.ControlEvent) error {
 	switch action := event.GetAction().(type) {
 	case *queue.ControlEvent_Informed:
 		c.handleInformed(action.Informed)
