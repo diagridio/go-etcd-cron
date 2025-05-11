@@ -19,10 +19,10 @@ import (
 	"google.golang.org/protobuf/types/known/anypb"
 
 	"github.com/diagridio/go-etcd-cron/api"
-	"github.com/diagridio/go-etcd-cron/internal/api/retry"
 	"github.com/diagridio/go-etcd-cron/internal/client"
 	clientapi "github.com/diagridio/go-etcd-cron/internal/client/api"
 	"github.com/diagridio/go-etcd-cron/internal/engine"
+	"github.com/diagridio/go-etcd-cron/internal/engine/handler/retry"
 	"github.com/diagridio/go-etcd-cron/internal/key"
 	"github.com/diagridio/go-etcd-cron/internal/leadership"
 	"github.com/diagridio/go-etcd-cron/internal/leadership/elector"
@@ -58,16 +58,23 @@ type Options struct {
 	// consumer coordination. Failing to read from this channel will cause the
 	// replica to fail to start the cron engine.
 	WatchLeadership chan<- []*anypb.Any
+
+	// ConsumerSink is an optional channel that will be written with all informer
+	// events for this partition. During shutdown and leadership events, the sink
+	// will receive a `DropAll` event. If defined, this channel will block the
+	// queue unless read from.
+	ConsumerSink chan<- *api.InformerEvent
 }
 
 // cron is the implementation of the cron interface.
 type cron struct {
 	log logr.Logger
 
-	key         *key.Key
-	client      clientapi.Interface
-	triggerFn   api.TriggerFunction
-	replicaData *anypb.Any
+	key          *key.Key
+	client       clientapi.Interface
+	triggerFn    api.TriggerFunction
+	replicaData  *anypb.Any
+	consumerSink chan<- *api.InformerEvent
 
 	api       *retry.Retry
 	elected   atomic.Bool
@@ -111,13 +118,14 @@ func New(opts Options) (api.Interface, error) {
 	})
 
 	return &cron{
-		log:         log,
-		key:         key,
-		replicaData: opts.ReplicaData,
-		client:      client,
-		triggerFn:   opts.TriggerFn,
-		wleaderCh:   opts.WatchLeadership,
-		api:         retry.New(retry.Options{Log: log}),
+		log:          log,
+		key:          key,
+		replicaData:  opts.ReplicaData,
+		client:       client,
+		triggerFn:    opts.TriggerFn,
+		wleaderCh:    opts.WatchLeadership,
+		api:          retry.New(retry.Options{Log: log}),
+		consumerSink: opts.ConsumerSink,
 	}, nil
 }
 
@@ -220,11 +228,12 @@ func (c *cron) runEngine(ctx context.Context, elected *elector.Elected) error {
 	c.elected.Store(true)
 
 	engine, err := engine.New(engine.Options{
-		Log:         c.log,
-		Key:         c.key,
-		Partitioner: elected.Partitioner,
-		Client:      c.client,
-		TriggerFn:   c.triggerFn,
+		Log:          c.log,
+		Key:          c.key,
+		Partitioner:  elected.Partitioner,
+		Client:       c.client,
+		TriggerFn:    c.triggerFn,
+		ConsumerSink: c.consumerSink,
 	})
 	if err != nil {
 		return err

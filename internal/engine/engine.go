@@ -16,12 +16,13 @@ import (
 	"k8s.io/utils/clock"
 
 	"github.com/diagridio/go-etcd-cron/api"
-	internalapi "github.com/diagridio/go-etcd-cron/internal/api"
+	apiqueue "github.com/diagridio/go-etcd-cron/internal/api/queue"
 	clientapi "github.com/diagridio/go-etcd-cron/internal/client/api"
-	"github.com/diagridio/go-etcd-cron/internal/informer"
+	"github.com/diagridio/go-etcd-cron/internal/engine/handler"
+	"github.com/diagridio/go-etcd-cron/internal/engine/informer"
+	"github.com/diagridio/go-etcd-cron/internal/engine/queue"
 	"github.com/diagridio/go-etcd-cron/internal/key"
 	"github.com/diagridio/go-etcd-cron/internal/leadership/partitioner"
-	"github.com/diagridio/go-etcd-cron/internal/queue"
 	"github.com/diagridio/go-etcd-cron/internal/scheduler"
 )
 
@@ -41,25 +42,28 @@ type Options struct {
 
 	// TriggerFn is the function to call when a cron job is triggered.
 	TriggerFn api.TriggerFunction
+
+	// ConsumerSink is an optional sink to receive informer events.
+	ConsumerSink chan<- *api.InformerEvent
 }
 
 type Interface interface {
 	Run(ctx context.Context) error
-	API() internalapi.Interface
+	API() handler.Interface
 }
 
 type engine struct {
-	log      logr.Logger
-	queue    *queue.Queue
-	informer *informer.Informer
-	api      internalapi.Interface
-	running  atomic.Bool
-	wg       sync.WaitGroup
+	log        logr.Logger
+	queue      *queue.Queue
+	informer   *informer.Informer
+	informerCh <-chan *apiqueue.Informed
+	handler    handler.Interface
+	running    atomic.Bool
+	wg         sync.WaitGroup
 }
 
 func New(opts Options) (Interface, error) {
-
-	informer := informer.New(informer.Options{
+	informer, informerCh := informer.New(informer.Options{
 		Key:         opts.Key,
 		Client:      opts.Client,
 		Partitioner: opts.Partitioner,
@@ -73,9 +77,10 @@ func New(opts Options) (Interface, error) {
 		Key:              opts.Key,
 		SchedulerBuilder: schedBuilder,
 		TriggerFn:        opts.TriggerFn,
+		ConsumerSink:     opts.ConsumerSink,
 	})
 
-	api := internalapi.New(internalapi.Options{
+	handler := handler.New(handler.Options{
 		Client:           opts.Client,
 		Key:              opts.Key,
 		SchedulerBuilder: schedBuilder,
@@ -85,11 +90,12 @@ func New(opts Options) (Interface, error) {
 	})
 
 	return &engine{
-		log:      opts.Log.WithName("engine"),
-		queue:    queue,
-		informer: informer,
-		api:      api,
-		wg:       sync.WaitGroup{},
+		log:        opts.Log.WithName("engine"),
+		queue:      queue,
+		informer:   informer,
+		informerCh: informerCh,
+		handler:    handler,
+		wg:         sync.WaitGroup{},
 	}, nil
 }
 
@@ -105,18 +111,13 @@ func (e *engine) Run(ctx context.Context) error {
 	return concurrency.NewRunnerManager(
 		e.queue.Run,
 		e.informer.Run,
-		e.api.Run,
+		e.handler.Run,
 		func(ctx context.Context) error {
-			ev, err := e.informer.Events()
-			if err != nil {
-				return err
-			}
-
 			for {
 				select {
 				case <-ctx.Done():
 					return nil
-				case event := <-ev:
+				case event := <-e.informerCh:
 					e.queue.Inform(ctx, event)
 				}
 			}
@@ -124,6 +125,6 @@ func (e *engine) Run(ctx context.Context) error {
 	).Run(ctx)
 }
 
-func (e *engine) API() internalapi.Interface {
-	return e.api
+func (e *engine) API() handler.Interface {
+	return e.handler
 }

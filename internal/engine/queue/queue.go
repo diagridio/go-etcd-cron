@@ -13,15 +13,16 @@ import (
 	"github.com/go-logr/logr"
 	"k8s.io/utils/clock"
 
+	"github.com/dapr/kit/events/loop"
 	"github.com/diagridio/go-etcd-cron/api"
 	"github.com/diagridio/go-etcd-cron/internal/api/queue"
 	clientapi "github.com/diagridio/go-etcd-cron/internal/client/api"
 	"github.com/diagridio/go-etcd-cron/internal/counter"
+	"github.com/diagridio/go-etcd-cron/internal/engine/informer/consumer"
+	"github.com/diagridio/go-etcd-cron/internal/engine/queue/actioner"
+	"github.com/diagridio/go-etcd-cron/internal/engine/queue/loops/control"
+	"github.com/diagridio/go-etcd-cron/internal/engine/queue/loops/router"
 	"github.com/diagridio/go-etcd-cron/internal/key"
-	"github.com/diagridio/go-etcd-cron/internal/queue/actioner"
-	"github.com/diagridio/go-etcd-cron/internal/queue/loops"
-	"github.com/diagridio/go-etcd-cron/internal/queue/loops/control"
-	"github.com/diagridio/go-etcd-cron/internal/queue/loops/router"
 	"github.com/diagridio/go-etcd-cron/internal/scheduler"
 )
 
@@ -44,6 +45,9 @@ type Options struct {
 
 	// TriggerFn is the trigger function to use for Queue operations.
 	TriggerFn api.TriggerFunction
+
+	// ConsumerSink is an optional channel to send informer events to.
+	ConsumerSink chan<- *api.InformerEvent
 }
 
 type Queue struct {
@@ -54,7 +58,8 @@ type Queue struct {
 	client           clientapi.Interface
 	key              *key.Key
 
-	controlLoop loops.Interface[*queue.ControlEvent]
+	consumer    *consumer.Consumer
+	controlLoop loop.Interface[*queue.ControlEvent]
 	queue       *eventsqueue.Processor[string, counter.Interface]
 
 	readyCh chan struct{}
@@ -68,6 +73,9 @@ func New(opts Options) *Queue {
 		schedulerBuilder: opts.SchedulerBuilder,
 		client:           opts.Client,
 		key:              opts.Key,
+		consumer: consumer.New(consumer.Options{
+			Sink: opts.ConsumerSink,
+		}),
 	}
 
 	q.queue = eventsqueue.NewProcessor[string, counter.Interface](
@@ -81,6 +89,8 @@ func New(opts Options) *Queue {
 }
 
 func (q *Queue) Run(ctx context.Context) error {
+	defer q.consumer.DropAll()
+
 	act := actioner.New(actioner.Options{
 		Queue:        q.queue,
 		TriggerFn:    q.triggerFn,
@@ -88,6 +98,7 @@ func (q *Queue) Run(ctx context.Context) error {
 		SchedBuilder: q.schedulerBuilder,
 		Client:       q.client,
 		Key:          q.key,
+		Consumer:     q.consumer,
 	})
 
 	ictx, cancel := context.WithCancel(context.Background())

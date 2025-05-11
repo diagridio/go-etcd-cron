@@ -79,3 +79,5 @@ require (
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 	sigs.k8s.io/yaml v1.4.0 // indirect
 )
+
+replace github.com/dapr/kit => github.com/joshvanl/kit v0.0.0-20250511174720-7f6061b6ba85

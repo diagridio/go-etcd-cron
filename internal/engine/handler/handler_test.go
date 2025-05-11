@@ -3,7 +3,7 @@ Copyright (c) 2024 Diagrid Inc.
 Licensed under the MIT License.
 */
 
-package api
+package handler
 
 import (
 	"context"
@@ -19,8 +19,8 @@ import (
 
 	cronapi "github.com/diagridio/go-etcd-cron/api"
 	apierrors "github.com/diagridio/go-etcd-cron/api/errors"
+	"github.com/diagridio/go-etcd-cron/internal/engine/queue"
 	"github.com/diagridio/go-etcd-cron/internal/key"
-	"github.com/diagridio/go-etcd-cron/internal/queue"
 	"github.com/diagridio/go-etcd-cron/internal/scheduler"
 	"github.com/diagridio/go-etcd-cron/tests/framework/etcd"
 )
@@ -126,7 +126,7 @@ func Test_Add(t *testing.T) {
 
 		api := newAPINotReady(t)
 		close(api.closeCh)
-		assert.Equal(t, errors.New("api is closed"), api.Add(t.Context(), "def", &cronapi.Job{
+		assert.Equal(t, errors.New("api handler is closed"), api.Add(t.Context(), "def", &cronapi.Job{
 			DueTime: ptr.Of(time.Now().Format(time.RFC3339)),
 		}))
 	})
@@ -168,7 +168,7 @@ func Test_AddIfNotExists(t *testing.T) {
 
 		api := newAPINotReady(t)
 		close(api.closeCh)
-		assert.Equal(t, errors.New("api is closed"), api.AddIfNotExists(context.Background(), "def", &cronapi.Job{
+		assert.Equal(t, errors.New("api handler is closed"), api.AddIfNotExists(context.Background(), "def", &cronapi.Job{
 			DueTime: ptr.Of(time.Now().Format(time.RFC3339)),
 		}))
 	})
@@ -225,7 +225,7 @@ func Test_Get(t *testing.T) {
 		api := newAPINotReady(t)
 		close(api.closeCh)
 		resp, err := api.Get(t.Context(), "def")
-		assert.Equal(t, errors.New("api is closed"), err)
+		assert.Equal(t, errors.New("api handler is closed"), err)
 		assert.Nil(t, resp)
 	})
 
@@ -257,7 +257,7 @@ func Test_Delete(t *testing.T) {
 
 		api := newAPINotReady(t)
 		close(api.closeCh)
-		assert.Equal(t, errors.New("api is closed"), api.Delete(t.Context(), "def"))
+		assert.Equal(t, errors.New("api handler is closed"), api.Delete(t.Context(), "def"))
 	})
 
 	t.Run("invalid name should error", func(t *testing.T) {
@@ -283,7 +283,7 @@ func Test_DeletePrefixes(t *testing.T) {
 
 		api := newAPINotReady(t)
 		close(api.closeCh)
-		assert.Equal(t, errors.New("api is closed"), api.DeletePrefixes(t.Context(), "foobar"))
+		assert.Equal(t, errors.New("api handler is closed"), api.DeletePrefixes(t.Context(), "foobar"))
 	})
 
 	t.Run("invalid name should error", func(t *testing.T) {
@@ -313,7 +313,7 @@ func Test_List(t *testing.T) {
 		api := newAPINotReady(t)
 		close(api.closeCh)
 		resp, err := api.List(t.Context(), "")
-		assert.Equal(t, errors.New("api is closed"), err)
+		assert.Equal(t, errors.New("api handler is closed"), err)
 		assert.Nil(t, resp)
 	})
 }
@@ -337,19 +337,19 @@ func Test_DeliverablePrefixes(t *testing.T) {
 		api := newAPINotReady(t)
 		close(api.closeCh)
 		cancel, err := api.DeliverablePrefixes(t.Context(), "hello world")
-		assert.Equal(t, errors.New("api is closed"), err)
+		assert.Equal(t, errors.New("api handler is closed"), err)
 		assert.Nil(t, cancel)
 	})
 }
 
-func newAPI(t *testing.T) *api {
+func newAPI(t *testing.T) *handler {
 	t.Helper()
 	api := newAPINotReady(t)
 	close(api.readyCh)
 	return api
 }
 
-func newAPINotReady(t *testing.T) *api {
+func newAPINotReady(t *testing.T) *handler {
 	t.Helper()
 
 	client := etcd.Embedded(t)
@@ -390,5 +390,5 @@ func newAPINotReady(t *testing.T) *api {
 		Key:              key,
 		SchedulerBuilder: schedulerBuilder,
 		Queue:            queue,
-	}).(*api)
+	}).(*handler)
 }
