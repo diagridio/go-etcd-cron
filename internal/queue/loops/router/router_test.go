@@ -169,7 +169,7 @@ func Test_router(t *testing.T) {
 		exp := &queue.JobAction{Action: &queue.JobAction_Informed{
 			Informed: &queue.Informed{
 				Name:  "test-job",
-				IsPut: false,
+				IsPut: true,
 			},
 		}}
 
@@ -186,5 +186,30 @@ func Test_router(t *testing.T) {
 		}))
 
 		assert.Len(t, r.counters, 2)
+	})
+
+	t.Run("if handle event for delete with non-existing counter, expect no create or enqueue", func(t *testing.T) {
+		t.Parallel()
+
+		exp := &queue.JobAction{Action: &queue.JobAction_Informed{
+			Informed: &queue.Informed{
+				Name:  "test-job",
+				IsPut: false,
+			},
+		}}
+
+		r := &router{
+			act: actionerfake.New(),
+			counters: map[string]*counter{
+				"test-job-2": &counter{},
+			},
+		}
+
+		require.NoError(t, r.Handle(t.Context(), &queue.JobEvent{
+			JobName: "test-job",
+			Action:  exp,
+		}))
+
+		assert.Len(t, r.counters, 1)
 	})
 }
