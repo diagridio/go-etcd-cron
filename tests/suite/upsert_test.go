@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/dapr/kit/ptr"
+	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -51,8 +52,8 @@ func Test_upsert_duetime(t *testing.T) {
 		DueTime:  ptr.Of("1s"),
 		Schedule: ptr.Of("@every 5s"),
 	}
-	now := time.Now().Format(time.RFC3339)
-	require.NoError(t, cron.API().Add(cron.Context(), now, job))
+	name := uuid.NewString()
+	require.NoError(t, cron.API().Add(cron.Context(), name, job))
 
 	time.Sleep(time.Second * 2)
 	assert.Equal(t, 1, cron.Triggered())
@@ -61,7 +62,7 @@ func Test_upsert_duetime(t *testing.T) {
 		DueTime:  ptr.Of("20s"),
 		Schedule: ptr.Of("@every 5s"),
 	}
-	require.NoError(t, cron.API().Add(cron.Context(), now, job))
+	require.NoError(t, cron.API().Add(cron.Context(), name, job))
 
 	time.Sleep(time.Second * 5)
 	assert.Equal(t, 1, cron.Triggered())
@@ -138,13 +139,13 @@ func Test_upsert_duetime_ifnotexists(t *testing.T) {
 		DueTime:  ptr.Of("1s"),
 		Schedule: ptr.Of("@every 5s"),
 	}
-	now := time.Now().Format(time.RFC3339)
+	name := uuid.NewString()
 
-	require.NoError(t, cron.API().AddIfNotExists(cron.Context(), now, job))
-	err := cron.API().AddIfNotExists(cron.Context(), now, job)
+	require.NoError(t, cron.API().AddIfNotExists(cron.Context(), name, job))
+	err := cron.API().AddIfNotExists(cron.Context(), name, job)
 	require.Error(t, err)
 	assert.True(t, errors.IsJobAlreadyExists(err))
-	require.NoError(t, cron.API().Add(cron.Context(), now, job))
+	require.NoError(t, cron.API().Add(cron.Context(), name, job))
 
 	time.Sleep(time.Second * 2)
 	assert.Equal(t, 1, cron.Triggered())
@@ -153,7 +154,7 @@ func Test_upsert_duetime_ifnotexists(t *testing.T) {
 		DueTime:  ptr.Of("20s"),
 		Schedule: ptr.Of("@every 5s"),
 	}
-	require.NoError(t, cron.API().Add(cron.Context(), now, job))
+	require.NoError(t, cron.API().Add(cron.Context(), name, job))
 
 	time.Sleep(time.Second * 5)
 	assert.Equal(t, 1, cron.Triggered())
