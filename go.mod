@@ -3,9 +3,10 @@ module github.com/diagridio/go-etcd-cron
 go 1.24.2
 
 require (
-	github.com/dapr/kit v0.15.2
+	github.com/dapr/kit v0.15.3-0.20250515222338-98fe567235f8
 	github.com/go-logr/logr v1.4.2
 	github.com/go-logr/zapr v1.3.0
+	github.com/google/uuid v1.6.0
 	github.com/stretchr/testify v1.10.0
 	go.etcd.io/etcd/api/v3 v3.5.21
 	go.etcd.io/etcd/client/pkg/v3 v3.5.21
@@ -30,7 +31,6 @@ require (
 	github.com/golang-jwt/jwt/v4 v4.5.2 // indirect
 	github.com/golang/protobuf v1.5.4 // indirect
 	github.com/google/btree v1.1.3 // indirect
-	github.com/google/uuid v1.6.0 // indirect
 	github.com/gorilla/websocket v1.5.3 // indirect
 	github.com/grpc-ecosystem/go-grpc-middleware v1.4.0 // indirect
 	github.com/grpc-ecosystem/go-grpc-prometheus v1.2.0 // indirect
@@ -80,5 +80,3 @@ require (
 	k8s.io/klog/v2 v2.130.1 // indirect
 	sigs.k8s.io/yaml v1.4.0 // indirect
 )
-
-replace github.com/dapr/kit => github.com/joshvanl/kit v0.0.0-20250511174720-7f6061b6ba85
