@@ -9,26 +9,26 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/dapr/kit/events/loop"
 	"github.com/diagridio/go-etcd-cron/internal/api/queue"
-	"github.com/diagridio/go-etcd-cron/internal/queue/actioner"
-	"github.com/diagridio/go-etcd-cron/internal/queue/loops"
+	"github.com/diagridio/go-etcd-cron/internal/engine/queue/actioner"
 )
 
 type Options struct {
 	Actioner actioner.Interface
-	Jobs     loops.Interface[*queue.JobEvent]
+	Jobs     loop.Interface[*queue.JobEvent]
 }
 
 // control is the main outer control loop responsible for handling all control
 // signals, such as inform, execute, deliverable etc. Appropriate events are
 // routed to the jobs loop for processing.
 type control struct {
-	jobs loops.Interface[*queue.JobEvent]
+	jobs loop.Interface[*queue.JobEvent]
 	act  actioner.Interface
 }
 
-func New(opts Options) loops.Interface[*queue.ControlEvent] {
-	return loops.New(&control{
+func New(opts Options) loop.Interface[*queue.ControlEvent] {
+	return loop.New(&control{
 		jobs: opts.Jobs,
 		act:  opts.Actioner,
 	}, 1024)

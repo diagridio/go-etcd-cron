@@ -19,7 +19,7 @@ import (
 	"github.com/diagridio/go-etcd-cron/internal/api/stored"
 	"github.com/diagridio/go-etcd-cron/internal/counter"
 	counterfake "github.com/diagridio/go-etcd-cron/internal/counter/fake"
-	"github.com/diagridio/go-etcd-cron/internal/queue/actioner/fake"
+	"github.com/diagridio/go-etcd-cron/internal/engine/queue/actioner/fake"
 )
 
 func Test_counters(t *testing.T) {

@@ -41,21 +41,21 @@ type Informer struct {
 	client api.Interface
 	part   partitioner.Interface
 
-	eventsCalled atomic.Bool
-	ch           chan *queue.Informed
-	readyCh      chan struct{}
-	running      atomic.Bool
+	ch      chan *queue.Informed
+	readyCh chan struct{}
+	running atomic.Bool
 }
 
 // New creates a new Informer.
-func New(opts Options) *Informer {
+func New(opts Options) (*Informer, chan *queue.Informed) {
+	ch := make(chan *queue.Informed)
 	return &Informer{
 		key:     opts.Key,
 		part:    opts.Partitioner,
 		client:  opts.Client,
-		ch:      make(chan *queue.Informed),
+		ch:      ch,
 		readyCh: make(chan struct{}),
-	}
+	}, ch
 }
 
 // Run runs the Informer.
@@ -166,11 +166,4 @@ func (i *Informer) Ready(ctx context.Context) error {
 	case <-i.readyCh:
 		return nil
 	}
-}
-
-func (i *Informer) Events() (<-chan *queue.Informed, error) {
-	if !i.eventsCalled.CompareAndSwap(false, true) {
-		return nil, errors.New("events already being consumed")
-	}
-	return i.ch, nil
 }

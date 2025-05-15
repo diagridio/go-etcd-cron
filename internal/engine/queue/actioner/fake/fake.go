@@ -18,6 +18,7 @@ type Fake struct {
 	scheduleFn              func(context.Context, string, int64, *stored.Job) (counter.Interface, error)
 	enqueueFn               func(counter.Interface)
 	descheduleFn            func(counter.Interface)
+	removeConsumerFn        func(counter.Interface)
 	triggerFn               func(context.Context, *api.TriggerRequest) *api.TriggerResponse
 	addToControlLoopFn      func(*queue.ControlEvent)
 	deliverablePrefixesFn   func(...string) []string
@@ -32,6 +33,7 @@ func New() *Fake {
 		enqueueFn:               func(counter.Interface) {},
 		descheduleFn:            func(counter.Interface) {},
 		triggerFn:               func(context.Context, *api.TriggerRequest) *api.TriggerResponse { return nil },
+		removeConsumerFn:        func(counter.Interface) {},
 		addToControlLoopFn:      func(*queue.ControlEvent) {},
 		deliverablePrefixesFn:   func(...string) []string { return nil },
 		unDeliverablePrefixesFn: func(...string) {},
@@ -75,6 +77,11 @@ func (f *Fake) WithUnDeliverablePrefixes(fn func(...string)) *Fake {
 	return f
 }
 
+func (f *Fake) WithRemoveConsumer(fn func(counter.Interface)) *Fake {
+	f.removeConsumerFn = fn
+	return f
+}
+
 func (f *Fake) WithStage(fn func(string) bool) *Fake {
 	f.stageFn = fn
 	return f
@@ -115,6 +122,10 @@ func (f *Fake) UnDeliverablePrefixes(prefixes ...string) {
 
 func (f *Fake) Stage(id string) bool {
 	return f.stageFn(id)
+}
+
+func (f *Fake) RemoveConsumer(c counter.Interface) {
+	f.removeConsumerFn(c)
 }
 
 func (f *Fake) Unstage(id string) {

@@ -8,9 +8,9 @@ package fake
 import (
 	"testing"
 
-	"github.com/diagridio/go-etcd-cron/internal/queue/loops"
+	"github.com/diagridio/go-etcd-cron/internal/engine/queue/actioner"
 )
 
 func Test_Fake(t *testing.T) {
-	var _ loops.Interface[int] = New[int]()
+	var _ actioner.Interface = New()
 }

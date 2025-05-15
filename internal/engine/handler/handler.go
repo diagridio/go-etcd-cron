@@ -3,7 +3,7 @@ Copyright (c) 2025 Diagrid Inc.
 Licensed under the MIT License.
 */
 
-package api
+package handler
 
 import (
 	"context"
@@ -21,14 +21,14 @@ import (
 	"github.com/diagridio/go-etcd-cron/internal/api/stored"
 	"github.com/diagridio/go-etcd-cron/internal/api/validator"
 	clientapi "github.com/diagridio/go-etcd-cron/internal/client/api"
-	"github.com/diagridio/go-etcd-cron/internal/informer"
+	"github.com/diagridio/go-etcd-cron/internal/engine/informer"
+	"github.com/diagridio/go-etcd-cron/internal/engine/queue"
 	"github.com/diagridio/go-etcd-cron/internal/key"
-	"github.com/diagridio/go-etcd-cron/internal/queue"
 	"github.com/diagridio/go-etcd-cron/internal/scheduler"
 )
 
 var (
-	ErrClosed = errors.New("api is closed")
+	ErrClosed = errors.New("api handler is closed")
 )
 
 type Options struct {
@@ -81,8 +81,8 @@ type Interface interface {
 	DeliverablePrefixes(ctx context.Context, prefixes ...string) (context.CancelFunc, error)
 }
 
-// api implements the API interface.
-type api struct {
+// handler implements the API interface.
+type handler struct {
 	log          logr.Logger
 	client       clientapi.Interface
 	key          *key.Key
@@ -97,7 +97,7 @@ type api struct {
 }
 
 func New(opts Options) Interface {
-	return &api{
+	return &handler{
 		log:          opts.Log.WithName("api"),
 		client:       opts.Client,
 		key:          opts.Key,
@@ -112,44 +112,44 @@ func New(opts Options) Interface {
 	}
 }
 
-func (a *api) Run(ctx context.Context) error {
-	if !a.running.CompareAndSwap(false, true) {
+func (h *handler) Run(ctx context.Context) error {
+	if !h.running.CompareAndSwap(false, true) {
 		return errors.New("api is already running")
 	}
 
-	defer close(a.closeCh)
+	defer close(h.closeCh)
 
-	if err := a.informer.Ready(ctx); err != nil {
+	if err := h.informer.Ready(ctx); err != nil {
 		return err
 	}
 
-	close(a.readyCh)
+	close(h.readyCh)
 
-	a.log.Info("api is ready")
+	h.log.Info("api is ready")
 
 	<-ctx.Done()
-	a.log.Info("api is shutting down")
+	h.log.Info("api is shutting down")
 
 	return nil
 }
 
 // Add adds a new cron job to the cron instance.
-func (a *api) Add(ctx context.Context, name string, job *cronapi.Job) error {
-	return a.addJob(ctx, name, job, true)
+func (h *handler) Add(ctx context.Context, name string, job *cronapi.Job) error {
+	return h.addJob(ctx, name, job, true)
 }
 
 // AddIfNotExists adds a new cron job to the cron instance. If the Job already
 // exists, an error is returned.
-func (a *api) AddIfNotExists(ctx context.Context, name string, job *cronapi.Job) error {
-	return a.addJob(ctx, name, job, false)
+func (h *handler) AddIfNotExists(ctx context.Context, name string, job *cronapi.Job) error {
+	return h.addJob(ctx, name, job, false)
 }
 
-func (a *api) addJob(ctx context.Context, name string, job *cronapi.Job, upsert bool) error {
-	if err := a.waitReady(ctx); err != nil {
+func (h *handler) addJob(ctx context.Context, name string, job *cronapi.Job, upsert bool) error {
+	if err := h.waitReady(ctx); err != nil {
 		return err
 	}
 
-	if err := a.validator.JobName(name); err != nil {
+	if err := h.validator.JobName(name); err != nil {
 		return err
 	}
 
@@ -157,7 +157,7 @@ func (a *api) addJob(ctx context.Context, name string, job *cronapi.Job, upsert 
 		return errors.New("job cannot be nil")
 	}
 
-	storedJob, err := a.schedBuilder.Parse(job)
+	storedJob, err := h.schedBuilder.Parse(job)
 	if err != nil {
 		return fmt.Errorf("job failed validation: %w", err)
 	}
@@ -168,11 +168,11 @@ func (a *api) addJob(ctx context.Context, name string, job *cronapi.Job, upsert 
 	}
 
 	if upsert {
-		_, err = a.client.Put(ctx, a.key.JobKey(name), string(b))
+		_, err = h.client.Put(ctx, h.key.JobKey(name), string(b))
 		return err
 	}
 
-	put, err := a.client.PutIfNotExists(ctx, a.key.JobKey(name), string(b))
+	put, err := h.client.PutIfNotExists(ctx, h.key.JobKey(name), string(b))
 	if err != nil {
 		return err
 	}
@@ -185,16 +185,16 @@ func (a *api) addJob(ctx context.Context, name string, job *cronapi.Job, upsert 
 }
 
 // Get gets a cron job from the cron instance.
-func (a *api) Get(ctx context.Context, name string) (*cronapi.Job, error) {
-	if err := a.waitReady(ctx); err != nil {
+func (h *handler) Get(ctx context.Context, name string) (*cronapi.Job, error) {
+	if err := h.waitReady(ctx); err != nil {
 		return nil, err
 	}
 
-	if err := a.validator.JobName(name); err != nil {
+	if err := h.validator.JobName(name); err != nil {
 		return nil, err
 	}
 
-	resp, err := a.client.Get(ctx, a.key.JobKey(name))
+	resp, err := h.client.Get(ctx, h.key.JobKey(name))
 	if err != nil {
 		return nil, err
 	}
@@ -213,16 +213,16 @@ func (a *api) Get(ctx context.Context, name string) (*cronapi.Job, error) {
 }
 
 // Delete deletes a cron job from the cron instance.
-func (a *api) Delete(ctx context.Context, name string) error {
-	if err := a.waitReady(ctx); err != nil {
+func (h *handler) Delete(ctx context.Context, name string) error {
+	if err := h.waitReady(ctx); err != nil {
 		return err
 	}
 
-	if err := a.validator.JobName(name); err != nil {
+	if err := h.validator.JobName(name); err != nil {
 		return err
 	}
 
-	err := a.client.DeletePair(ctx, a.key.JobKey(name), a.key.CounterKey(name))
+	err := h.client.DeletePair(ctx, h.key.JobKey(name), h.key.CounterKey(name))
 	if err != nil {
 		return err
 	}
@@ -232,8 +232,8 @@ func (a *api) Delete(ctx context.Context, name string) error {
 
 // DeletePrefixes deletes cron jobs with the given prefixes from the cron
 // instance.
-func (a *api) DeletePrefixes(ctx context.Context, prefixes ...string) error {
-	if err := a.waitReady(ctx); err != nil {
+func (h *handler) DeletePrefixes(ctx context.Context, prefixes ...string) error {
+	if err := h.waitReady(ctx); err != nil {
 		return err
 	}
 
@@ -242,17 +242,17 @@ func (a *api) DeletePrefixes(ctx context.Context, prefixes ...string) error {
 			continue
 		}
 
-		if err := a.validator.JobName(prefix); err != nil {
+		if err := h.validator.JobName(prefix); err != nil {
 			return err
 		}
 	}
 
 	txnPrefixes := make([]string, 0, len(prefixes)*2)
 	for _, prefix := range prefixes {
-		txnPrefixes = append(txnPrefixes, a.key.JobKey(prefix), a.key.CounterKey(prefix))
+		txnPrefixes = append(txnPrefixes, h.key.JobKey(prefix), h.key.CounterKey(prefix))
 	}
 
-	if err := a.client.DeletePrefixes(ctx, txnPrefixes...); err != nil {
+	if err := h.client.DeletePrefixes(ctx, txnPrefixes...); err != nil {
 		return fmt.Errorf("failed to delete prefixes %q: %w", strings.Join(prefixes, ","), err)
 	}
 
@@ -260,13 +260,13 @@ func (a *api) DeletePrefixes(ctx context.Context, prefixes ...string) error {
 }
 
 // List lists all cron jobs with the given job name prefix.
-func (a *api) List(ctx context.Context, prefix string) (*cronapi.ListResponse, error) {
-	if err := a.waitReady(ctx); err != nil {
+func (h *handler) List(ctx context.Context, prefix string) (*cronapi.ListResponse, error) {
+	if err := h.waitReady(ctx); err != nil {
 		return nil, err
 	}
 
-	resp, err := a.client.Get(ctx,
-		a.key.JobKey(prefix),
+	resp, err := h.client.Get(ctx,
+		h.key.JobKey(prefix),
 		clientv3.WithPrefix(),
 		clientv3.WithLimit(0),
 	)
@@ -295,8 +295,8 @@ func (a *api) List(ctx context.Context, prefix string) (*cronapi.ListResponse, e
 // DeliverablePrefixes registers the given Job name prefixes as being
 // deliverable. Calling the returned CancelFunc will de-register those
 // prefixes as being deliverable.
-func (a *api) DeliverablePrefixes(ctx context.Context, prefixes ...string) (context.CancelFunc, error) {
-	if err := a.waitReady(ctx); err != nil {
+func (h *handler) DeliverablePrefixes(ctx context.Context, prefixes ...string) (context.CancelFunc, error) {
+	if err := h.waitReady(ctx); err != nil {
 		return nil, err
 	}
 
@@ -304,14 +304,14 @@ func (a *api) DeliverablePrefixes(ctx context.Context, prefixes ...string) (cont
 		return nil, errors.New("no prefixes provided")
 	}
 
-	return a.queue.DeliverablePrefixes(ctx, prefixes...)
+	return h.queue.DeliverablePrefixes(ctx, prefixes...)
 }
 
-func (a *api) waitReady(ctx context.Context) error {
+func (h *handler) waitReady(ctx context.Context) error {
 	select {
-	case <-a.closeCh:
+	case <-h.closeCh:
 		return ErrClosed
-	case <-a.readyCh:
+	case <-h.readyCh:
 		return nil
 	case <-ctx.Done():
 		return context.Cause(ctx)

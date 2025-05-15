@@ -12,11 +12,11 @@ import (
 	"sync"
 	"sync/atomic"
 
+	"github.com/dapr/kit/events/loop"
 	"github.com/diagridio/go-etcd-cron/api"
 	"github.com/diagridio/go-etcd-cron/internal/api/queue"
 	"github.com/diagridio/go-etcd-cron/internal/counter"
-	"github.com/diagridio/go-etcd-cron/internal/queue/actioner"
-	"github.com/diagridio/go-etcd-cron/internal/queue/loops"
+	"github.com/diagridio/go-etcd-cron/internal/engine/queue/actioner"
 )
 
 type Options struct {
@@ -43,7 +43,7 @@ type counters struct {
 // improving performance.
 var LoopsCache = sync.Pool{
 	New: func() any {
-		return loops.Empty[*queue.JobAction]()
+		return loop.Empty[*queue.JobAction]()
 	},
 }
 
@@ -53,7 +53,7 @@ var countersCache = sync.Pool{
 	},
 }
 
-func New(opts Options) loops.Interface[*queue.JobAction] {
+func New(opts Options) loop.Interface[*queue.JobAction] {
 	counters := countersCache.Get().(*counters)
 	counters.name = opts.Name
 	counters.idx = opts.IDx
@@ -61,7 +61,7 @@ func New(opts Options) loops.Interface[*queue.JobAction] {
 	counters.cancel = nil
 	counters.counter = nil
 
-	loop := LoopsCache.Get().(loops.Interface[*queue.JobAction])
+	loop := LoopsCache.Get().(loop.Interface[*queue.JobAction])
 	return loop.Reset(counters, 5)
 }
 
@@ -245,6 +245,7 @@ func (c *counters) handleClose() {
 }
 
 func (c *counters) close() {
+	c.act.RemoveConsumer(c.counter)
 	c.counter = nil
 
 	// Setting idx to 0 jndicates that this inner loop job handler is ready for

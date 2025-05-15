@@ -10,12 +10,14 @@ import (
 	"time"
 
 	"github.com/diagridio/go-etcd-cron/api"
+	"github.com/diagridio/go-etcd-cron/internal/api/stored"
 )
 
 type Fake struct {
 	scheduledTimeFn  func() time.Time
 	key              string
 	jobName          string
+	job              *stored.Job
 	triggerRequestFn func() *api.TriggerRequest
 	triggerSuccessFn func(context.Context) (bool, error)
 	triggerFailedFn  func(context.Context) (bool, error)
@@ -53,6 +55,11 @@ func (f *Fake) WithJobName(jobName string) *Fake {
 	return f
 }
 
+func (f *Fake) WithJob(job *stored.Job) *Fake {
+	f.job = job
+	return f
+}
+
 func (f *Fake) WithTriggerRequest(fn func() *api.TriggerRequest) *Fake {
 	f.triggerRequestFn = fn
 	return f
@@ -78,6 +85,10 @@ func (f *Fake) Key() string {
 
 func (f *Fake) JobName() string {
 	return f.jobName
+}
+
+func (f *Fake) Job() *stored.Job {
+	return f.job
 }
 
 func (f *Fake) TriggerRequest() *api.TriggerRequest {

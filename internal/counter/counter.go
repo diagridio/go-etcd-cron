@@ -49,6 +49,7 @@ type Interface interface {
 	ScheduledTime() time.Time
 	Key() string
 	JobName() string
+	Job() *stored.Job
 	TriggerRequest() *api.TriggerRequest
 	TriggerSuccess(ctx context.Context) (bool, error)
 	TriggerFailed(ctx context.Context) (bool, error)
@@ -146,6 +147,11 @@ func (c *counter) JobName() string {
 // TriggerRequest is the trigger request representation for the job.
 func (c *counter) TriggerRequest() *api.TriggerRequest {
 	return c.triggerRequest
+}
+
+// Job returns the job representation for the job.
+func (c *counter) Job() *stored.Job {
+	return c.job
 }
 
 // TriggerSuccess updates the counter state given what the next trigger time

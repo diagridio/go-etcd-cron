@@ -18,8 +18,8 @@ import (
 
 	"github.com/diagridio/go-etcd-cron/api"
 	apierrors "github.com/diagridio/go-etcd-cron/api/errors"
-	internalapi "github.com/diagridio/go-etcd-cron/internal/api"
 	"github.com/diagridio/go-etcd-cron/internal/engine"
+	"github.com/diagridio/go-etcd-cron/internal/engine/handler"
 )
 
 var errClosed = errors.New("cron is closed")
@@ -49,13 +49,13 @@ func New(opts Options) *Retry {
 }
 
 func (r *Retry) Add(ctx context.Context, name string, job *api.Job) error {
-	return r.handle(ctx, func(a internalapi.Interface) error {
+	return r.handle(ctx, func(a handler.Interface) error {
 		return a.Add(ctx, name, job)
 	})
 }
 
 func (r *Retry) AddIfNotExists(ctx context.Context, name string, job *api.Job) error {
-	return r.handle(ctx, func(a internalapi.Interface) error {
+	return r.handle(ctx, func(a handler.Interface) error {
 		return a.AddIfNotExists(ctx, name, job)
 	})
 }
@@ -63,7 +63,7 @@ func (r *Retry) AddIfNotExists(ctx context.Context, name string, job *api.Job) e
 func (r *Retry) Get(ctx context.Context, name string) (*api.Job, error) {
 	var job *api.Job
 	var err error
-	err = r.handle(ctx, func(a internalapi.Interface) error {
+	err = r.handle(ctx, func(a handler.Interface) error {
 		job, err = a.Get(ctx, name)
 		return err
 	})
@@ -74,13 +74,13 @@ func (r *Retry) Get(ctx context.Context, name string) (*api.Job, error) {
 }
 
 func (r *Retry) Delete(ctx context.Context, name string) error {
-	return r.handle(ctx, func(a internalapi.Interface) error {
+	return r.handle(ctx, func(a handler.Interface) error {
 		return a.Delete(ctx, name)
 	})
 }
 
 func (r *Retry) DeletePrefixes(ctx context.Context, prefixes ...string) error {
-	return r.handle(ctx, func(a internalapi.Interface) error {
+	return r.handle(ctx, func(a handler.Interface) error {
 		return a.DeletePrefixes(ctx, prefixes...)
 	})
 }
@@ -88,7 +88,7 @@ func (r *Retry) DeletePrefixes(ctx context.Context, prefixes ...string) error {
 func (r *Retry) List(ctx context.Context, prefix string) (*api.ListResponse, error) {
 	var resp *api.ListResponse
 	var err error
-	err = r.handle(ctx, func(a internalapi.Interface) error {
+	err = r.handle(ctx, func(a handler.Interface) error {
 		resp, err = a.List(ctx, prefix)
 		return err
 	})
@@ -101,7 +101,7 @@ func (r *Retry) List(ctx context.Context, prefix string) (*api.ListResponse, err
 func (r *Retry) DeliverablePrefixes(ctx context.Context, prefixes ...string) (context.CancelFunc, error) {
 	var cancel context.CancelFunc
 	var err error
-	err = r.handle(ctx, func(a internalapi.Interface) error {
+	err = r.handle(ctx, func(a handler.Interface) error {
 		cancel, err = a.DeliverablePrefixes(ctx, prefixes...)
 		return err
 	})
@@ -111,7 +111,7 @@ func (r *Retry) DeliverablePrefixes(ctx context.Context, prefixes ...string) (co
 	return cancel, nil
 }
 
-func (r *Retry) handle(ctx context.Context, fn func(internalapi.Interface) error) error {
+func (r *Retry) handle(ctx context.Context, fn func(handler.Interface) error) error {
 	for {
 		a, err := r.waitAPIReady(ctx)
 		if err != nil {
@@ -142,7 +142,7 @@ func (r *Retry) handleShouldRetry(err error) bool {
 	case err == nil, apierrors.IsJobAlreadyExists(err):
 		return false
 	case
-		errors.Is(err, internalapi.ErrClosed),
+		errors.Is(err, handler.ErrClosed),
 		errors.Is(err, etcdserver.ErrTimeout),
 		errors.Is(err, etcdserver.ErrTimeoutDueToLeaderFail),
 		errors.Is(err, etcdserver.ErrTimeoutDueToConnectionLost),
@@ -180,7 +180,7 @@ func (r *Retry) Close() {
 	close(r.closeCh)
 }
 
-func (r *Retry) waitAPIReady(ctx context.Context) (internalapi.Interface, error) {
+func (r *Retry) waitAPIReady(ctx context.Context) (handler.Interface, error) {
 	r.lock.RLock()
 	readyCh := r.readyCh
 	r.lock.RUnlock()

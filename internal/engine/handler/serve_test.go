@@ -3,7 +3,7 @@ Copyright (c) 2024 Diagrid Inc.
 Licensed under the MIT License.
 */
 
-package api_test
+package handler_test
 
 import (
 	"strconv"

@@ -13,8 +13,8 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/diagridio/go-etcd-cron/internal/api/queue"
-	actionerfake "github.com/diagridio/go-etcd-cron/internal/queue/actioner/fake"
-	"github.com/diagridio/go-etcd-cron/internal/queue/loops/fake"
+	actionerfake "github.com/diagridio/go-etcd-cron/internal/engine/queue/actioner/fake"
+	"github.com/dapr/kit/events/loop/fake"
 )
 
 func Test_router(t *testing.T) {

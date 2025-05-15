@@ -14,7 +14,7 @@ import (
 	"go.etcd.io/etcd/api/v3/mvccpb"
 
 	"github.com/diagridio/go-etcd-cron/api"
-	internalapi "github.com/diagridio/go-etcd-cron/internal/api"
+	"github.com/diagridio/go-etcd-cron/internal/engine/handler"
 	"github.com/diagridio/go-etcd-cron/internal/key"
 	"github.com/diagridio/go-etcd-cron/internal/leadership/partitioner"
 	"github.com/diagridio/go-etcd-cron/tests/framework/etcd"
@@ -166,5 +166,5 @@ func Test_API(t *testing.T) {
 
 	api := engine.API()
 	require.NotNil(t, api)
-	assert.Implements(t, (*internalapi.Interface)(nil), api)
+	assert.Implements(t, (*handler.Interface)(nil), api)
 }

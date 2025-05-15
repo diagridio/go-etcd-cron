@@ -19,7 +19,8 @@ import (
 	"github.com/diagridio/go-etcd-cron/tests/framework/cron/integration"
 )
 
-// Test cannot be done in parallel to ensure runtime go routines are correct.
+// Test cannot be done in parallel to ensure runtime go routines are correct
+// because we are running in the same process as all the other tests.
 func Test_goleak(t *testing.T) {
 	cron := integration.NewBase(t, 1)
 
