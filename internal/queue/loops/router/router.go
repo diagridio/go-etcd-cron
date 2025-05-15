@@ -75,6 +75,12 @@ func (r *router) handleEvent(ctx context.Context, event *queue.JobEvent) error {
 	// If the counter doesn't exist yet, create.
 	counter, ok := r.counters[jobName]
 	if !ok {
+		// If we are being informed of a counter which has already been removed
+		// from the store, ignore.
+		if i := event.Action.GetInformed(); i != nil && !i.IsPut {
+			return nil
+		}
+
 		counter = r.newCounter(ctx, jobName)
 	}
 
