@@ -46,7 +46,7 @@ func Test_Run(t *testing.T) {
 		t.Parallel()
 
 		client := etcd.Embedded(t)
-		i := New(Options{
+		i, ch := New(Options{
 			Partitioner: part,
 			Client:      client,
 			Key:         key,
@@ -68,8 +68,6 @@ func Test_Run(t *testing.T) {
 		}()
 
 		require.NoError(t, i.Ready(ctx))
-		ch, err := i.Events()
-		require.NoError(t, err)
 
 		select {
 		case ev := <-ch:
@@ -102,7 +100,7 @@ func Test_Run(t *testing.T) {
 		require.NoError(t, proto.Unmarshal(jobUID2, &jobs[0]))
 		require.NoError(t, proto.Unmarshal(jobUID4, &jobs[1]))
 
-		i := New(Options{
+		i, ch := New(Options{
 			Partitioner: part,
 			Client:      client,
 			Key:         key,
@@ -122,9 +120,6 @@ func Test_Run(t *testing.T) {
 		go func() {
 			errCh <- i.Run(ctx)
 		}()
-
-		ch, err := i.Events()
-		require.NoError(t, err)
 
 		for i := range 2 {
 			select {
@@ -183,7 +178,7 @@ func Test_Run(t *testing.T) {
 		require.NoError(t, proto.Unmarshal(jobUID4, &jobs[1]))
 		require.NoError(t, proto.Unmarshal(jobUID6, &jobs[2]))
 
-		i := New(Options{
+		i, ch := New(Options{
 			Partitioner: part,
 			Client:      client,
 			Key:         key,
@@ -202,9 +197,6 @@ func Test_Run(t *testing.T) {
 		go func() {
 			errCh <- i.Run(ctx)
 		}()
-
-		ch, err := i.Events()
-		require.NoError(t, err)
 
 		expEvents := []*queue.Informed{
 			{IsPut: false, Job: nil, Name: "1"},
@@ -358,7 +350,7 @@ func Test_handleEvent(t *testing.T) {
 			})
 			require.NoError(t, err)
 
-			i := New(Options{
+			i, _ := New(Options{
 				Partitioner: part,
 				Key:         key,
 			})
@@ -377,7 +369,7 @@ func Test_Ready(t *testing.T) {
 
 		ctx, cancel := context.WithCancel(t.Context())
 		cancel()
-		i := New(Options{})
+		i, _ := New(Options{})
 		assert.Equal(t, context.Canceled, i.Ready(ctx))
 	})
 
@@ -386,31 +378,8 @@ func Test_Ready(t *testing.T) {
 
 		ctx, cancel := context.WithCancel(t.Context())
 		t.Cleanup(cancel)
-		i := New(Options{})
+		i, _ := New(Options{})
 		close(i.readyCh)
 		assert.NoError(t, i.Ready(ctx))
-	})
-}
-
-func Test_Events(t *testing.T) {
-	t.Parallel()
-
-	t.Run("calling Events() multiple times should error", func(t *testing.T) {
-		t.Parallel()
-
-		i := New(Options{})
-		var expCh <-chan *queue.Informed = i.ch
-
-		gotCh, err := i.Events()
-		require.NoError(t, err)
-		assert.Equal(t, expCh, gotCh)
-
-		gotCh, err = i.Events()
-		require.Error(t, err)
-		assert.Nil(t, gotCh)
-
-		gotCh, err = i.Events()
-		require.Error(t, err)
-		assert.Nil(t, gotCh)
 	})
 }

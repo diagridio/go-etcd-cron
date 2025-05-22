@@ -16,8 +16,8 @@ import (
 	"github.com/stretchr/testify/require"
 
 	apierrors "github.com/diagridio/go-etcd-cron/api/errors"
-	"github.com/diagridio/go-etcd-cron/internal/api"
 	"github.com/diagridio/go-etcd-cron/internal/engine/fake"
+	"github.com/diagridio/go-etcd-cron/internal/engine/handler"
 )
 
 func Test_handle(t *testing.T) {
@@ -47,7 +47,7 @@ func Test_handle(t *testing.T) {
 		r.Ready(fake.New())
 
 		var called atomic.Bool
-		require.NoError(t, r.handle(t.Context(), func(a api.Interface) error {
+		require.NoError(t, r.handle(t.Context(), func(a handler.Interface) error {
 			called.Store(true)
 			return nil
 		}))
@@ -62,7 +62,7 @@ func Test_handle(t *testing.T) {
 		r.Ready(fake.New())
 
 		var called atomic.Bool
-		require.Error(t, r.handle(t.Context(), func(a api.Interface) error {
+		require.Error(t, r.handle(t.Context(), func(a handler.Interface) error {
 			called.Store(true)
 			return errors.New("this is an error")
 		}))
@@ -77,9 +77,9 @@ func Test_handle(t *testing.T) {
 		r.Ready(fake.New())
 
 		var called atomic.Int64
-		require.NoError(t, r.handle(t.Context(), func(a api.Interface) error {
+		require.NoError(t, r.handle(t.Context(), func(a handler.Interface) error {
 			if called.Add(1) < 4 {
-				return api.ErrClosed
+				return handler.ErrClosed
 			}
 			return nil
 		}))
@@ -95,11 +95,11 @@ func Test_handle(t *testing.T) {
 
 		var called atomic.Int64
 		ctx, cancel := context.WithCancel(t.Context())
-		err := r.handle(ctx, func(a api.Interface) error {
+		err := r.handle(ctx, func(a handler.Interface) error {
 			if called.Add(1) > 3 {
 				cancel()
 			}
-			return api.ErrClosed
+			return handler.ErrClosed
 		})
 		require.ErrorIs(t, err, context.Canceled)
 	})
@@ -111,11 +111,11 @@ func Test_handle(t *testing.T) {
 		r.Ready(fake.New())
 
 		var called atomic.Int64
-		err := r.handle(t.Context(), func(a api.Interface) error {
+		err := r.handle(t.Context(), func(a handler.Interface) error {
 			if called.Add(1) > 3 {
 				r.Close()
 			}
-			return api.ErrClosed
+			return handler.ErrClosed
 		})
 		require.ErrorIs(t, err, errClosed)
 	})
@@ -127,7 +127,7 @@ func Test_handle(t *testing.T) {
 		r.Ready(fake.New())
 
 		var called atomic.Int64
-		err := r.handle(context.Background(), func(a api.Interface) error {
+		err := r.handle(context.Background(), func(a handler.Interface) error {
 			called.Add(1)
 			return apierrors.NewJobAlreadyExists("foo")
 		})

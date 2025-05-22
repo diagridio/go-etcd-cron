@@ -13,10 +13,10 @@ import (
 
 	"github.com/go-logr/logr"
 
+	"github.com/dapr/kit/events/loop"
 	"github.com/diagridio/go-etcd-cron/internal/api/queue"
-	"github.com/diagridio/go-etcd-cron/internal/queue/actioner"
-	"github.com/diagridio/go-etcd-cron/internal/queue/loops"
-	"github.com/diagridio/go-etcd-cron/internal/queue/loops/counters"
+	"github.com/diagridio/go-etcd-cron/internal/engine/queue/actioner"
+	"github.com/diagridio/go-etcd-cron/internal/engine/queue/loops/counters"
 )
 
 type Options struct {
@@ -43,11 +43,11 @@ type router struct {
 // the current live counter loop.
 type counter struct {
 	idx  *atomic.Int64
-	loop loops.Interface[*queue.JobAction]
+	loop loop.Interface[*queue.JobAction]
 }
 
-func New(opts Options) loops.Interface[*queue.JobEvent] {
-	return loops.New(&router{
+func New(opts Options) loop.Interface[*queue.JobEvent] {
+	return loop.New(&router{
 		log:      opts.Log.WithName("router"),
 		cancel:   opts.Cancel,
 		act:      opts.Actioner,

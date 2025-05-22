@@ -1,0 +1,37 @@
+/*
+Copyright (c) 2025 Diagrid Inc.
+Licensed under the MIT License.
+*/
+
+syntax = "proto3";
+
+package api;
+
+import "google/protobuf/any.proto";
+
+option go_package = "github.com/diagridio/go-etcd-cron/api";
+
+// InformerEvent is sent by cron to the consumer to signal CRUD events of jobs.
+message InformerEvent {
+  oneof event {
+    InformerEventJob put = 1;
+    InformerEventJob delete = 2;
+    InformerEventDropAll drop_all = 3;
+  }
+}
+
+// InformerEventJob is some event associated with a job.
+message InformerEventJob {
+  // name is the name of the job that was put.
+  string name = 1;
+
+  // metadata is the arbitrary metadata associated with the job.
+  google.protobuf.Any metadata = 2;
+
+  // payload is the job payload.
+  google.protobuf.Any payload = 3;
+}
+
+// InformerEventDropAll is sent when leadership election is occurring, or the
+// Scheduler is shutting down, and therefore all jobs should be cleared.
+message InformerEventDropAll {}
