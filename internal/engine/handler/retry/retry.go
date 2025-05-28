@@ -14,7 +14,7 @@ import (
 
 	"github.com/go-logr/logr"
 	clientv3 "go.etcd.io/etcd/client/v3"
-	"go.etcd.io/etcd/server/v3/etcdserver"
+	etcderrors "go.etcd.io/etcd/server/v3/etcdserver/errors"
 
 	"github.com/diagridio/go-etcd-cron/api"
 	apierrors "github.com/diagridio/go-etcd-cron/api/errors"
@@ -143,14 +143,14 @@ func (r *Retry) handleShouldRetry(err error) bool {
 		return false
 	case
 		errors.Is(err, handler.ErrClosed),
-		errors.Is(err, etcdserver.ErrTimeout),
-		errors.Is(err, etcdserver.ErrTimeoutDueToLeaderFail),
-		errors.Is(err, etcdserver.ErrTimeoutDueToConnectionLost),
-		errors.Is(err, etcdserver.ErrTimeoutLeaderTransfer),
-		errors.Is(err, etcdserver.ErrTimeoutWaitAppliedIndex),
-		errors.Is(err, etcdserver.ErrLeaderChanged),
-		errors.Is(err, etcdserver.ErrNotEnoughStartedMembers),
-		errors.Is(err, etcdserver.ErrTooManyRequests),
+		errors.Is(err, etcderrors.ErrTimeout),
+		errors.Is(err, etcderrors.ErrTimeoutDueToLeaderFail),
+		errors.Is(err, etcderrors.ErrTimeoutDueToConnectionLost),
+		errors.Is(err, etcderrors.ErrTimeoutLeaderTransfer),
+		errors.Is(err, etcderrors.ErrTimeoutWaitAppliedIndex),
+		errors.Is(err, etcderrors.ErrLeaderChanged),
+		errors.Is(err, etcderrors.ErrNotEnoughStartedMembers),
+		errors.Is(err, etcderrors.ErrTooManyRequests),
 		clientv3.IsConnCanceled(err):
 		return true
 	default:
