@@ -160,9 +160,6 @@ func genericP[T any, O any, R any](ctx context.Context, log logr.Logger, c *clie
 
 func generic(ctx context.Context, log logr.Logger, c *client, op func(context.Context) error) error {
 	for {
-		ctx, cancel := context.WithTimeout(ctx, 20*time.Second)
-		defer cancel()
-
 		err := op(ctx)
 		if err == nil {
 			return nil
