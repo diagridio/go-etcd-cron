@@ -110,9 +110,7 @@ func (r *router) newCounter(ctx context.Context, jobName string) *counter {
 	go func() {
 		defer r.wg.Done()
 		err := loop.Run(ctx)
-		// TODO: @joshvanl
-		//if err != nil && ctx.Err() == nil {
-		if err != nil {
+		if err != nil && ctx.Err() == nil {
 			r.log.Error(err, "failed to run inner loop", "job", jobName)
 			r.cancel(fmt.Errorf("router: inner loop for job %s failed: %w", jobName, err))
 		}
@@ -158,12 +156,9 @@ func (r *router) handleClose() {
 		Action: new(queue.JobAction_Close),
 	}
 
-	fmt.Printf(">>ROUTING HANDLING CLOS FOR: %d counters\n", len(r.counters))
-	var i atomic.Int64
 	for _, c := range r.counters {
 		go func(c *counter) {
 			c.loop.Close(action)
-			fmt.Printf(">>CLOSED COUNTER: %d\n", i.Add(1))
 			r.wg.Done()
 		}(c)
 	}
