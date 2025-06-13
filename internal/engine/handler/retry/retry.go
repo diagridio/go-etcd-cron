@@ -13,11 +13,9 @@ import (
 	"time"
 
 	"github.com/go-logr/logr"
-	clientv3 "go.etcd.io/etcd/client/v3"
-	etcderrors "go.etcd.io/etcd/server/v3/etcdserver/errors"
 
 	"github.com/diagridio/go-etcd-cron/api"
-	apierrors "github.com/diagridio/go-etcd-cron/api/errors"
+	clienterrors "github.com/diagridio/go-etcd-cron/internal/client/errors"
 	"github.com/diagridio/go-etcd-cron/internal/engine"
 	"github.com/diagridio/go-etcd-cron/internal/engine/handler"
 )
@@ -119,7 +117,8 @@ func (r *Retry) handle(ctx context.Context, fn func(handler.Interface) error) er
 		}
 
 		err = fn(a)
-		if !r.handleShouldRetry(err) {
+		if !clienterrors.ShouldRetry(err) &&
+			!errors.Is(err, handler.ErrClosed) {
 			return err
 		}
 
@@ -132,29 +131,6 @@ func (r *Retry) handle(ctx context.Context, fn func(handler.Interface) error) er
 		case <-ctx.Done():
 			return ctx.Err()
 		}
-	}
-}
-
-// handleShouldRetry returns true if the error returned from the handle
-// function should be retried.
-func (r *Retry) handleShouldRetry(err error) bool {
-	switch {
-	case err == nil, apierrors.IsJobAlreadyExists(err):
-		return false
-	case
-		errors.Is(err, handler.ErrClosed),
-		errors.Is(err, etcderrors.ErrTimeout),
-		errors.Is(err, etcderrors.ErrTimeoutDueToLeaderFail),
-		errors.Is(err, etcderrors.ErrTimeoutDueToConnectionLost),
-		errors.Is(err, etcderrors.ErrTimeoutLeaderTransfer),
-		errors.Is(err, etcderrors.ErrTimeoutWaitAppliedIndex),
-		errors.Is(err, etcderrors.ErrLeaderChanged),
-		errors.Is(err, etcderrors.ErrNotEnoughStartedMembers),
-		errors.Is(err, etcderrors.ErrTooManyRequests),
-		clientv3.IsConnCanceled(err):
-		return true
-	default:
-		return false
 	}
 }
 
