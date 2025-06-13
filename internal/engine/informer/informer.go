@@ -114,6 +114,7 @@ func (i *Informer) Run(ctx context.Context) error {
 				select {
 				case i.ch <- event:
 				case <-ctx.Done():
+					return ctx.Err()
 				}
 			}
 		}
