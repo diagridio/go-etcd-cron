@@ -156,9 +156,12 @@ func (r *router) handleClose() {
 		Action: new(queue.JobAction_Close),
 	}
 
+	fmt.Printf(">>ROUTING HANDLING CLOS FOR: %d counters\n", len(r.counters))
+	var i atomic.Int64
 	for _, c := range r.counters {
 		go func(c *counter) {
 			c.loop.Close(action)
+			fmt.Printf(">>CLOSED COUNTER: %d\n", i.Add(1))
 			r.wg.Done()
 		}(c)
 	}
