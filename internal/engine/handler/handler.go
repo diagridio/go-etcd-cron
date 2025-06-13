@@ -78,7 +78,7 @@ type Interface interface {
 	// Prefixes may be called together and will be pooled together, meaning that
 	// the prefix is still active if there is at least one DeliverablePrefixes
 	// call that has not been unregistered.
-	DeliverablePrefixes(ctx context.Context, prefixes ...string) (context.CancelFunc, error)
+	DeliverablePrefixes(ctx context.Context, prefixes ...string) (context.CancelCauseFunc, error)
 }
 
 // handler implements the API interface.
@@ -295,7 +295,7 @@ func (h *handler) List(ctx context.Context, prefix string) (*cronapi.ListRespons
 // DeliverablePrefixes registers the given Job name prefixes as being
 // deliverable. Calling the returned CancelFunc will de-register those
 // prefixes as being deliverable.
-func (h *handler) DeliverablePrefixes(ctx context.Context, prefixes ...string) (context.CancelFunc, error) {
+func (h *handler) DeliverablePrefixes(ctx context.Context, prefixes ...string) (context.CancelCauseFunc, error) {
 	if err := h.waitReady(ctx); err != nil {
 		return nil, err
 	}

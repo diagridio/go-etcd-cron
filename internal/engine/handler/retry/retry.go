@@ -98,8 +98,8 @@ func (r *Retry) List(ctx context.Context, prefix string) (*api.ListResponse, err
 	return resp, nil
 }
 
-func (r *Retry) DeliverablePrefixes(ctx context.Context, prefixes ...string) (context.CancelFunc, error) {
-	var cancel context.CancelFunc
+func (r *Retry) DeliverablePrefixes(ctx context.Context, prefixes ...string) (context.CancelCauseFunc, error) {
+	var cancel context.CancelCauseFunc
 	var err error
 	err = r.handle(ctx, func(a handler.Interface) error {
 		cancel, err = a.DeliverablePrefixes(ctx, prefixes...)

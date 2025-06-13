@@ -7,6 +7,7 @@ package queue
 
 import (
 	"context"
+	"log"
 
 	"github.com/dapr/kit/concurrency"
 	eventsqueue "github.com/dapr/kit/events/queue"
@@ -101,7 +102,7 @@ func (q *Queue) Run(ctx context.Context) error {
 		Consumer:     q.consumer,
 	})
 
-	ictx, cancel := context.WithCancel(context.Background())
+	ictx, cancel := context.WithCancelCause(context.Background())
 	routerLoop := router.New(router.Options{
 		Actioner: act,
 		Log:      q.log,
@@ -143,7 +144,7 @@ func (q *Queue) Inform(ctx context.Context, event *queue.Informed) {
 	})
 }
 
-func (q *Queue) DeliverablePrefixes(ctx context.Context, prefixes ...string) (context.CancelFunc, error) {
+func (q *Queue) DeliverablePrefixes(ctx context.Context, prefixes ...string) (context.CancelCauseFunc, error) {
 	select {
 	case <-q.readyCh:
 	case <-ctx.Done():
@@ -158,7 +159,8 @@ func (q *Queue) DeliverablePrefixes(ctx context.Context, prefixes ...string) (co
 		},
 	})
 
-	return func() {
+	return func(cause error) {
+		log.Printf("Marking prefixes as undeliverable for one caller: %v", cause)
 		q.controlLoop.Enqueue(&queue.ControlEvent{
 			Action: &queue.ControlEvent_UndeliverablePrefixes{
 				UndeliverablePrefixes: &queue.UndeliverablePrefixes{
