@@ -76,6 +76,7 @@ func New(ctx context.Context, opts Options) (Interface, bool, error) {
 	// Get the existing counter, if it exists.
 	res, err := opts.Client.Get(ctx, counterKey)
 	if err != nil {
+		panic(err)
 		return nil, false, err
 	}
 

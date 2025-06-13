@@ -111,8 +111,8 @@ func (r *router) newCounter(ctx context.Context, jobName string) *counter {
 		defer r.wg.Done()
 		err := loop.Run(ctx)
 		if err != nil && ctx.Err() == nil {
-			r.cancel(fmt.Errorf("router: inner loop for job %s failed: %w", jobName, err))
 			r.log.Error(err, "failed to run inner loop", "job", jobName)
+			r.cancel(fmt.Errorf("router: inner loop for job %s failed: %w", jobName, err))
 		}
 	}()
 

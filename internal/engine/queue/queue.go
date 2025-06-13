@@ -129,7 +129,8 @@ func (q *Queue) Run(ctx context.Context) error {
 			})
 
 			return nil
-		}).Run(ictx)
+		},
+	).Run(ictx)
 }
 
 func (q *Queue) Inform(ctx context.Context, event *queue.Informed) {
