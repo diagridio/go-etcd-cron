@@ -108,20 +108,20 @@ schema = 3
     version = "v1.4.0"
     hash = "sha256-nR/YGQjwz6ue99IFbgw/01Pl8PhoOjpKiwVy5sJxlps="
   [mod."go.etcd.io/etcd/api/v3"]
-    version = "v3.6.0"
-    hash = "sha256-J7erSmprbKJx+WBMnB66IegNulqD1m0wDvvyfY5gfM4="
+    version = "v3.6.1"
+    hash = "sha256-PRdOVyF9UtBigXoZI3JXBqwVnp3sU4s/ML09j+m322E="
   [mod."go.etcd.io/etcd/client/pkg/v3"]
-    version = "v3.6.0"
-    hash = "sha256-a46RYBij+Lgb+EA2F3Pq//IJXUv9J8POn80OBizFwHc="
+    version = "v3.6.1"
+    hash = "sha256-kL2QgVP/iUZ54mnfO9CoYvI9PZJ0R4YSKzcnP5a+4CU="
   [mod."go.etcd.io/etcd/client/v3"]
-    version = "v3.6.0"
-    hash = "sha256-uwsfoYqYC5ug+aXdySiLJgI8J0AdrLBo80SAqHHL/Rk="
+    version = "v3.6.1"
+    hash = "sha256-YvawHefnUc+yUlorx8d7qOFh0c2JieysmR0k5PmzJWs="
   [mod."go.etcd.io/etcd/pkg/v3"]
-    version = "v3.6.0"
-    hash = "sha256-Xo38mPwdKa0H3ipVHTD92BjCFaMzX6otB/xwcG213Sc="
+    version = "v3.6.1"
+    hash = "sha256-ZiUEAGo8XUTW3MMwPy26CLdN17FJIg3ru6wHqV0gCk8="
   [mod."go.etcd.io/etcd/server/v3"]
-    version = "v3.6.0"
-    hash = "sha256-dPo5iJo/KQz86d677/YJ2ohWH1BNDIQv+S/e94WA9Ko="
+    version = "v3.6.1"
+    hash = "sha256-y4JMmUVFDrwA1fUp25TGKa50G0rA/7SRTOQgCm2HjYE="
   [mod."go.etcd.io/raft/v3"]
     version = "v3.6.0"
     hash = "sha256-KDx1qt0zCRqwQ+gwSHYvKWfRQRuiKDvXFDsgiV3YSe8="
