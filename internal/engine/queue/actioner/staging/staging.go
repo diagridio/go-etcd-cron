@@ -38,8 +38,8 @@ func New() *Staging {
 }
 
 // DeliverablePrefixes adds the job name prefixes that can currently be
-// delivered by the consumer. When the returned `CancelFunc` is called, the
-// prefixes registered are released indicating that these prefixes can no
+// delivered by the consumer. When the returned `CancelCauseFunc` is called,
+// the prefixes registered are released indicating that these prefixes can no
 // longer be delivered. Multiple of the same prefix can be added and are
 // tracked as a pool, meaning the prefix is still active if at least one
 // instance is still registered.

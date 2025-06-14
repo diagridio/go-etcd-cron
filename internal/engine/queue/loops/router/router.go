@@ -8,6 +8,7 @@ package router
 import (
 	"context"
 	"errors"
+	"fmt"
 	"sync"
 	"sync/atomic"
 
@@ -22,7 +23,7 @@ import (
 type Options struct {
 	Actioner actioner.Interface
 	Log      logr.Logger
-	Cancel   context.CancelFunc
+	Cancel   context.CancelCauseFunc
 }
 
 // router is a loop to handle Job events. It routes the event to the correct
@@ -31,7 +32,7 @@ type Options struct {
 // TODO: @joshvanl: add sync.Pool for counters to reduce allocations.
 type router struct {
 	log    logr.Logger
-	cancel context.CancelFunc
+	cancel context.CancelCauseFunc
 	act    actioner.Interface
 
 	counters map[string]*counter
@@ -109,9 +110,9 @@ func (r *router) newCounter(ctx context.Context, jobName string) *counter {
 	go func() {
 		defer r.wg.Done()
 		err := loop.Run(ctx)
-		if err != nil && !errors.Is(err, context.Canceled) {
-			r.cancel()
+		if err != nil && ctx.Err() == nil {
 			r.log.Error(err, "failed to run inner loop", "job", jobName)
+			r.cancel(fmt.Errorf("router: inner loop for job %s failed: %w", jobName, err))
 		}
 	}()
 

@@ -213,7 +213,7 @@ func (c *cron) List(ctx context.Context, prefix string) (*api.ListResponse, erro
 }
 
 // DeliverablePrefixes forwards the call to the embedded API.
-func (c *cron) DeliverablePrefixes(ctx context.Context, prefixes ...string) (context.CancelFunc, error) {
+func (c *cron) DeliverablePrefixes(ctx context.Context, prefixes ...string) (context.CancelCauseFunc, error) {
 	return c.api.DeliverablePrefixes(ctx, prefixes...)
 }
 

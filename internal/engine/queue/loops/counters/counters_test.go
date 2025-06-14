@@ -60,7 +60,7 @@ func Test_counters(t *testing.T) {
 			act:     act,
 			name:    "test-job",
 			idx:     &idx,
-			cancel:  func() { called++ },
+			cancel:  func(error) { called++ },
 			counter: cnter,
 		}
 
@@ -96,7 +96,7 @@ func Test_counters(t *testing.T) {
 			act:    act,
 			name:   "test-job",
 			idx:    &idx,
-			cancel: func() { called++ },
+			cancel: func(error) { called++ },
 		}
 
 		require.NoError(t, c.Handle(t.Context(), &queue.JobAction{
@@ -129,7 +129,7 @@ func Test_counters(t *testing.T) {
 			act:    act,
 			name:   "test-job",
 			idx:    &idx,
-			cancel: func() { called++ },
+			cancel: func(error) { called++ },
 		}
 
 		require.Error(t, c.Handle(t.Context(), &queue.JobAction{
@@ -266,7 +266,7 @@ func Test_counters(t *testing.T) {
 		assert.Equal(t, int64(1234), c.idx.Load())
 		assert.NotNil(t, c.counter)
 
-		c.cancel()
+		c.cancel(assert.AnError)
 
 		assert.EventuallyWithT(t, func(c *assert.CollectT) {
 			assert.Equal(c, uint64(2), called.Load())
@@ -314,7 +314,7 @@ func Test_counters(t *testing.T) {
 		var called int
 		c := &counters{
 			idx: new(atomic.Int64),
-			cancel: func() {
+			cancel: func(error) {
 				called++
 			},
 		}

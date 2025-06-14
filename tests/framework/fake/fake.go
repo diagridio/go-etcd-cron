@@ -21,7 +21,7 @@ type Fake struct {
 	listFn      func(ctx context.Context, prefix string) (*api.ListResponse, error)
 	isElectedFn func() bool
 
-	deliverablePrefixesFn func(ctx context.Context, prefixes ...string) (context.CancelFunc, error)
+	deliverablePrefixesFn func(ctx context.Context, prefixes ...string) (context.CancelCauseFunc, error)
 
 	addIfNotExistsFn func(ctx context.Context, name string, job *api.Job) error
 }
@@ -47,8 +47,8 @@ func New() *Fake {
 		listFn: func(context.Context, string) (*api.ListResponse, error) {
 			return nil, nil
 		},
-		deliverablePrefixesFn: func(context.Context, ...string) (context.CancelFunc, error) {
-			return func() {}, nil
+		deliverablePrefixesFn: func(context.Context, ...string) (context.CancelCauseFunc, error) {
+			return func(error) {}, nil
 		},
 		addIfNotExistsFn: func(context.Context, string, *api.Job) error {
 			return nil
@@ -89,7 +89,7 @@ func (f *Fake) WithList(fn func(context.Context, string) (*api.ListResponse, err
 	return f
 }
 
-func (f *Fake) WithDeliverablePrefixes(fn func(context.Context, ...string) (context.CancelFunc, error)) *Fake {
+func (f *Fake) WithDeliverablePrefixes(fn func(context.Context, ...string) (context.CancelCauseFunc, error)) *Fake {
 	f.deliverablePrefixesFn = fn
 	return f
 }
@@ -128,7 +128,7 @@ func (f *Fake) List(ctx context.Context, prefix string) (*api.ListResponse, erro
 	return f.listFn(ctx, prefix)
 }
 
-func (f *Fake) DeliverablePrefixes(ctx context.Context, prefixes ...string) (context.CancelFunc, error) {
+func (f *Fake) DeliverablePrefixes(ctx context.Context, prefixes ...string) (context.CancelCauseFunc, error) {
 	return f.deliverablePrefixesFn(ctx, prefixes...)
 }
 

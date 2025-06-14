@@ -65,7 +65,7 @@ func Test_undeliverable(t *testing.T) {
 
 		cancel, err := cron.API().DeliverablePrefixes(cron.Context(), "abc")
 		require.NoError(t, err)
-		t.Cleanup(cancel)
+		t.Cleanup(func() { cancel(assert.AnError) })
 
 		assert.EventuallyWithT(t, func(c *assert.CollectT) {
 			assert.Equal(c, 200, cron.Triggered())
@@ -111,7 +111,7 @@ func Test_undeliverable(t *testing.T) {
 		for _, api := range cron.AllCrons() {
 			cancel, err := api.DeliverablePrefixes(cron.Context(), "abc")
 			require.NoError(t, err)
-			t.Cleanup(cancel)
+			t.Cleanup(func() { cancel(assert.AnError) })
 		}
 
 		assert.EventuallyWithT(t, func(c *assert.CollectT) {
@@ -156,7 +156,7 @@ func Test_undeliverable(t *testing.T) {
 
 		cancel, err := cron.API().DeliverablePrefixes(cron.Context(), "abc")
 		require.NoError(t, err)
-		t.Cleanup(cancel)
+		t.Cleanup(func() { cancel(assert.AnError) })
 
 		assert.EventuallyWithT(t, func(c *assert.CollectT) {
 			assert.Equal(c, 6, cron.Triggered())
@@ -203,7 +203,7 @@ func Test_undeliverable(t *testing.T) {
 		for _, api := range cron.AllCrons() {
 			cancel, err := api.DeliverablePrefixes(cron.Context(), "abc")
 			require.NoError(t, err)
-			t.Cleanup(cancel)
+			t.Cleanup(func() { cancel(assert.AnError) })
 		}
 
 		assert.EventuallyWithT(t, func(c *assert.CollectT) {
@@ -245,7 +245,7 @@ func Test_undeliverable(t *testing.T) {
 
 		cancel, err := cron.API().DeliverablePrefixes(cron.Context(), "abc")
 		require.NoError(t, err)
-		t.Cleanup(cancel)
+		t.Cleanup(func() { cancel(assert.AnError) })
 		cntCh <- struct{}{}
 
 		assert.EventuallyWithT(t, func(c *assert.CollectT) {
@@ -274,7 +274,7 @@ func Test_undeliverable(t *testing.T) {
 
 		cancel, err := cron.API().DeliverablePrefixes(cron.Context(), "abc")
 		require.NoError(t, err)
-		t.Cleanup(cancel)
+		t.Cleanup(func() { cancel(assert.AnError) })
 
 		require.NoError(t, cron.API().Add(cron.Context(), "def1", &api.Job{
 			DueTime:  ptr.Of(time.Now().Format(time.RFC3339)),
@@ -305,7 +305,7 @@ func Test_undeliverable(t *testing.T) {
 
 		cancel, err := cron.API().DeliverablePrefixes(cron.Context(), "abc")
 		require.NoError(t, err)
-		t.Cleanup(cancel)
+		t.Cleanup(func() { cancel(assert.AnError) })
 
 		require.NoError(t, cron.API().Add(cron.Context(), "def1", &api.Job{
 			DueTime:       ptr.Of(time.Now().Format(time.RFC3339)),
@@ -359,7 +359,7 @@ func Test_undeliverable(t *testing.T) {
 
 		cancel, err := cron.API().DeliverablePrefixes(cron.Context(), "hello")
 		require.NoError(t, err)
-		t.Cleanup(cancel)
+		t.Cleanup(func() { cancel(assert.AnError) })
 		assert.EventuallyWithT(t, func(c *assert.CollectT) {
 			assert.Equal(c, uint32(2), inTrigger.Load())
 		}, time.Second*10, time.Millisecond*10)
@@ -408,7 +408,7 @@ func Test_undeliverable(t *testing.T) {
 		for _, api := range cron.AllCrons() {
 			cancel, err := api.DeliverablePrefixes(cron.Context(), "hello")
 			require.NoError(t, err)
-			t.Cleanup(cancel)
+			t.Cleanup(func() { cancel(assert.AnError) })
 		}
 
 		assert.EventuallyWithT(t, func(c *assert.CollectT) {
@@ -453,7 +453,7 @@ func Test_undeliverable(t *testing.T) {
 			cntCh <- struct{}{}
 		}
 		trigger := inTrigger.Load()
-		cancel()
+		cancel(assert.AnError)
 		<-time.After(time.Second)
 		assert.Equal(t, trigger, inTrigger.Load())
 	})
@@ -487,7 +487,7 @@ func Test_undeliverable(t *testing.T) {
 
 		cancel, err := cron.API().DeliverablePrefixes(cron.Context(), "abc")
 		require.NoError(t, err)
-		t.Cleanup(cancel)
+		t.Cleanup(func() { cancel(assert.AnError) })
 		time.Sleep(time.Second * 2)
 		assert.ElementsMatch(t, []string{"abc1", "xyz1"}, triggered.Slice())
 	})
@@ -529,7 +529,7 @@ func Test_undeliverable(t *testing.T) {
 
 		cancel, err := cron.API().DeliverablePrefixes(cron.Context(), "abc", "def")
 		require.NoError(t, err)
-		t.Cleanup(cancel)
+		t.Cleanup(func() { cancel(assert.AnError) })
 		assert.EventuallyWithT(t, func(c *assert.CollectT) {
 			assert.ElementsMatch(c, []string{"abc1", "def1", "xyz1", "xyz1", "xyz1"}, triggered.Slice())
 		}, time.Second*10, time.Millisecond*10)
@@ -565,7 +565,7 @@ func Test_undeliverable(t *testing.T) {
 
 		cancel, err := cron.API().DeliverablePrefixes(cron.Context(), "abc")
 		require.NoError(t, err)
-		t.Cleanup(cancel)
+		t.Cleanup(func() { cancel(assert.AnError) })
 		time.Sleep(time.Second * 2)
 		assert.Equal(t, uint32(2), triggered.Load())
 	})
@@ -605,7 +605,7 @@ func Test_undeliverable(t *testing.T) {
 			assert.Nil(c, resp)
 		}, time.Second*10, time.Millisecond*10)
 
-		cancel()
+		cancel(assert.AnError)
 
 		ret.Store(api.TriggerResponseResult_UNDELIVERABLE)
 		require.NoError(t, cron.API().Add(cron.Context(), "abc1", &api.Job{DueTime: dueTime}))
@@ -624,7 +624,7 @@ func Test_undeliverable(t *testing.T) {
 
 		cancel, err = cron.API().DeliverablePrefixes(cron.Context(), "abc")
 		require.NoError(t, err)
-		t.Cleanup(cancel)
+		t.Cleanup(func() { cancel(assert.AnError) })
 		time.Sleep(time.Second * 2)
 		assert.Equal(t, uint32(4), triggered.Load())
 	})

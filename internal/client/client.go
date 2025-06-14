@@ -7,16 +7,16 @@ package client
 
 import (
 	"context"
-	"errors"
 	"fmt"
+	"math/rand/v2"
 	"time"
 
 	"github.com/go-logr/logr"
-	"go.etcd.io/etcd/api/v3/v3rpc/rpctypes"
 	clientv3 "go.etcd.io/etcd/client/v3"
 	"k8s.io/utils/clock"
 
 	"github.com/diagridio/go-etcd-cron/internal/client/api"
+	clienterrors "github.com/diagridio/go-etcd-cron/internal/client/errors"
 )
 
 type Options struct {
@@ -165,14 +165,15 @@ func generic(ctx context.Context, log logr.Logger, c *client, op func(context.Co
 			return nil
 		}
 
-		if !errors.Is(err, rpctypes.ErrTooManyRequests) {
+		if !clienterrors.ShouldRetry(err) {
 			return err
 		}
 
-		log.Error(err, "etcd client request rate limited, waiting before retrying")
+		log.Error(err, "etcd error, waiting before retrying")
 
+		jitter := time.Duration(rand.IntN(1000)) * time.Millisecond
 		select {
-		case <-c.clock.After(time.Second):
+		case <-c.clock.After(time.Second + jitter):
 		case <-ctx.Done():
 			return ctx.Err()
 		}
