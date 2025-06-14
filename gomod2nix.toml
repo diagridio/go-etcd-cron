@@ -17,8 +17,8 @@ schema = 3
     version = "v22.5.0"
     hash = "sha256-E2zXikbmIQImghstLUWuey1YgA0Folu3F+fi5k4hCxA="
   [mod."github.com/dapr/kit"]
-    version = "v0.0.0-20250614105309-f351d63ae76f"
-    hash = "sha256-t2C0k9MF50hpf7mMwD7tgqyEVunkX5JOu3NzZpMNf8c="
+    version = "v0.0.0-20250614143505-3374dea3813d"
+    hash = "sha256-trBQ3EnuIail2IjLc+6YHGZCNGUwVKiy3elPD2FMubo="
     replaced = "github.com/joshvanl/kit"
   [mod."github.com/davecgh/go-spew"]
     version = "v1.1.2-0.20180830191138-d8f796af33cc"
