@@ -8,6 +8,7 @@ package client
 import (
 	"context"
 	"fmt"
+	"math/rand/v2"
 	"time"
 
 	"github.com/go-logr/logr"
@@ -170,8 +171,9 @@ func generic(ctx context.Context, log logr.Logger, c *client, op func(context.Co
 
 		log.Error(err, "etcd error, waiting before retrying")
 
+		jitter := time.Duration(rand.IntN(1000)) * time.Millisecond
 		select {
-		case <-c.clock.After(time.Second):
+		case <-c.clock.After(time.Second + jitter):
 		case <-ctx.Done():
 			return ctx.Err()
 		}
