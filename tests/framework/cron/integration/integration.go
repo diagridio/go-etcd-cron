@@ -128,7 +128,7 @@ func waitForQuorum(t *testing.T, ch <-chan []*anypb.Any, exp uint64) {
 
 	for {
 		select {
-		case <-time.After(time.Second * 30):
+		case <-t.Context().Done():
 			require.Fail(t, "failed to get leadership quorum in time")
 		case d := <-ch:
 			if uint64(len(d)) == exp {
