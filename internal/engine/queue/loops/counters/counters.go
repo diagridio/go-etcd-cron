@@ -34,7 +34,7 @@ type counters struct {
 	name string
 
 	idx     *atomic.Int64
-	cancel  context.CancelFunc
+	cancel  context.CancelCauseFunc
 	counter counter.Interface
 }
 
@@ -91,7 +91,7 @@ func (c *counters) Handle(ctx context.Context, event *queue.JobAction) error {
 
 func (c *counters) handleInformed(ctx context.Context, action *queue.Informed) error {
 	if c.cancel != nil {
-		c.cancel()
+		c.cancel(errors.New("received new overriding informed counter while still processing previous action"))
 		c.cancel = nil
 	}
 
@@ -120,16 +120,16 @@ func (c *counters) handleExecuteRequest(ctx context.Context, action *queue.Execu
 		return errors.New("catastrophic state machine error: lost counter on execute")
 	}
 
-	ctx, cancel := context.WithCancel(ctx)
+	ctx, cancel := context.WithCancelCause(ctx)
 	doneCh := make(chan struct{})
 
-	c.cancel = func() { cancel(); <-doneCh }
+	c.cancel = func(cause error) { cancel(cause); <-doneCh }
 
 	idx := c.idx.Load()
 
 	go func() {
 		defer func() {
-			cancel()
+			cancel(errors.New("counters handle execution done"))
 			close(doneCh)
 		}()
 
@@ -237,7 +237,7 @@ func (c *counters) handleDeliverable() {
 
 func (c *counters) handleClose() {
 	if c.cancel != nil {
-		c.cancel()
+		c.cancel(errors.New("counters handler closing"))
 	}
 
 	c.idx.Store(0)

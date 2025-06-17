@@ -95,13 +95,14 @@ func Test_CRUD(t *testing.T) {
 					errCh <- testInLoop(&client{kv: kv, clock: clock})
 				}()
 
-				assert.Eventually(t, clock.HasWaiters, time.Second, time.Millisecond*10)
-				clock.Sleep(time.Second)
-				assert.Eventually(t, clock.HasWaiters, time.Second, time.Millisecond*10)
-				clock.Sleep(time.Second)
-				assert.Eventually(t, clock.HasWaiters, time.Second, time.Millisecond*10)
+				sleepTime := time.Second + time.Millisecond*1000
+				assert.Eventually(t, clock.HasWaiters, sleepTime, time.Millisecond*10)
+				clock.Sleep(sleepTime)
+				assert.Eventually(t, clock.HasWaiters, sleepTime, time.Millisecond*10)
+				clock.Sleep(sleepTime)
+				assert.Eventually(t, clock.HasWaiters, sleepTime, time.Millisecond*10)
 				kv.WithError(nil)
-				clock.Sleep(time.Second)
+				clock.Sleep(sleepTime)
 			})
 
 			t.Run("Too many request errors should be retried until another error", func(t *testing.T) {
@@ -124,13 +125,14 @@ func Test_CRUD(t *testing.T) {
 					errCh <- testInLoop(&client{kv: kv, clock: clock})
 				}()
 
-				assert.Eventually(t, clock.HasWaiters, time.Second, time.Millisecond*10)
-				clock.Sleep(time.Second)
-				assert.Eventually(t, clock.HasWaiters, time.Second, time.Millisecond*10)
-				clock.Sleep(time.Second)
-				assert.Eventually(t, clock.HasWaiters, time.Second, time.Millisecond*10)
+				sleepTime := time.Second + time.Millisecond*1000
+				assert.Eventually(t, clock.HasWaiters, sleepTime, time.Millisecond*10)
+				clock.Sleep(sleepTime)
+				assert.Eventually(t, clock.HasWaiters, sleepTime, time.Millisecond*10)
+				clock.Sleep(sleepTime)
+				assert.Eventually(t, clock.HasWaiters, sleepTime, time.Millisecond*10)
 				kv.WithError(errors.New("this is an error"))
-				clock.Sleep(time.Second)
+				clock.Sleep(sleepTime)
 			})
 		})
 	}

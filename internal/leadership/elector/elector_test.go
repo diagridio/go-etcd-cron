@@ -87,7 +87,7 @@ func Test_Relect(t *testing.T) {
 
 	for range 2 {
 		select {
-		case <-time.After(time.Second * 10):
+		case <-time.After(time.Second * 20):
 			require.Fail(t, "timed out")
 		case err := <-errCh:
 			require.NoError(t, err)

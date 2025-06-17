@@ -53,12 +53,12 @@ type Interface interface {
 	// deliverable. Any Jobs that reside in the staging queue because they were
 	// undeliverable at the time of trigger but whose names match these prefixes
 	// will be immediately re-triggered.
-	// The returned CancelFunc should be called to unregister the prefixes,
+	// The returned CancelCauseFunc should be called to unregister the prefixes,
 	// meaning these prefixes are no longer delivable by the caller. Duplicate
 	// Prefixes may be called together and will be pooled together, meaning that
 	// the prefix is still active if there is at least one DeliverablePrefixes
 	// call that has not been unregistered.
-	DeliverablePrefixes(ctx context.Context, prefixes ...string) (context.CancelFunc, error)
+	DeliverablePrefixes(ctx context.Context, prefixes ...string) (context.CancelCauseFunc, error)
 
 	// IsElected returns true if cron is currently elected for leadership of its
 	// partition.
