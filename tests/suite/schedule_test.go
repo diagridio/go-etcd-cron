@@ -138,9 +138,11 @@ func Test_schedule(t *testing.T) {
 		require.Len(t, resp.Kvs, 1)
 		assert.Equal(t, string(counterBytes), string(resp.Kvs[0].Value))
 
-		resp, err = client.Get(t.Context(), "abc/jobs", clientv3.WithPrefix())
-		require.NoError(t, err)
-		assert.Len(t, resp.Kvs, 1)
+		assert.EventuallyWithT(t, func(c *assert.CollectT) {
+			resp, err = client.Get(t.Context(), "abc/jobs", clientv3.WithPrefix())
+			require.NoError(t, err)
+			assert.Len(c, resp.Kvs, 1)
+		}, time.Second*10, time.Millisecond*10)
 	})
 
 	t.Run("if schedule is done, expect job and counter to be deleted", func(t *testing.T) {
