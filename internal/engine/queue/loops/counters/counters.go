@@ -91,7 +91,7 @@ func (c *counters) Handle(ctx context.Context, event *queue.JobAction) error {
 
 func (c *counters) handleInformed(ctx context.Context, action *queue.Informed) error {
 	if c.cancel != nil {
-		c.cancel(errors.New("recieved new overriding informed counter while still processing previous action"))
+		c.cancel(errors.New("received new overriding informed counter while still processing previous action"))
 		c.cancel = nil
 	}
 
