@@ -10,7 +10,7 @@ import (
 
 	"go.etcd.io/etcd/api/v3/v3rpc/rpctypes"
 	clientv3 "go.etcd.io/etcd/client/v3"
-	etcderrors "go.etcd.io/etcd/server/v3/etcdserver/errors"
+	"go.etcd.io/etcd/server/v3/etcdserver"
 
 	apierrors "github.com/diagridio/go-etcd-cron/api/errors"
 )
@@ -28,14 +28,14 @@ func ShouldRetry(err error) bool {
 		errors.Is(err, rpctypes.ErrTimeoutWaitAppliedIndex),
 		errors.Is(err, rpctypes.ErrLeaderChanged),
 		errors.Is(err, rpctypes.ErrTooManyRequests),
-		errors.Is(err, etcderrors.ErrTimeout),
-		errors.Is(err, etcderrors.ErrTimeoutDueToLeaderFail),
-		errors.Is(err, etcderrors.ErrTimeoutDueToConnectionLost),
-		errors.Is(err, etcderrors.ErrTimeoutLeaderTransfer),
-		errors.Is(err, etcderrors.ErrTimeoutWaitAppliedIndex),
-		errors.Is(err, etcderrors.ErrLeaderChanged),
-		errors.Is(err, etcderrors.ErrNotEnoughStartedMembers),
-		errors.Is(err, etcderrors.ErrTooManyRequests),
+		errors.Is(err, etcdserver.ErrTimeout),
+		errors.Is(err, etcdserver.ErrTimeoutDueToLeaderFail),
+		errors.Is(err, etcdserver.ErrTimeoutDueToConnectionLost),
+		errors.Is(err, etcdserver.ErrTimeoutLeaderTransfer),
+		errors.Is(err, etcdserver.ErrTimeoutWaitAppliedIndex),
+		errors.Is(err, etcdserver.ErrLeaderChanged),
+		errors.Is(err, etcdserver.ErrNotEnoughStartedMembers),
+		errors.Is(err, etcdserver.ErrTooManyRequests),
 		clientv3.IsConnCanceled(err):
 		return true
 	default:
