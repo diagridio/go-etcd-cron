@@ -20,4 +20,7 @@ type Interface interface {
 	// time.
 	// Returns nil if the schedule will never trigger again.
 	Next(count uint32, last *timestamppb.Timestamp) *time.Time
+
+	// IsOneShot checks if the schedule is a one-shot schedule.
+	IsOneShot() bool
 }
