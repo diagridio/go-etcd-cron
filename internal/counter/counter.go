@@ -9,6 +9,7 @@ import (
 	"context"
 	"time"
 
+	clientv3 "go.etcd.io/etcd/client/v3"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
@@ -74,9 +75,13 @@ func New(ctx context.Context, opts Options) (Interface, bool, error) {
 	jobKey := opts.Key.JobKey(opts.Name)
 
 	// Get the existing counter, if it exists.
-	res, err := opts.Client.Get(ctx, counterKey)
-	if err != nil {
-		return nil, false, err
+	res := new(clientv3.GetResponse)
+	if storeCounter(opts.Schedule, opts.Job.GetJob().GetFailurePolicy()) {
+		var err error
+		res, err = opts.Client.Get(ctx, counterKey)
+		if err != nil {
+			return nil, false, err
+		}
 	}
 
 	c := &counter{
@@ -111,7 +116,8 @@ func New(ctx context.Context, opts Options) (Interface, bool, error) {
 
 	// If the job partition ID is the same, recover the counter state, else we
 	// start again.
-	if count.GetJobPartitionId() != opts.Job.GetPartitionId() {
+	if storeCounter(opts.Schedule, opts.Job.GetJob().GetFailurePolicy()) &&
+		count.GetJobPartitionId() != opts.Job.GetPartitionId() {
 		count = &stored.Counter{JobPartitionId: opts.Job.GetPartitionId()}
 		if ok, err := c.put(ctx, count); err != nil || !ok {
 			return nil, ok, err
@@ -242,6 +248,10 @@ func (c *counter) tickNext() (bool, error) {
 		return true, nil
 	}
 
+	if !storeCounter(c.schedule, c.job.GetJob().GetFailurePolicy()) {
+		return false, c.client.DeleteIfHasRevision(context.Background(), c.jobKey, c.modRevision)
+	}
+
 	// Delete the job and counter keys.
 	// If the Job have been updated, then we leave the job alone to preserve it.
 	// Always attempt to delete the counter key.
@@ -298,4 +308,11 @@ func (c *counter) put(ctx context.Context, count *stored.Counter) (bool, error) 
 		OtherKey:      c.jobKey,
 		OtherRevision: c.modRevision,
 	})
+}
+
+func storeCounter(schedule scheduler.Interface, policy *api.FailurePolicy) bool {
+	//nolint:staticcheck
+	return !(schedule.IsOneShot() &&
+		(policy != nil &&
+			(policy.GetDrop() != nil || policy.GetConstant().MaxRetries == nil)))
 }

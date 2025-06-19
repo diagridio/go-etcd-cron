@@ -26,6 +26,7 @@ type Fake struct {
 
 	putIfNotExistsFn             func(context.Context, string, string, ...clientv3.OpOption) (bool, error)
 	delPairFn                    func(context.Context, string, string) error
+	delIfHasRevisionFn           func(context.Context, string, int64) error
 	putIfOtherHasRevisionFn      func(context.Context, api.PutIfOtherHasRevisionOpts) (bool, error)
 	deleteBothIfOtherHasRevionFn func(context.Context, api.DeleteBothIfOtherHasRevisionOpts) error
 	deletePrefixesFn             func(context.Context, ...string) error
@@ -79,6 +80,11 @@ func (f *Fake) WithDeleteBothIfOtherHasRevisionFn(fn func(context.Context, api.D
 
 func (f *Fake) WithDeletePrefixesFn(fn func(context.Context, ...string) error) *Fake {
 	f.deletePrefixesFn = fn
+	return f
+}
+
+func (f *Fake) WithDeleteIfHasRevisionFn(fn func(context.Context, string, int64) error) *Fake {
+	f.delIfHasRevisionFn = fn
 	return f
 }
 
@@ -174,6 +180,14 @@ func (f *Fake) DeletePrefixes(_ context.Context, prefixes ...string) error {
 	f.calls.Add(1)
 	if f.deletePrefixesFn != nil {
 		return f.deletePrefixesFn(context.Background(), prefixes...)
+	}
+	return f.err
+}
+
+func (f *Fake) DeleteIfHasRevision(_ context.Context, k string, r int64) error {
+	f.calls.Add(1)
+	if f.delIfHasRevisionFn != nil {
+		return f.delIfHasRevisionFn(context.Background(), k, r)
 	}
 	return f.err
 }
