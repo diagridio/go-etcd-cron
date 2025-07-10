@@ -55,3 +55,7 @@ func (r *repeats) Next(count uint32, last *timestamppb.Timestamp) *time.Time {
 
 	return &next
 }
+
+func (r *repeats) IsOneShot() bool {
+	return false
+}

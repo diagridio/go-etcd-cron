@@ -122,6 +122,20 @@ func (c *client) DeleteBothIfOtherHasRevision(ctx context.Context, opts api.Dele
 	})
 }
 
+func (c *client) DeleteIfHasRevision(ctx context.Context, key string, revision int64) error {
+	return generic(ctx, c.log, c, func(ctx context.Context) error {
+		_, err := c.kv.Txn(ctx).
+			If(clientv3.Compare(clientv3.ModRevision(key), "=", revision)).
+			Then(clientv3.OpDelete(key)).
+			Commit()
+		if err != nil {
+			return err
+		}
+
+		return nil
+	})
+}
+
 // DeletePrefixes deletes all keys with the given prefixes.
 func (c *client) DeletePrefixes(ctx context.Context, prefixes ...string) error {
 	return generic(ctx, c.log, c, func(ctx context.Context) error {

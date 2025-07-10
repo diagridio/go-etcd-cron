@@ -32,6 +32,7 @@ type Interface interface {
 	DeletePair(context.Context, string, string) error
 	PutIfNotExists(context.Context, string, string, ...clientv3.OpOption) (bool, error)
 
+	DeleteIfHasRevision(context.Context, string, int64) error
 	PutIfOtherHasRevision(context.Context, PutIfOtherHasRevisionOpts) (bool, error)
 	DeleteBothIfOtherHasRevision(context.Context, DeleteBothIfOtherHasRevisionOpts) error
 
