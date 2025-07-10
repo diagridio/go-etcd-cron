@@ -9,13 +9,14 @@ import (
 	"testing"
 	"time"
 
-	"github.com/dapr/kit/cron"
-	"github.com/dapr/kit/ptr"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/protobuf/types/known/durationpb"
 	"google.golang.org/protobuf/types/known/timestamppb"
 	clocktesting "k8s.io/utils/clock/testing"
+
+	"github.com/dapr/kit/cron"
+	"github.com/dapr/kit/ptr"
 
 	"github.com/diagridio/go-etcd-cron/api"
 	"github.com/diagridio/go-etcd-cron/internal/api/stored"
@@ -24,7 +25,7 @@ import (
 func Test_Schedule(t *testing.T) {
 	t.Parallel()
 
-	now := time.Now().UTC().Truncate(time.Second)
+	now := time.Now().UTC()
 	clock := clocktesting.NewFakeClock(now)
 
 	parser := cron.NewParser(
@@ -145,7 +146,7 @@ func Test_Schedule(t *testing.T) {
 func Test_Parse(t *testing.T) {
 	t.Parallel()
 
-	now := time.Now().UTC().Truncate(time.Second)
+	now := time.Now().UTC()
 	clock := clocktesting.NewFakeClock(now)
 
 	tests := map[string]struct {
@@ -430,7 +431,7 @@ func Test_Parse(t *testing.T) {
 func Test_parsePointInTime(t *testing.T) {
 	t.Parallel()
 
-	now := time.Now().UTC().Truncate(time.Second)
+	now := time.Now().UTC()
 
 	tests := map[string]struct {
 		str     string

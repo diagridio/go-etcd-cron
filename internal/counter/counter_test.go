@@ -11,12 +11,13 @@ import (
 	"testing"
 	"time"
 
-	"github.com/dapr/kit/ptr"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/durationpb"
 	"google.golang.org/protobuf/types/known/timestamppb"
+
+	"github.com/dapr/kit/ptr"
 
 	"github.com/diagridio/go-etcd-cron/api"
 	"github.com/diagridio/go-etcd-cron/internal/api/stored"
@@ -733,7 +734,7 @@ func Test_updateNext(t *testing.T) {
 func Test_TriggerFailed(t *testing.T) {
 	t.Parallel()
 
-	now := time.Now().UTC().Truncate(time.Second)
+	now := time.Now().UTC()
 
 	marshalCounter := func(c *stored.Counter) string {
 		t.Helper()
@@ -1493,7 +1494,7 @@ func Test_TriggerFailureSuccess(t *testing.T) {
 			return nil
 		})
 
-	now := time.Now().UTC().Truncate(time.Second)
+	now := time.Now().UTC()
 
 	job := &stored.Job{
 		Begin: &stored.Job_DueTime{DueTime: timestamppb.New(now)},

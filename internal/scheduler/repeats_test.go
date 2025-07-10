@@ -9,17 +9,18 @@ import (
 	"testing"
 	"time"
 
-	"github.com/dapr/kit/cron"
-	"github.com/dapr/kit/ptr"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/protobuf/types/known/timestamppb"
+
+	"github.com/dapr/kit/cron"
+	"github.com/dapr/kit/ptr"
 )
 
 func Test_repeats(t *testing.T) {
 	t.Parallel()
 
-	start := time.Now().Add(time.Hour).UTC().Truncate(time.Second)
+	start := time.Now().Add(time.Hour).UTC()
 
 	tests := map[string]struct {
 		exp      *timestamppb.Timestamp
@@ -83,7 +84,7 @@ func Test_repeats(t *testing.T) {
 			start:    &start,
 			count:    0,
 			last:     timestamppb.New(start.Add(time.Hour + 50)),
-			expNext:  ptr.Of(start.Add(time.Hour * 2)),
+			expNext:  ptr.Of(start.Add(time.Hour*2 + 50)),
 		},
 		"no count, no total,last, no exp, returns next time after start": {
 			exp:      nil,
