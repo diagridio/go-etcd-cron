@@ -10,12 +10,13 @@ import (
 	"math/rand"
 	"time"
 
-	"github.com/dapr/kit/cron"
-	"github.com/dapr/kit/ptr"
-	kittime "github.com/dapr/kit/time"
 	"google.golang.org/protobuf/types/known/durationpb"
 	"google.golang.org/protobuf/types/known/timestamppb"
 	"k8s.io/utils/clock"
+
+	"github.com/dapr/kit/cron"
+	"github.com/dapr/kit/ptr"
+	kittime "github.com/dapr/kit/time"
 
 	"github.com/diagridio/go-etcd-cron/api"
 	"github.com/diagridio/go-etcd-cron/internal/api/stored"
@@ -120,7 +121,7 @@ func (b *Builder) Parse(job *api.Job) (*stored.Job, error) {
 		Job:         job,
 	}
 
-	now := b.clock.Now().UTC().Truncate(time.Second)
+	now := b.clock.Now().UTC()
 	begin := now
 
 	if job.DueTime != nil {
