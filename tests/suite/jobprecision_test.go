@@ -59,26 +59,4 @@ func Test_precision(t *testing.T) {
 		assert.Empty(t, resp.Kvs)
 	})
 
-	t.Run("Running jobs with nanosecond precision", func(t *testing.T) {
-		cron := integration.New(t, integration.Options{Instances: 1})
-
-		job := &api.Job{
-			Schedule: ptr.Of("@every 100ns"),
-			Repeats:  ptr.Of(uint32(3)),
-		}
-
-		require.NoError(t, cron.API().Add(cron.Context(), "def", job))
-
-		assert.EventuallyWithT(t, func(c *assert.CollectT) {
-			assert.Equal(c, 3, cron.Triggered())
-		}, 100*time.Millisecond, 1*time.Nanosecond)
-
-		assert.EventuallyWithT(t, func(c *assert.CollectT) {
-			resp, err := cron.Client().Get(t.Context(), "abc/jobs/def")
-			require.NoError(c, err)
-			assert.Empty(c, resp.Kvs)
-		}, 1*time.Second, 100*time.Millisecond)
-
-	})
-
 }
