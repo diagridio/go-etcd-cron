@@ -17,12 +17,14 @@ import (
 	"github.com/diagridio/go-etcd-cron/internal/api/queue"
 	"github.com/diagridio/go-etcd-cron/internal/counter"
 	"github.com/diagridio/go-etcd-cron/internal/engine/queue/actioner"
+	"github.com/go-logr/logr"
 )
 
 type Options struct {
 	IDx      *atomic.Int64
 	Actioner actioner.Interface
 	Name     string
+	Log      logr.Logger
 }
 
 // counters is a loop which is responsible for executing a particular job. It
@@ -32,6 +34,7 @@ type Options struct {
 type counters struct {
 	act  actioner.Interface
 	name string
+	log  logr.Logger
 
 	idx     *atomic.Int64
 	cancel  context.CancelCauseFunc
@@ -58,6 +61,7 @@ func New(opts Options) loop.Interface[*queue.JobAction] {
 	counters.name = opts.Name
 	counters.idx = opts.IDx
 	counters.act = opts.Actioner
+	counters.log = opts.Log
 	counters.cancel = nil
 	counters.counter = nil
 
@@ -159,7 +163,10 @@ func (c *counters) handleExecuteResponse(ctx context.Context, action *queue.Exec
 	}
 
 	if c.cancel == nil {
-		return errors.New("catastrophic state machine error: lost cancel")
+		c.log.WithName("counters").WithValues("job", c.name, "uid", action.GetUid()).Info(
+			"dropped stale ExecuteResponse due to being overridden",
+		)
+		return nil
 	}
 
 	c.cancel = nil
