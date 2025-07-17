@@ -97,6 +97,7 @@ func (r *router) newCounter(ctx context.Context, jobName string) *counter {
 		IDx:      &idx,
 		Actioner: r.act,
 		Name:     jobName,
+		Log:      r.log,
 	})
 
 	counter := &counter{

@@ -327,4 +327,30 @@ func Test_counters(t *testing.T) {
 
 		assert.Equal(t, 1, called)
 	})
+
+	t.Run("a stale execute response with matching uid and nil cancel should be ignored", func(t *testing.T) {
+		t.Parallel()
+
+		var idx atomic.Int64
+		idx.Store(999)
+
+		c := &counters{
+			name:    "test-job",
+			idx:     &idx,
+			counter: counterfake.New(),
+		}
+
+		assert.NoError(t, c.Handle(t.Context(), &queue.JobAction{
+			Action: &queue.JobAction_ExecuteResponse{
+				ExecuteResponse: &queue.ExecuteResponse{
+					JobName:    "test-job",
+					CounterKey: "test-key",
+					Uid:        999,
+					Result: &api.TriggerResponse{
+						Result: api.TriggerResponseResult_SUCCESS,
+					},
+				},
+			},
+		}))
+	})
 }
