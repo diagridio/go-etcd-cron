@@ -17,8 +17,8 @@ schema = 3
     version = "v22.5.0"
     hash = "sha256-E2zXikbmIQImghstLUWuey1YgA0Folu3F+fi5k4hCxA="
   [mod."github.com/dapr/kit"]
-    version = "v0.15.4"
-    hash = "sha256-6VeVz+zb/PzPnpHMC6TbrsecIh2KatpcPPbLahrCjFQ="
+    version = "v0.15.3-0.20250710140356-9d4f384c5763"
+    hash = "sha256-fRDPAyhH2JkhtopTfZscqQTiAKQtTxJll6a3KV1HZyc="
   [mod."github.com/davecgh/go-spew"]
     version = "v1.1.2-0.20180830191138-d8f796af33cc"
     hash = "sha256-fV9oI51xjHdOmEx6+dlq7Ku2Ag+m/bmbzPo6A4Y74qc="
@@ -170,20 +170,17 @@ schema = 3
     version = "v1.27.0"
     hash = "sha256-8655KDrulc4Das3VRduO9MjCn8ZYD5WkULjCvruaYsU="
   [mod."golang.org/x/crypto"]
-    version = "v0.38.0"
-    hash = "sha256-5tTXlXQBlfW1sSNDAIalOpsERbTJlZqbwCIiih4T4rY="
-  [mod."golang.org/x/exp"]
-    version = "v0.0.0-20250408133849-7e4ce0ab07d0"
-    hash = "sha256-Lw/WupSM8gcq0JzPSAaBqj9l1uZ68ANhaIaQzPhRpy8="
+    version = "v0.39.0"
+    hash = "sha256-FtwjbVoAhZkx7F2hmzi9Y0J87CVVhWcrZzun+zWQLzc="
   [mod."golang.org/x/net"]
-    version = "v0.40.0"
-    hash = "sha256-BhDOHTP8RekXDQDf9HlORSmI2aPacLo53fRXtTgCUH8="
+    version = "v0.41.0"
+    hash = "sha256-6/pi8rNmGvBFzkJQXkXkMfL1Bjydhg3BgAMYDyQ/Uvg="
   [mod."golang.org/x/sys"]
     version = "v0.33.0"
     hash = "sha256-wlOzIOUgAiGAtdzhW/KPl/yUVSH/lvFZfs5XOuJ9LOQ="
   [mod."golang.org/x/text"]
-    version = "v0.25.0"
-    hash = "sha256-gkOd4CuWr7OfCEk2EZ8KG5t9NRG7bM9Zj/lpv3y28yg="
+    version = "v0.26.0"
+    hash = "sha256-N+27nBCyGvje0yCTlUzZoVZ0LRxx4AJ+eBlrFQVRlFQ="
   [mod."golang.org/x/time"]
     version = "v0.11.0"
     hash = "sha256-ImTej/e5iUHbWPZMA4M2GYbsbiiZQxIrgcnYsc7uD68="
@@ -194,11 +191,11 @@ schema = 3
     version = "v0.0.0-20250512202823-5a2f75b736a9"
     hash = "sha256-LCncytChyllzUtUJpQ1TvPBkqqCz5HEoLzHhNMrZk70="
   [mod."google.golang.org/genproto/googleapis/rpc"]
-    version = "v0.0.0-20250512202823-5a2f75b736a9"
+    version = "v0.0.0-20250603155806-513f23925822"
     hash = "sha256-WK7iDtAhH19NPe3TywTQlGjDawNaDKWnxhFL9PgVUwM="
   [mod."google.golang.org/grpc"]
-    version = "v1.72.1"
-    hash = "sha256-5JczomNvroKWtIYKDgXwaIaEfuNEK//MHPhJQiaxMXs="
+    version = "v1.73.0"
+    hash = "sha256-LfVlwip++q2DX70RU6CxoXglx1+r5l48DwlFD05G11c="
   [mod."google.golang.org/protobuf"]
     version = "v1.36.6"
     hash = "sha256-lT5qnefI5FDJnowz9PEkAGylH3+fE+A3DJDkAyy9RMc="

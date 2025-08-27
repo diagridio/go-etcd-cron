@@ -148,12 +148,12 @@ func Test_counters(t *testing.T) {
 		assert.Equal(t, 2, called)
 	})
 
-	t.Run("an execute request should error if there is no counter", func(t *testing.T) {
+	t.Run("an execute request should nil if there is no counter", func(t *testing.T) {
 		t.Parallel()
 
 		c := &counters{}
 
-		require.Error(t, c.Handle(t.Context(), &queue.JobAction{
+		require.NoError(t, c.Handle(t.Context(), &queue.JobAction{
 			Action: &queue.JobAction_ExecuteRequest{
 				ExecuteRequest: &queue.ExecuteRequest{
 					JobName:    "test-job",

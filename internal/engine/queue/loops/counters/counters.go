@@ -75,7 +75,8 @@ func (c *counters) Handle(ctx context.Context, event *queue.JobAction) error {
 		return c.handleInformed(ctx, action.Informed)
 
 	case *queue.JobAction_ExecuteRequest:
-		return c.handleExecuteRequest(ctx, action.ExecuteRequest)
+		c.handleExecuteRequest(ctx, action.ExecuteRequest)
+		return nil
 
 	case *queue.JobAction_ExecuteResponse:
 		return c.handleExecuteResponse(ctx, action.ExecuteResponse)
@@ -118,10 +119,12 @@ func (c *counters) handleInformed(ctx context.Context, action *queue.Informed) e
 	return nil
 }
 
-func (c *counters) handleExecuteRequest(ctx context.Context, action *queue.ExecuteRequest) error {
+func (c *counters) handleExecuteRequest(ctx context.Context, action *queue.ExecuteRequest) {
 	counter := c.counter
 	if counter == nil {
-		return errors.New("catastrophic state machine error: lost counter on execute")
+		c.log.WithName("counters").WithValues("job", c.name).Info(
+			"dropped ExecuteRequest due to missing counter")
+			return
 	}
 
 	ctx, cancel := context.WithCancelCause(ctx)
@@ -150,8 +153,6 @@ func (c *counters) handleExecuteRequest(ctx context.Context, action *queue.Execu
 			},
 		})
 	}()
-
-	return nil
 }
 
 func (c *counters) handleExecuteResponse(ctx context.Context, action *queue.ExecuteResponse) error {
@@ -172,7 +173,10 @@ func (c *counters) handleExecuteResponse(ctx context.Context, action *queue.Exec
 	c.cancel = nil
 
 	if c.counter == nil {
-		return errors.New("catastrophic state machine error: lost counter on response")
+		c.log.WithName("counters").WithValues("job", c.name, "uid", action.GetUid()).Info(
+			"dropped ExecuteResponse due to missing counter",
+		)
+		return nil
 	}
 
 	ok, err := c.handleTrigger(ctx, action.GetResult().GetResult())
