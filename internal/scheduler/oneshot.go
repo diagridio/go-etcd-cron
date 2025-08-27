@@ -24,3 +24,7 @@ func (o *oneshot) Next(count uint32, _ *timestamppb.Timestamp) *time.Time {
 
 	return &o.dueTime
 }
+
+func (o *oneshot) IsOneShot() bool {
+	return true
+}
