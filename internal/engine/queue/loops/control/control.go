@@ -14,6 +14,8 @@ import (
 	"github.com/diagridio/go-etcd-cron/internal/engine/queue/actioner"
 )
 
+var factory = loop.New[*queue.ControlEvent](1024)
+
 type Options struct {
 	Actioner actioner.Interface
 	Jobs     loop.Interface[*queue.JobEvent]
@@ -28,10 +30,10 @@ type control struct {
 }
 
 func New(opts Options) loop.Interface[*queue.ControlEvent] {
-	return loop.New(&control{
+	return factory.NewLoop(&control{
 		jobs: opts.Jobs,
 		act:  opts.Actioner,
-	}, 1024)
+	})
 }
 
 func (c *control) Handle(_ context.Context, event *queue.ControlEvent) error {

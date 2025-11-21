@@ -79,3 +79,5 @@ require (
 	k8s.io/klog/v2 v2.130.1 // indirect
 	sigs.k8s.io/yaml v1.4.0 // indirect
 )
+
+replace github.com/dapr/kit => github.com/joshvanl/kit v0.0.0-20251121170825-ea283a9ad1d9

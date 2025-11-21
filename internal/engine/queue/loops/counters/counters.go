@@ -41,20 +41,17 @@ type counters struct {
 	counter counter.Interface
 }
 
-// LoopCache and countersCache are used to cache the loops and counters
+// LoopsFacory and countersCache are used to cache the loops and counters
 // structs. Used to reduce memory allocations of these highly used structs,
 // improving performance.
-var LoopsCache = sync.Pool{
-	New: func() any {
-		return loop.Empty[*queue.JobAction]()
-	},
-}
-
-var countersCache = sync.Pool{
-	New: func() any {
-		return new(counters)
-	},
-}
+var (
+	LoopsFactory  = loop.New[*queue.JobAction](5)
+	countersCache = sync.Pool{
+		New: func() any {
+			return new(counters)
+		},
+	}
+)
 
 func New(opts Options) loop.Interface[*queue.JobAction] {
 	counters := countersCache.Get().(*counters)
@@ -65,8 +62,7 @@ func New(opts Options) loop.Interface[*queue.JobAction] {
 	counters.cancel = nil
 	counters.counter = nil
 
-	loop := LoopsCache.Get().(loop.Interface[*queue.JobAction])
-	return loop.Reset(counters, 5)
+	return LoopsFactory.NewLoop(counters)
 }
 
 func (c *counters) Handle(ctx context.Context, event *queue.JobAction) error {
@@ -124,7 +120,7 @@ func (c *counters) handleExecuteRequest(ctx context.Context, action *queue.Execu
 	if counter == nil {
 		c.log.WithName("counters").WithValues("job", c.name).Info(
 			"dropped ExecuteRequest due to missing counter")
-			return
+		return
 	}
 
 	ctx, cancel := context.WithCancelCause(ctx)
