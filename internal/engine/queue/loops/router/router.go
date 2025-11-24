@@ -29,7 +29,6 @@ type Options struct {
 // router is a loop to handle Job events. It routes the event to the correct
 // counter loop. It creates and runs counter loops at inform instantiate time,
 // and garbage collects them after close.
-// TODO: @joshvanl: add sync.Pool for counters to reduce allocations.
 type router struct {
 	log    logr.Logger
 	cancel context.CancelCauseFunc
@@ -48,12 +47,12 @@ type counter struct {
 }
 
 func New(opts Options) loop.Interface[*queue.JobEvent] {
-	return loop.New(&router{
+	return loop.New[*queue.JobEvent](1024).NewLoop(&router{
 		log:      opts.Log.WithName("router"),
 		cancel:   opts.Cancel,
 		act:      opts.Actioner,
 		counters: make(map[string]*counter),
-	}, 1024)
+	})
 }
 
 func (r *router) Handle(ctx context.Context, event *queue.JobEvent) error {
@@ -143,7 +142,7 @@ func (r *router) handleCloseJob(event *queue.JobEvent) error {
 		},
 	})
 	delete(r.counters, jobName)
-	counters.LoopsCache.Put(counter.loop)
+	counters.LoopsFactory.CacheLoop(counter.loop)
 
 	return nil
 }
