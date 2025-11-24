@@ -292,6 +292,13 @@ func Test_DeletePrefixes(t *testing.T) {
 		api := newAPI(t)
 		require.Error(t, api.DeletePrefixes(t.Context(), "./."))
 	})
+
+	t.Run("non-DNS suffix characters should not error", func(t *testing.T) {
+		t.Parallel()
+
+		api := newAPI(t)
+		require.NoError(t, api.DeletePrefixes(t.Context(), "abc||"))
+	})
 }
 
 func Test_List(t *testing.T) {
