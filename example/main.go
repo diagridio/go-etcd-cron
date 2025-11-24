@@ -40,10 +40,9 @@ func main() {
 	}
 
 	cron, err := cron.New(cron.Options{
-		Client:         client,
-		Namespace:      "abc",
-		PartitionID:    0,
-		PartitionTotal: 1,
+		Client:    client,
+		Namespace: "abc",
+		ID:        "helloworld",
 		TriggerFn: func(context.Context, *api.TriggerRequest) *api.TriggerResponse {
 			// Do something with your trigger here.
 			// Return SUCCESS if the trigger was successful, FAILED if the trigger
