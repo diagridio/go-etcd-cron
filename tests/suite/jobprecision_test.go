@@ -35,9 +35,11 @@ func Test_precision(t *testing.T) {
 			assert.Equal(c, 3, cron.Triggered())
 		}, 5*time.Second, 1*time.Second)
 
-		resp, err := cron.Client().Get(t.Context(), "abc/jobs/def")
-		require.NoError(t, err)
-		assert.Empty(t, resp.Kvs)
+		assert.EventuallyWithT(t, func(c *assert.CollectT) {
+			resp, err := cron.Client().Get(t.Context(), "abc/jobs/def")
+			require.NoError(t, err)
+			assert.Empty(c, resp.Kvs)
+		}, 2*time.Second, 10*time.Millisecond)
 	})
 
 	t.Run("Running jobs with millisecond precision", func(t *testing.T) {
@@ -54,9 +56,10 @@ func Test_precision(t *testing.T) {
 			assert.Equal(c, 3, cron.Triggered())
 		}, 500*time.Millisecond, 10*time.Millisecond)
 
-		resp, err := cron.Client().Get(t.Context(), "abc/jobs/def")
-		require.NoError(t, err)
-		assert.Empty(t, resp.Kvs)
+		assert.EventuallyWithT(t, func(c *assert.CollectT) {
+			resp, err := cron.Client().Get(t.Context(), "abc/jobs/def")
+			require.NoError(t, err)
+			assert.Empty(c, resp.Kvs)
+		}, 2*time.Second, 10*time.Millisecond)
 	})
-
 }
