@@ -7,12 +7,9 @@ package counters
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"sync"
-	"sync/atomic"
 
-	"github.com/dapr/kit/events/loop"
 	"github.com/diagridio/go-etcd-cron/api"
 	"github.com/diagridio/go-etcd-cron/internal/api/queue"
 	"github.com/diagridio/go-etcd-cron/internal/counter"
@@ -21,57 +18,51 @@ import (
 )
 
 type Options struct {
-	IDx      *atomic.Int64
 	Actioner actioner.Interface
 	Name     string
 	Log      logr.Logger
 }
 
-// counters is a loop which is responsible for executing a particular job. It
-// shares the same life cycle as that job at that version. A counters instance
+// Counters is a loop which is responsible for executing a particular job. It
+// shares the same life cycle as that job at that version. A Counters instance
 // may be reused if the Job is updated, or simply the resource has not been
 // garbage collected before a Job with the same name is created.
-type counters struct {
+type Counters struct {
 	act  actioner.Interface
 	name string
 	log  logr.Logger
 
-	idx     *atomic.Int64
-	cancel  context.CancelCauseFunc
-	counter counter.Interface
+	jobVersion int64
+	counter    counter.Interface
 }
 
-// LoopsFacory and countersCache are used to cache the loops and counters
+// LoopsFacory and CountersCache are used to cache the loops and Counters
 // structs. Used to reduce memory allocations of these highly used structs,
 // improving performance.
 var (
-	LoopsFactory  = loop.New[*queue.JobAction](5)
-	countersCache = sync.Pool{
+	CountersCache = sync.Pool{
 		New: func() any {
-			return new(counters)
+			return new(Counters)
 		},
 	}
 )
 
-func New(opts Options) loop.Interface[*queue.JobAction] {
-	counters := countersCache.Get().(*counters)
-	counters.name = opts.Name
-	counters.idx = opts.IDx
-	counters.act = opts.Actioner
-	counters.log = opts.Log
-	counters.cancel = nil
-	counters.counter = nil
+func New(opts Options) *Counters {
+	c := CountersCache.Get().(*Counters)
+	c.name = opts.Name
+	c.act = opts.Actioner
+	c.log = opts.Log
 
-	return LoopsFactory.NewLoop(counters)
+	return c
 }
 
-func (c *counters) Handle(ctx context.Context, event *queue.JobAction) error {
+func (c *Counters) Handle(ctx context.Context, event *queue.JobAction) error {
 	switch action := event.GetAction().(type) {
 	case *queue.JobAction_Informed:
 		return c.handleInformed(ctx, action.Informed)
 
 	case *queue.JobAction_ExecuteRequest:
-		c.handleExecuteRequest(ctx, action.ExecuteRequest)
+		c.handleExecuteRequest(action.ExecuteRequest)
 		return nil
 
 	case *queue.JobAction_ExecuteResponse:
@@ -82,7 +73,6 @@ func (c *counters) Handle(ctx context.Context, event *queue.JobAction) error {
 		return nil
 
 	case *queue.JobAction_Close:
-		c.handleClose()
 		return nil
 
 	default:
@@ -90,19 +80,14 @@ func (c *counters) Handle(ctx context.Context, event *queue.JobAction) error {
 	}
 }
 
-func (c *counters) handleInformed(ctx context.Context, action *queue.Informed) error {
-	if c.cancel != nil {
-		c.cancel(errors.New("received new overriding informed counter while still processing previous action"))
-		c.cancel = nil
-	}
-
+func (c *Counters) handleInformed(ctx context.Context, action *queue.Informed) error {
 	c.act.Unstage(c.name)
 
 	if action.GetIsPut() {
-		c.idx.Store(action.GetJobModRevision())
+		c.jobVersion = action.GetJobModRevision()
 
 		var err error
-		c.counter, err = c.act.Schedule(ctx, c.name, action.GetJobModRevision(), action.GetJob())
+		c.counter, err = c.act.Schedule(ctx, c.name, c.jobVersion, action.GetJob())
 		return err
 	}
 
@@ -115,7 +100,7 @@ func (c *counters) handleInformed(ctx context.Context, action *queue.Informed) e
 	return nil
 }
 
-func (c *counters) handleExecuteRequest(ctx context.Context, action *queue.ExecuteRequest) {
+func (c *Counters) handleExecuteRequest(action *queue.ExecuteRequest) {
 	counter := c.counter
 	if counter == nil {
 		c.log.WithName("counters").WithValues("job", c.name).Info(
@@ -123,54 +108,29 @@ func (c *counters) handleExecuteRequest(ctx context.Context, action *queue.Execu
 		return
 	}
 
-	ctx, cancel := context.WithCancelCause(ctx)
-	doneCh := make(chan struct{})
+	jobVersion := c.jobVersion
 
-	c.cancel = func(cause error) { cancel(cause); <-doneCh }
-
-	idx := c.idx.Load()
-
-	go func() {
-		defer func() {
-			cancel(errors.New("counters handle execution done"))
-			close(doneCh)
-		}()
-
-		result := c.act.Trigger(ctx, counter.TriggerRequest())
-
+	c.act.Trigger(counter.TriggerRequest(), func(result *api.TriggerResponse) {
 		c.act.AddToControlLoop(&queue.ControlEvent{
 			Action: &queue.ControlEvent_ExecuteResponse{
 				ExecuteResponse: &queue.ExecuteResponse{
 					JobName:    action.GetJobName(),
 					CounterKey: action.GetCounterKey(),
 					Result:     result,
-					Uid:        idx,
+					Uid:        jobVersion,
 				},
 			},
 		})
-	}()
+	})
 }
 
-func (c *counters) handleExecuteResponse(ctx context.Context, action *queue.ExecuteResponse) error {
-	// Ignore if the execution response if the idx has been changed.
-	// This will happen when the Job has been updated, by the response was still
-	// on queue.
-	if c.idx.Load() != action.GetUid() {
-		return nil
-	}
-
-	if c.cancel == nil {
+func (c *Counters) handleExecuteResponse(ctx context.Context, action *queue.ExecuteResponse) error {
+	// Ignore if the execution response if the jobVersion has been changed. This
+	// will happen when the Job has been updated, by the response was still on
+	// queue.
+	if c.jobVersion != action.GetUid() || c.counter == nil {
 		c.log.WithName("counters").WithValues("job", c.name, "uid", action.GetUid()).Info(
-			"dropped stale ExecuteResponse due to being overridden",
-		)
-		return nil
-	}
-
-	c.cancel = nil
-
-	if c.counter == nil {
-		c.log.WithName("counters").WithValues("job", c.name, "uid", action.GetUid()).Info(
-			"dropped ExecuteResponse due to missing counter",
+			"dropped ExecuteResponse for old job version",
 		)
 		return nil
 	}
@@ -189,7 +149,7 @@ func (c *counters) handleExecuteResponse(ctx context.Context, action *queue.Exec
 
 // handleTrigger handles triggering a scheduled job counter.
 // Returns true if the job is being re-enqueued, false otherwise.
-func (c *counters) handleTrigger(ctx context.Context, result api.TriggerResponseResult) (bool, error) {
+func (c *Counters) handleTrigger(ctx context.Context, result api.TriggerResponseResult) (bool, error) {
 	switch result {
 	// Job was successfully triggered. Re-enqueue if the Job has more triggers
 	// according to the schedule.
@@ -235,32 +195,21 @@ func (c *counters) handleTrigger(ctx context.Context, result api.TriggerResponse
 	}
 }
 
-func (c *counters) handleDeliverable() {
+func (c *Counters) handleDeliverable() {
 	if c.counter == nil {
 		return
 	}
 	c.act.Enqueue(c.counter)
 }
 
-func (c *counters) handleClose() {
-	if c.cancel != nil {
-		c.cancel(errors.New("counters handler closing"))
-	}
+func (c *Counters) close() {
+	// Setting jobVersion to 0 indicates that this inner loop job counter handler
+	// is ready for garbage collection. It is the inner manager which is
+	// responsible for closing the active inner loop to avoid race.
+	c.jobVersion = 0
 
-	c.idx.Store(0)
-	countersCache.Put(c)
-}
-
-func (c *counters) close() {
 	c.act.RemoveConsumer(c.counter)
 	c.counter = nil
-
-	// Setting idx to 0 jndicates that this inner loop job handler is ready for
-	// garbage collection. This should hold for the next Enqueue Close handler
-	// for jts resources to be released.
-	// It is the inner manager which is responsible for closing the active inner
-	// loop to avoid race.
-	c.idx.Store(0)
 
 	c.act.AddToControlLoop(&queue.ControlEvent{
 		Action: &queue.ControlEvent_CloseJob{

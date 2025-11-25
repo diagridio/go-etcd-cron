@@ -43,9 +43,7 @@ func Test_New(t *testing.T) {
 			Key:         key,
 			Partitioner: part,
 			Client:      client,
-			TriggerFn: func(context.Context, *api.TriggerRequest) *api.TriggerResponse {
-				return nil
-			},
+			TriggerFn:   func(*api.TriggerRequest, func(*api.TriggerResponse)) {},
 		})
 
 		require.NoError(t, err)
@@ -76,8 +74,8 @@ func Test_Run(t *testing.T) {
 			Key:         key,
 			Partitioner: part,
 			Client:      client,
-			TriggerFn: func(context.Context, *api.TriggerRequest) *api.TriggerResponse {
-				return nil
+			TriggerFn: func(_ *api.TriggerRequest, fn func(*api.TriggerResponse)) {
+				fn(&api.TriggerResponse{Result: api.TriggerResponseResult_SUCCESS})
 			},
 		})
 
@@ -116,9 +114,7 @@ func Test_Run(t *testing.T) {
 			Key:         key,
 			Partitioner: part,
 			Client:      client,
-			TriggerFn: func(context.Context, *api.TriggerRequest) *api.TriggerResponse {
-				return nil
-			},
+			TriggerFn:   func(_ *api.TriggerRequest, fn func(*api.TriggerResponse)) {},
 		})
 
 		require.NoError(t, err)
@@ -156,9 +152,7 @@ func Test_API(t *testing.T) {
 		Key:         key,
 		Partitioner: part,
 		Client:      client,
-		TriggerFn: func(context.Context, *api.TriggerRequest) *api.TriggerResponse {
-			return nil
-		},
+		TriggerFn:   func(*api.TriggerRequest, func(*api.TriggerResponse)) {},
 	})
 
 	require.NoError(t, err)

@@ -45,6 +45,8 @@ type Options struct {
 
 	// ConsumerSink is an optional sink to receive informer events.
 	ConsumerSink chan<- *api.InformerEvent
+
+	Workers uint32
 }
 
 type Interface interface {
@@ -78,6 +80,7 @@ func New(opts Options) (Interface, error) {
 		SchedulerBuilder: schedBuilder,
 		TriggerFn:        opts.TriggerFn,
 		ConsumerSink:     opts.ConsumerSink,
+		Workers:          opts.Workers,
 	})
 
 	handler := handler.New(handler.Options{

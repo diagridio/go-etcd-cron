@@ -372,8 +372,8 @@ func newAPINotReady(t *testing.T) *handler {
 		Client:           client,
 		Key:              key,
 		SchedulerBuilder: schedulerBuilder,
-		TriggerFn: func(context.Context, *cronapi.TriggerRequest) *cronapi.TriggerResponse {
-			return &cronapi.TriggerResponse{Result: cronapi.TriggerResponseResult_SUCCESS}
+		TriggerFn: func(_ *cronapi.TriggerRequest, fn func(*cronapi.TriggerResponse)) {
+			fn(&cronapi.TriggerResponse{Result: cronapi.TriggerResponseResult_SUCCESS})
 		},
 	})
 
