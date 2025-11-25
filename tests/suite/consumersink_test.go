@@ -36,8 +36,8 @@ func Test_consumersink(t *testing.T) {
 			Log:       logr.Discard(),
 			Namespace: "test",
 			ID:        "123",
-			TriggerFn: func(context.Context, *api.TriggerRequest) *api.TriggerResponse {
-				return &api.TriggerResponse{Result: api.TriggerResponseResult_SUCCESS}
+			TriggerFn: func(_ *api.TriggerRequest, fn func(*api.TriggerResponse)) {
+				fn(&api.TriggerResponse{Result: api.TriggerResponseResult_SUCCESS})
 			},
 			ConsumerSink: ch,
 		}
@@ -123,8 +123,8 @@ func Test_consumersink(t *testing.T) {
 				Log:       logr.Discard(),
 				Namespace: "test",
 				ID:        id,
-				TriggerFn: func(context.Context, *api.TriggerRequest) *api.TriggerResponse {
-					return &api.TriggerResponse{Result: api.TriggerResponseResult_SUCCESS}
+				TriggerFn: func(_ *api.TriggerRequest, fn func(*api.TriggerResponse)) {
+					fn(&api.TriggerResponse{Result: api.TriggerResponseResult_SUCCESS})
 				},
 				ConsumerSink: ch,
 			}, ch

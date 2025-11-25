@@ -1,6 +1,6 @@
 module github.com/diagridio/go-etcd-cron/example
 
-go 1.24.3
+go 1.24.10
 
 replace github.com/diagridio/go-etcd-cron => ../
 
@@ -17,7 +17,7 @@ require (
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
 	github.com/coreos/go-semver v0.3.1 // indirect
 	github.com/coreos/go-systemd/v22 v22.5.0 // indirect
-	github.com/dapr/kit v0.15.4 // indirect
+	github.com/dapr/kit v0.16.2-0.20251124175541-3ac186dff64d // indirect
 	github.com/dustin/go-humanize v1.0.1 // indirect
 	github.com/go-logr/logr v1.4.2 // indirect
 	github.com/go-logr/stdr v1.2.2 // indirect

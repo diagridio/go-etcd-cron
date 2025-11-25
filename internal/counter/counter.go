@@ -7,6 +7,7 @@ package counter
 
 import (
 	"context"
+	"sync"
 	"time"
 
 	"google.golang.org/protobuf/proto"
@@ -55,6 +56,12 @@ type Interface interface {
 	TriggerFailed(ctx context.Context) (bool, error)
 }
 
+var CounterCache = sync.Pool{
+	New: func() any {
+		return new(counter)
+	},
+}
+
 // counter is the implementation of the counter interface.
 type counter struct {
 	name           string
@@ -79,20 +86,21 @@ func New(ctx context.Context, opts Options) (Interface, bool, error) {
 		return nil, false, err
 	}
 
-	c := &counter{
-		name:        opts.Name,
-		counterKey:  counterKey,
-		jobKey:      jobKey,
-		client:      opts.Client,
-		schedule:    opts.Schedule,
-		job:         opts.Job,
-		modRevision: opts.JobModRevision,
-		triggerRequest: &api.TriggerRequest{
-			Name:     opts.Name,
-			Metadata: opts.Job.GetJob().GetMetadata(),
-			Payload:  opts.Job.GetJob().GetPayload(),
-		},
+	c := CounterCache.Get().(*counter)
+	c.name = opts.Name
+	c.jobKey = jobKey
+	c.counterKey = counterKey
+	c.client = opts.Client
+	c.schedule = opts.Schedule
+	c.job = opts.Job
+	c.count = nil
+	c.next = time.Time{}
+	c.triggerRequest = &api.TriggerRequest{
+		Name:     opts.Name,
+		Metadata: opts.Job.GetJob().GetMetadata(),
+		Payload:  opts.Job.GetJob().GetPayload(),
 	}
+	c.modRevision = opts.JobModRevision
 
 	if res.Count == 0 {
 		c.count = &stored.Counter{JobPartitionId: opts.Job.GetPartitionId()}

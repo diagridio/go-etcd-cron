@@ -133,8 +133,7 @@ func Test_Run(t *testing.T) {
 			select {
 			case ev := <-ch:
 				assert.True(t, ev.IsPut)
-				//nolint:govet
-				assert.Equal(t, jobs[i], *ev.Job)
+				assert.True(t, proto.Equal(&jobs[i], ev.Job))
 			case <-time.After(time.Second):
 				t.Fatalf("timed out waiting for event %d", i)
 			}

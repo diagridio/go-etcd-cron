@@ -37,11 +37,11 @@ func Test_undeliverable(t *testing.T) {
 		ret := api.TriggerResponseResult_UNDELIVERABLE
 		cron := integration.New(t, integration.Options{
 			Instances: 1,
-			TriggerFn: func(req *api.TriggerRequest) *api.TriggerResponse {
+			TriggerFn: func(req *api.TriggerRequest, fn func(*api.TriggerResponse)) {
 				lock.Lock()
 				defer lock.Unlock()
 				got = append(got, req.GetName())
-				return &api.TriggerResponse{Result: ret}
+				fn(&api.TriggerResponse{Result: ret})
 			},
 		})
 
@@ -82,11 +82,11 @@ func Test_undeliverable(t *testing.T) {
 		ret := api.TriggerResponseResult_UNDELIVERABLE
 		cron := integration.New(t, integration.Options{
 			Instances: 4,
-			TriggerFn: func(req *api.TriggerRequest) *api.TriggerResponse {
+			TriggerFn: func(req *api.TriggerRequest, fn func(*api.TriggerResponse)) {
 				lock.Lock()
 				defer lock.Unlock()
 				got = append(got, req.GetName())
-				return &api.TriggerResponse{Result: ret}
+				fn(&api.TriggerResponse{Result: ret})
 			},
 		})
 
@@ -129,11 +129,11 @@ func Test_undeliverable(t *testing.T) {
 		ret := api.TriggerResponseResult_UNDELIVERABLE
 		cron := integration.New(t, integration.Options{
 			Instances: 1,
-			TriggerFn: func(req *api.TriggerRequest) *api.TriggerResponse {
+			TriggerFn: func(req *api.TriggerRequest, fn func(*api.TriggerResponse)) {
 				lock.Lock()
 				defer lock.Unlock()
 				got = append(got, req.GetName())
-				return &api.TriggerResponse{Result: ret}
+				fn(&api.TriggerResponse{Result: ret})
 			},
 		})
 
@@ -175,11 +175,11 @@ func Test_undeliverable(t *testing.T) {
 		ret := api.TriggerResponseResult_UNDELIVERABLE
 		cron := integration.New(t, integration.Options{
 			Instances: 4,
-			TriggerFn: func(req *api.TriggerRequest) *api.TriggerResponse {
+			TriggerFn: func(req *api.TriggerRequest, fn func(*api.TriggerResponse)) {
 				lock.Lock()
 				defer lock.Unlock()
 				got = append(got, req.GetName())
-				return &api.TriggerResponse{Result: ret}
+				fn(&api.TriggerResponse{Result: ret})
 			},
 		})
 
@@ -219,15 +219,12 @@ func Test_undeliverable(t *testing.T) {
 		t.Parallel()
 
 		var inTrigger atomic.Uint32
-		cntCh := make(chan struct{})
-		var ret atomic.Value
-		ret.Store(api.TriggerResponseResult_UNDELIVERABLE)
+		var gotFn func(*api.TriggerResponse)
 		cron := integration.New(t, integration.Options{
 			Instances: 1,
-			TriggerFn: func(*api.TriggerRequest) *api.TriggerResponse {
+			TriggerFn: func(req *api.TriggerRequest, fn func(*api.TriggerResponse)) {
+				gotFn = fn
 				inTrigger.Add(1)
-				<-cntCh
-				return &api.TriggerResponse{Result: ret.Load().(api.TriggerResponseResult)}
 			},
 		})
 
@@ -246,14 +243,13 @@ func Test_undeliverable(t *testing.T) {
 		cancel, err := cron.API().DeliverablePrefixes(cron.Context(), "abc")
 		require.NoError(t, err)
 		t.Cleanup(func() { cancel(assert.AnError) })
-		cntCh <- struct{}{}
+		gotFn(&api.TriggerResponse{Result: api.TriggerResponseResult_UNDELIVERABLE})
 
 		assert.EventuallyWithT(t, func(c *assert.CollectT) {
 			assert.GreaterOrEqual(c, inTrigger.Load(), uint32(2))
 		}, time.Second*10, time.Millisecond*10)
 
-		ret.Store(api.TriggerResponseResult_SUCCESS)
-		cntCh <- struct{}{}
+		gotFn(&api.TriggerResponse{Result: api.TriggerResponseResult_SUCCESS})
 
 		assert.EventuallyWithT(t, func(c *assert.CollectT) {
 			resp, err := cron.API().Get(cron.Context(), "abc1")
@@ -267,8 +263,8 @@ func Test_undeliverable(t *testing.T) {
 
 		cron := integration.New(t, integration.Options{
 			Instances: 1,
-			TriggerFn: func(*api.TriggerRequest) *api.TriggerResponse {
-				return &api.TriggerResponse{Result: api.TriggerResponseResult_SUCCESS}
+			TriggerFn: func(req *api.TriggerRequest, fn func(*api.TriggerResponse)) {
+				fn(&api.TriggerResponse{Result: api.TriggerResponseResult_SUCCESS})
 			},
 		})
 
@@ -298,8 +294,8 @@ func Test_undeliverable(t *testing.T) {
 
 		cron := integration.New(t, integration.Options{
 			Instances: 1,
-			TriggerFn: func(*api.TriggerRequest) *api.TriggerResponse {
-				return &api.TriggerResponse{Result: api.TriggerResponseResult_FAILED}
+			TriggerFn: func(req *api.TriggerRequest, fn func(*api.TriggerResponse)) {
+				fn(&api.TriggerResponse{Result: api.TriggerResponseResult_FAILED})
 			},
 		})
 
@@ -337,23 +333,22 @@ func Test_undeliverable(t *testing.T) {
 		require.NoError(t, err)
 
 		var inTrigger atomic.Uint32
-		cntCh := make(chan struct{})
+		var gotFn func(*api.TriggerResponse)
 		var ret atomic.Value
 		ret.Store(api.TriggerResponseResult_UNDELIVERABLE)
 		cron := integration.New(t, integration.Options{
 			Instances: 1,
 			Client:    client,
-			TriggerFn: func(*api.TriggerRequest) *api.TriggerResponse {
+			TriggerFn: func(req *api.TriggerRequest, fn func(*api.TriggerResponse)) {
+				gotFn = fn
 				inTrigger.Add(1)
-				<-cntCh
-				return &api.TriggerResponse{Result: ret.Load().(api.TriggerResponseResult)}
 			},
 		})
 
 		assert.EventuallyWithT(t, func(c *assert.CollectT) {
 			assert.Equal(c, uint32(1), inTrigger.Load())
 		}, time.Second*10, time.Millisecond*10)
-		cntCh <- struct{}{}
+		gotFn(&api.TriggerResponse{Result: ret.Load().(api.TriggerResponseResult)})
 		<-time.After(time.Second)
 		assert.Equal(t, uint32(1), inTrigger.Load())
 
@@ -364,7 +359,7 @@ func Test_undeliverable(t *testing.T) {
 			assert.Equal(c, uint32(2), inTrigger.Load())
 		}, time.Second*10, time.Millisecond*10)
 		ret.Store(api.TriggerResponseResult_SUCCESS)
-		cntCh <- struct{}{}
+		gotFn(&api.TriggerResponse{Result: ret.Load().(api.TriggerResponseResult)})
 		assert.EventuallyWithT(t, func(c *assert.CollectT) {
 			assert.Equal(c, 2, cron.Triggered())
 		}, time.Second*10, time.Millisecond*10)
@@ -385,23 +380,20 @@ func Test_undeliverable(t *testing.T) {
 		require.NoError(t, err)
 
 		var inTrigger atomic.Uint32
-		cntCh := make(chan struct{})
-		var ret atomic.Value
-		ret.Store(api.TriggerResponseResult_UNDELIVERABLE)
+		var gotFn func(*api.TriggerResponse)
 		cron := integration.New(t, integration.Options{
 			Instances: 5,
 			Client:    client,
-			TriggerFn: func(*api.TriggerRequest) *api.TriggerResponse {
+			TriggerFn: func(req *api.TriggerRequest, fn func(*api.TriggerResponse)) {
+				gotFn = fn
 				inTrigger.Add(1)
-				<-cntCh
-				return &api.TriggerResponse{Result: ret.Load().(api.TriggerResponseResult)}
 			},
 		})
 
 		assert.EventuallyWithT(t, func(c *assert.CollectT) {
 			assert.Equal(c, uint32(1), inTrigger.Load())
 		}, time.Second*10, time.Millisecond*10)
-		cntCh <- struct{}{}
+		gotFn(&api.TriggerResponse{Result: api.TriggerResponseResult_UNDELIVERABLE})
 		<-time.After(time.Second)
 		assert.Equal(t, uint32(1), inTrigger.Load())
 
@@ -414,9 +406,8 @@ func Test_undeliverable(t *testing.T) {
 		assert.EventuallyWithT(t, func(c *assert.CollectT) {
 			assert.Equal(c, uint32(2), inTrigger.Load())
 		}, time.Second*10, time.Millisecond*10)
-		ret.Store(api.TriggerResponseResult_SUCCESS)
+		gotFn(&api.TriggerResponse{Result: api.TriggerResponseResult_SUCCESS})
 
-		cntCh <- struct{}{}
 		assert.EventuallyWithT(t, func(c *assert.CollectT) {
 			assert.Equal(c, 2, cron.Triggered())
 		}, time.Second*10, time.Millisecond*10)
@@ -426,15 +417,13 @@ func Test_undeliverable(t *testing.T) {
 		t.Parallel()
 
 		var inTrigger atomic.Uint32
-		cntCh := make(chan struct{})
-		var ret atomic.Value
-		ret.Store(api.TriggerResponseResult_UNDELIVERABLE)
+		var gotFn func(*api.TriggerResponse)
+
 		cron := integration.New(t, integration.Options{
 			Instances: 1,
-			TriggerFn: func(*api.TriggerRequest) *api.TriggerResponse {
+			TriggerFn: func(req *api.TriggerRequest, fn func(*api.TriggerResponse)) {
+				gotFn = fn
 				inTrigger.Add(1)
-				<-cntCh
-				return &api.TriggerResponse{Result: ret.Load().(api.TriggerResponseResult)}
 			},
 		})
 
@@ -450,8 +439,10 @@ func Test_undeliverable(t *testing.T) {
 			assert.EventuallyWithT(t, func(c *assert.CollectT) {
 				assert.Equal(c, i+1, inTrigger.Load())
 			}, time.Second*10, time.Millisecond*10)
-			cntCh <- struct{}{}
+			gotFn(&api.TriggerResponse{Result: api.TriggerResponseResult_UNDELIVERABLE})
 		}
+
+		<-time.After(time.Second)
 		trigger := inTrigger.Load()
 		cancel(assert.AnError)
 		<-time.After(time.Second)
@@ -464,11 +455,12 @@ func Test_undeliverable(t *testing.T) {
 		triggered := slice.String()
 		cron := integration.New(t, integration.Options{
 			Instances: 1,
-			TriggerFn: func(req *api.TriggerRequest) *api.TriggerResponse {
+			TriggerFn: func(req *api.TriggerRequest, fn func(*api.TriggerResponse)) {
 				if triggered.Append(req.GetName()) <= 2 {
-					return &api.TriggerResponse{Result: api.TriggerResponseResult_UNDELIVERABLE}
+					fn(&api.TriggerResponse{Result: api.TriggerResponseResult_UNDELIVERABLE})
+					return
 				}
-				return &api.TriggerResponse{Result: api.TriggerResponseResult_SUCCESS}
+				fn(&api.TriggerResponse{Result: api.TriggerResponseResult_SUCCESS})
 			},
 		})
 
@@ -498,12 +490,13 @@ func Test_undeliverable(t *testing.T) {
 		triggered := slice.String()
 		cron := integration.New(t, integration.Options{
 			Instances: 1,
-			TriggerFn: func(req *api.TriggerRequest) *api.TriggerResponse {
+			TriggerFn: func(req *api.TriggerRequest, fn func(*api.TriggerResponse)) {
 				triggered.Append(req.GetName())
 				if req.GetName() == "abc1" || req.GetName() == "def1" {
-					return &api.TriggerResponse{Result: api.TriggerResponseResult_UNDELIVERABLE}
+					fn(&api.TriggerResponse{Result: api.TriggerResponseResult_UNDELIVERABLE})
+					return
 				}
-				return &api.TriggerResponse{Result: api.TriggerResponseResult_SUCCESS}
+				fn(&api.TriggerResponse{Result: api.TriggerResponseResult_SUCCESS})
 			},
 		})
 
@@ -544,9 +537,9 @@ func Test_undeliverable(t *testing.T) {
 
 		cron := integration.New(t, integration.Options{
 			Instances: 1,
-			TriggerFn: func(*api.TriggerRequest) *api.TriggerResponse {
+			TriggerFn: func(req *api.TriggerRequest, fn func(*api.TriggerResponse)) {
 				triggered.Add(1)
-				return &api.TriggerResponse{Result: ret.Load().(api.TriggerResponseResult)}
+				fn(&api.TriggerResponse{Result: ret.Load().(api.TriggerResponseResult)})
 			},
 		})
 
@@ -579,9 +572,9 @@ func Test_undeliverable(t *testing.T) {
 
 		cron := integration.New(t, integration.Options{
 			Instances: 1,
-			TriggerFn: func(*api.TriggerRequest) *api.TriggerResponse {
+			TriggerFn: func(req *api.TriggerRequest, fn func(*api.TriggerResponse)) {
 				triggered.Add(1)
-				return &api.TriggerResponse{Result: ret.Load().(api.TriggerResponseResult)}
+				fn(&api.TriggerResponse{Result: ret.Load().(api.TriggerResponseResult)})
 			},
 		})
 

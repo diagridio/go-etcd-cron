@@ -23,6 +23,7 @@ import (
 	"github.com/diagridio/go-etcd-cron/internal/engine/queue/actioner"
 	"github.com/diagridio/go-etcd-cron/internal/engine/queue/loops/control"
 	"github.com/diagridio/go-etcd-cron/internal/engine/queue/loops/router"
+	"github.com/diagridio/go-etcd-cron/internal/engine/queue/loops/worker"
 	"github.com/diagridio/go-etcd-cron/internal/key"
 	"github.com/diagridio/go-etcd-cron/internal/scheduler"
 )
@@ -49,6 +50,10 @@ type Options struct {
 
 	// ConsumerSink is an optional channel to send informer events to.
 	ConsumerSink chan<- *api.InformerEvent
+
+	// Workers is the number of workers to use for processing events in the
+	// queue.
+	Workers uint32
 }
 
 type Queue struct {
@@ -62,6 +67,7 @@ type Queue struct {
 	consumer    *consumer.Consumer
 	controlLoop loop.Interface[*queue.ControlEvent]
 	queue       *eventsqueue.Processor[string, counter.Interface]
+	workers     uint32
 
 	readyCh chan struct{}
 }
@@ -77,6 +83,7 @@ func New(opts Options) *Queue {
 		consumer: consumer.New(consumer.Options{
 			Sink: opts.ConsumerSink,
 		}),
+		workers: opts.Workers,
 	}
 
 	q.queue = eventsqueue.NewProcessor[string, counter.Interface](
@@ -102,35 +109,43 @@ func (q *Queue) Run(ctx context.Context) error {
 		Consumer:     q.consumer,
 	})
 
-	ictx, cancel := context.WithCancelCause(context.Background())
+	q.log.Info("Starting queue with workers", "count", q.workers)
+	workers := make([]loop.Interface[*queue.JobEvent], q.workers)
+	for i := range workers {
+		workers[i] = worker.New(worker.Options{
+			Actioner: act,
+			Log:      q.log,
+		})
+	}
+
 	routerLoop := router.New(router.Options{
-		Actioner: act,
-		Log:      q.log,
-		Cancel:   cancel,
+		Log:     q.log,
+		Workers: workers,
 	})
 
 	q.controlLoop = control.New(control.Options{
 		Actioner: act,
-		Jobs:     routerLoop,
+		Router:   routerLoop,
+	})
+
+	runners := make([]concurrency.Runner, 0, len(workers)+2)
+	for _, w := range workers {
+		runners = append(runners, w.Run)
+	}
+	runners = append(runners, routerLoop.Run, q.controlLoop.Run)
+
+	runners = append(runners, func(ctx context.Context) error {
+		<-ctx.Done()
+
+		q.controlLoop.Close(&queue.ControlEvent{
+			Action: new(queue.ControlEvent_Close),
+		})
+		return nil
 	})
 
 	close(q.readyCh)
 
-	return concurrency.NewRunnerManager(
-		routerLoop.Run,
-		q.controlLoop.Run,
-		func(context.Context) error {
-			// Use the real func context here, rather than the background one we control
-			// cancelling in-loop.
-			<-ctx.Done()
-
-			q.controlLoop.Close(&queue.ControlEvent{
-				Action: new(queue.ControlEvent_Close),
-			})
-
-			return nil
-		},
-	).Run(ictx)
+	return concurrency.NewRunnerManager(runners...).Run(ctx)
 }
 
 func (q *Queue) Inform(ctx context.Context, event *queue.Informed) {

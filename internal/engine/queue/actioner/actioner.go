@@ -37,7 +37,7 @@ type Interface interface {
 	Enqueue(counter.Interface)
 	Deschedule(counter.Interface)
 	RemoveConsumer(counter.Interface)
-	Trigger(context.Context, *api.TriggerRequest) *api.TriggerResponse
+	Trigger(*api.TriggerRequest, func(*api.TriggerResponse))
 	AddToControlLoop(*queue.ControlEvent)
 	DeliverablePrefixes(...string) []string
 	UnDeliverablePrefixes(...string)
@@ -108,8 +108,8 @@ func (a *actioner) RemoveConsumer(counter counter.Interface) {
 	a.consumer.Delete(counter.JobName(), counter.Job())
 }
 
-func (a *actioner) Trigger(ctx context.Context, req *api.TriggerRequest) *api.TriggerResponse {
-	return a.triggerFn(ctx, req)
+func (a *actioner) Trigger(req *api.TriggerRequest, fn func(*api.TriggerResponse)) {
+	a.triggerFn(req, fn)
 }
 
 func (a *actioner) AddToControlLoop(event *queue.ControlEvent) {

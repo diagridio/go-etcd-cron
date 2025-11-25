@@ -28,8 +28,9 @@ import (
 type Options struct {
 	Instances uint64
 	GotCh     chan *api.TriggerRequest
-	TriggerFn func(*api.TriggerRequest) *api.TriggerResponse
+	TriggerFn func(*api.TriggerRequest, func(*api.TriggerResponse))
 	Client    *clientv3.Client
+	Workers   *uint32
 }
 
 type Integration struct {
@@ -67,16 +68,18 @@ func New(t *testing.T, opts Options) *Integration {
 			Client:    cl,
 			Namespace: "abc",
 			ID:        strconv.FormatUint(i, 10),
-			TriggerFn: func(_ context.Context, req *api.TriggerRequest) *api.TriggerResponse {
+			Workers:   opts.Workers,
+			TriggerFn: func(req *api.TriggerRequest, fn func(*api.TriggerResponse)) {
 				defer triggered.Append(req.GetName())
 
 				if opts.GotCh != nil {
 					opts.GotCh <- req
 				}
 				if opts.TriggerFn != nil {
-					return opts.TriggerFn(req)
+					opts.TriggerFn(req, fn)
+					return
 				}
-				return &api.TriggerResponse{Result: api.TriggerResponseResult_SUCCESS}
+				fn(&api.TriggerResponse{Result: api.TriggerResponseResult_SUCCESS})
 			},
 		}
 

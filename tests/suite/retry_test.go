@@ -28,9 +28,11 @@ func Test_leadership_retry(t *testing.T) {
 
 		client := etcd.EmbeddedBareClient(t)
 		cron1, err := cron.New(cron.Options{
-			Client:    client,
-			ID:        "123",
-			TriggerFn: func(context.Context, *api.TriggerRequest) *api.TriggerResponse { return nil },
+			Client: client,
+			ID:     "123",
+			TriggerFn: func(_ *api.TriggerRequest, fn func(*api.TriggerResponse)) {
+				fn(&api.TriggerResponse{Result: api.TriggerResponseResult_SUCCESS})
+			},
 		})
 		require.NoError(t, err)
 
@@ -48,9 +50,11 @@ func Test_leadership_retry(t *testing.T) {
 			for range 10 {
 				ctx, cancel := context.WithTimeout(t.Context(), time.Millisecond*500)
 				c, err := cron.New(cron.Options{
-					Client:    client,
-					ID:        "456",
-					TriggerFn: func(context.Context, *api.TriggerRequest) *api.TriggerResponse { return nil },
+					Client: client,
+					ID:     "456",
+					TriggerFn: func(_ *api.TriggerRequest, fn func(*api.TriggerResponse)) {
+						fn(&api.TriggerResponse{Result: api.TriggerResponseResult_SUCCESS})
+					},
 				})
 				ierrCh <- err
 				if err := c.Run(ctx); errors.Is(err, context.DeadlineExceeded) {

@@ -37,9 +37,9 @@ func Test_Run(t *testing.T) {
 			Client:    client,
 			Namespace: "abc",
 			ID:        "0",
-			TriggerFn: func(context.Context, *api.TriggerRequest) *api.TriggerResponse {
+			TriggerFn: func(_ *api.TriggerRequest, fn func(*api.TriggerResponse)) {
 				triggered.Add(1)
-				return &api.TriggerResponse{Result: api.TriggerResponseResult_SUCCESS}
+				fn(&api.TriggerResponse{Result: api.TriggerResponseResult_SUCCESS})
 			},
 			ReplicaData: replicaData,
 		})
@@ -90,8 +90,8 @@ func Test_Run(t *testing.T) {
 			Client:    client,
 			Namespace: "abc",
 			ID:        "0",
-			TriggerFn: func(context.Context, *api.TriggerRequest) *api.TriggerResponse {
-				return &api.TriggerResponse{Result: api.TriggerResponseResult_SUCCESS}
+			TriggerFn: func(_ *api.TriggerRequest, fn func(*api.TriggerResponse)) {
+				fn(&api.TriggerResponse{Result: api.TriggerResponseResult_SUCCESS})
 			},
 			ReplicaData: replicaData,
 		})

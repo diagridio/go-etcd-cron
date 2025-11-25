@@ -39,9 +39,9 @@ func newCron(t *testing.T, client *clientv3.Client, id string) *Cron {
 		Client:    client,
 		Namespace: "abc",
 		ID:        id,
-		TriggerFn: func(context.Context, *api.TriggerRequest) *api.TriggerResponse {
+		TriggerFn: func(_ *api.TriggerRequest, fn func(*api.TriggerResponse)) {
 			calls.Add(1)
-			return &api.TriggerResponse{Result: api.TriggerResponseResult_SUCCESS}
+			fn(&api.TriggerResponse{Result: api.TriggerResponseResult_SUCCESS})
 		},
 		ReplicaData: replicaData,
 	})

@@ -19,7 +19,7 @@ type Fake struct {
 	enqueueFn               func(counter.Interface)
 	descheduleFn            func(counter.Interface)
 	removeConsumerFn        func(counter.Interface)
-	triggerFn               func(context.Context, *api.TriggerRequest) *api.TriggerResponse
+	triggerFn               func(*api.TriggerRequest, func(*api.TriggerResponse))
 	addToControlLoopFn      func(*queue.ControlEvent)
 	deliverablePrefixesFn   func(...string) []string
 	unDeliverablePrefixesFn func(...string)
@@ -32,7 +32,7 @@ func New() *Fake {
 		scheduleFn:              func(context.Context, string, int64, *stored.Job) (counter.Interface, error) { return nil, nil },
 		enqueueFn:               func(counter.Interface) {},
 		descheduleFn:            func(counter.Interface) {},
-		triggerFn:               func(context.Context, *api.TriggerRequest) *api.TriggerResponse { return nil },
+		triggerFn:               func(*api.TriggerRequest, func(*api.TriggerResponse)) {},
 		removeConsumerFn:        func(counter.Interface) {},
 		addToControlLoopFn:      func(*queue.ControlEvent) {},
 		deliverablePrefixesFn:   func(...string) []string { return nil },
@@ -57,7 +57,7 @@ func (f *Fake) WithDeschedule(fn func(counter.Interface)) *Fake {
 	return f
 }
 
-func (f *Fake) WithTrigger(fn func(context.Context, *api.TriggerRequest) *api.TriggerResponse) *Fake {
+func (f *Fake) WithTrigger(fn func(*api.TriggerRequest, func(*api.TriggerResponse))) *Fake {
 	f.triggerFn = fn
 	return f
 }
@@ -104,8 +104,8 @@ func (f *Fake) Deschedule(c counter.Interface) {
 	f.descheduleFn(c)
 }
 
-func (f *Fake) Trigger(ctx context.Context, req *api.TriggerRequest) *api.TriggerResponse {
-	return f.triggerFn(ctx, req)
+func (f *Fake) Trigger(req *api.TriggerRequest, fn func(*api.TriggerResponse)) {
+	f.triggerFn(req, fn)
 }
 
 func (f *Fake) AddToControlLoop(event *queue.ControlEvent) {

@@ -65,6 +65,17 @@ type Options struct {
 	// queue unless read from.
 	// Channel will be closed on final shutdown.
 	ConsumerSink chan<- *api.InformerEvent
+
+	// Workers is the number of workers that handle job events. The higher the
+	// number the more go routines will be spawned, each working over a partition
+	// of the total job space. The higher the number, the higher the number of
+	// jobs which can be concurrently executed at a time. Increasing this number,
+	// increases the number of go routines for this instance. This number should
+	// be tuned to the bottleneck of job execution, i.e., CPU, I/O, memory, etc.
+	// Defaults to 64.
+	// Every instance will have this number of workers.
+	// Must be larger than 0.
+	Workers *uint32
 }
 
 // cron is the implementation of the cron interface.
@@ -76,6 +87,7 @@ type cron struct {
 	triggerFn    api.TriggerFunction
 	replicaData  *anypb.Any
 	consumerSink chan<- *api.InformerEvent
+	workers      uint32
 
 	api       *retry.Retry
 	elected   atomic.Bool
@@ -92,6 +104,14 @@ func New(opts Options) (api.Interface, error) {
 
 	if opts.Client == nil {
 		return nil, errors.New("client is required")
+	}
+
+	var workers uint32 = 64
+	if opts.Workers != nil {
+		workers = *opts.Workers
+	}
+	if workers == 0 {
+		return nil, errors.New("workers must be larger than 0")
 	}
 
 	key, err := key.New(key.Options{
@@ -127,6 +147,7 @@ func New(opts Options) (api.Interface, error) {
 		wleaderCh:    opts.WatchLeadership,
 		api:          retry.New(retry.Options{Log: log}),
 		consumerSink: opts.ConsumerSink,
+		workers:      workers,
 	}, nil
 }
 
@@ -242,6 +263,7 @@ func (c *cron) runEngine(ctx context.Context, elected *elector.Elected) error {
 		Client:       c.client,
 		TriggerFn:    c.triggerFn,
 		ConsumerSink: c.consumerSink,
+		Workers:      c.workers,
 	})
 	if err != nil {
 		return err
