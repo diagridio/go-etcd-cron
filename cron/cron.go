@@ -63,6 +63,7 @@ type Options struct {
 	// events for this partition. During shutdown and leadership events, the sink
 	// will receive a `DropAll` event. If defined, this channel will block the
 	// queue unless read from.
+	// Channel will be closed on final shutdown.
 	ConsumerSink chan<- *api.InformerEvent
 }
 
@@ -135,8 +136,15 @@ func (c *cron) Run(ctx context.Context) error {
 		return errors.New("cron already running")
 	}
 
-	defer c.api.Close()
-	defer c.log.Info("cron instance shutdown")
+	defer func() {
+		c.log.Info("cron instance shutdown")
+		c.api.Close()
+
+		// If defined, close consumer sink to single end.
+		if c.consumerSink != nil {
+			close(c.consumerSink)
+		}
+	}()
 
 	leadership := leadership.New(leadership.Options{
 		Log:         c.log,
