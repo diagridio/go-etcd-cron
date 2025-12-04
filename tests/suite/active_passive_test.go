@@ -44,12 +44,12 @@ func Test_active_passive(t *testing.T) {
 			opts.WatchLeadership = ch
 		}
 
-		opts.TriggerFn = func(context.Context, *api.TriggerRequest) *api.TriggerResponse {
+		opts.TriggerFn = func(_ *api.TriggerRequest, fn func(*api.TriggerResponse)) {
 			lock.Lock()
 			instanceCalled[i] = true
 			called++
 			lock.Unlock()
-			return &api.TriggerResponse{Result: api.TriggerResponseResult_SUCCESS}
+			fn(&api.TriggerResponse{Result: api.TriggerResponseResult_SUCCESS})
 		}
 		opts.ID = strconv.Itoa(i % 3)
 		crs[i], err = cron.New(opts)
@@ -121,12 +121,12 @@ func Test_passive_active(t *testing.T) {
 			opts.WatchLeadership = ch
 		}
 
-		opts.TriggerFn = func(context.Context, *api.TriggerRequest) *api.TriggerResponse {
+		opts.TriggerFn = func(_ *api.TriggerRequest, fn func(*api.TriggerResponse)) {
 			lock.Lock()
 			instanceCalled[i] = true
 			called++
 			lock.Unlock()
-			return &api.TriggerResponse{Result: api.TriggerResponseResult_SUCCESS}
+			fn(&api.TriggerResponse{Result: api.TriggerResponseResult_SUCCESS})
 		}
 		opts.ID = strconv.Itoa(i % 3)
 		crs[i], err = cron.New(opts)
@@ -225,6 +225,8 @@ func Test_passive_active(t *testing.T) {
 			assert.NotContains(c, uids, lead.GetUid())
 		}
 	}, time.Second*5, time.Millisecond*10)
+
+	time.Sleep(time.Second)
 
 	for _, c := range crs {
 		if c.IsElected() {

@@ -43,18 +43,18 @@ func main() {
 		Client:    client,
 		Namespace: "abc",
 		ID:        "helloworld",
-		TriggerFn: func(context.Context, *api.TriggerRequest) *api.TriggerResponse {
+		TriggerFn: func(_ *api.TriggerRequest, fn func(*api.TriggerResponse)) {
 			// Do something with your trigger here.
 			// Return SUCCESS if the trigger was successful, FAILED if the trigger
 			// failed and should be subject to the FailurePolicy, or UNDELIVERABLE if
 			// the job is currently undeliverable and should be moved to the staging
 			// queue. Use `cron.DeliverablePrefixes` elsewhere to mark jobs with the
 			// given prefixes as now deliverable.
-			return &api.TriggerResponse{
+			fn(&api.TriggerResponse{
 				Result: api.TriggerResponseResult_SUCCESS,
 				// Result: api.TriggerResponseResult_FAILED,
 				// Result: api.TriggerResponseResult_UNDELIVERABLE,
-			}
+			})
 		},
 	})
 	if err != nil {

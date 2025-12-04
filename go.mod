@@ -1,6 +1,6 @@
 module github.com/diagridio/go-etcd-cron
 
-go 1.24.3
+go 1.24.10
 
 require (
 	github.com/dapr/kit v0.16.2-0.20251124175541-3ac186dff64d

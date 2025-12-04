@@ -43,12 +43,12 @@ func Test_leadership_scaleup(t *testing.T) {
 			opts.WatchLeadership = ch
 		}
 
-		opts.TriggerFn = func(_ context.Context, req *api.TriggerRequest) *api.TriggerResponse {
+		opts.TriggerFn = func(req *api.TriggerRequest, fn func(*api.TriggerResponse)) {
 			lock.Lock()
 			instanceCalled[i] = true
 			called[req.GetName()]++
 			lock.Unlock()
-			return &api.TriggerResponse{Result: api.TriggerResponseResult_SUCCESS}
+			fn(&api.TriggerResponse{Result: api.TriggerResponseResult_SUCCESS})
 		}
 		opts.ID = strconv.Itoa(i)
 		crs[i], err = cron.New(opts)
@@ -145,12 +145,12 @@ func Test_leadership_scaledown(t *testing.T) {
 			opts.WatchLeadership = ch
 		}
 
-		opts.TriggerFn = func(_ context.Context, req *api.TriggerRequest) *api.TriggerResponse {
+		opts.TriggerFn = func(req *api.TriggerRequest, fn func(*api.TriggerResponse)) {
 			lock.Lock()
 			instanceCalled[i] = true
 			called[req.GetName()]++
 			lock.Unlock()
-			return &api.TriggerResponse{Result: api.TriggerResponseResult_SUCCESS}
+			fn(&api.TriggerResponse{Result: api.TriggerResponseResult_SUCCESS})
 		}
 		opts.ID = strconv.Itoa(i)
 		crs[i], err = cron.New(opts)
@@ -232,8 +232,8 @@ func Test_leadership_wait_free(t *testing.T) {
 		Client: client,
 		Log:    logr.Discard(),
 		ID:     "123",
-		TriggerFn: func(_ context.Context, req *api.TriggerRequest) *api.TriggerResponse {
-			return &api.TriggerResponse{Result: api.TriggerResponseResult_SUCCESS}
+		TriggerFn: func(req *api.TriggerRequest, fn func(*api.TriggerResponse)) {
+			fn(&api.TriggerResponse{Result: api.TriggerResponseResult_SUCCESS})
 		},
 	}
 

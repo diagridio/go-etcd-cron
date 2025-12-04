@@ -14,7 +14,7 @@ import (
 // The returne TriggerResponse will indicate whether the Job was successfully
 // triggered, the trigger failed, or the Job need to be put into the staging
 // queue.
-type TriggerFunction func(context.Context, *TriggerRequest) *TriggerResponse
+type TriggerFunction func(*TriggerRequest, func(*TriggerResponse))
 
 // Interface is a cron interface. It schedules and manages job which are stored
 // and informed from ETCD. It uses a trigger function to call when a job is

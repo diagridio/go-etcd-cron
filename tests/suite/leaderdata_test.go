@@ -36,8 +36,8 @@ func Test_leaderdata(t *testing.T) {
 			opts.WatchLeadership = ch
 		}
 
-		opts.TriggerFn = func(context.Context, *api.TriggerRequest) *api.TriggerResponse {
-			return &api.TriggerResponse{Result: api.TriggerResponseResult_SUCCESS}
+		opts.TriggerFn = func(_ *api.TriggerRequest, fn func(*api.TriggerResponse)) {
+			fn(&api.TriggerResponse{Result: api.TriggerResponseResult_SUCCESS})
 		}
 		opts.ID = strconv.Itoa(i)
 		opts.ReplicaData = &anypb.Any{Value: []byte(opts.ID)}

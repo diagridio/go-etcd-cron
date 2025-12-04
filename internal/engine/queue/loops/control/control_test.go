@@ -11,9 +11,9 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/dapr/kit/events/loop/fake"
 	"github.com/diagridio/go-etcd-cron/internal/api/queue"
 	actionerfake "github.com/diagridio/go-etcd-cron/internal/engine/queue/actioner/fake"
-	"github.com/dapr/kit/events/loop/fake"
 )
 
 func Test_control(t *testing.T) {
@@ -23,7 +23,7 @@ func Test_control(t *testing.T) {
 		t.Parallel()
 
 		var called int
-		jobs := fake.New[*queue.JobEvent]().WithEnqueue(func(action *queue.JobEvent) {
+		router := fake.New[*queue.JobEvent]().WithEnqueue(func(action *queue.JobEvent) {
 			called++
 			assert.Equal(t, &queue.JobEvent{
 				JobName: "test",
@@ -39,8 +39,8 @@ func Test_control(t *testing.T) {
 		})
 
 		c := &control{
-			jobs: jobs,
-			act:  actionerfake.New(),
+			router: router,
+			act:    actionerfake.New(),
 		}
 
 		require.NoError(t, c.Handle(t.Context(), &queue.ControlEvent{
@@ -55,16 +55,16 @@ func Test_control(t *testing.T) {
 		assert.Equal(t, 1, called)
 	})
 
-	t.Run("ExecuteRequest should enqueue to jobs loop", func(t *testing.T) {
+	t.Run("ExecuteRequest should enqueue to router loop", func(t *testing.T) {
 		t.Parallel()
 
 		execute := &queue.ExecuteRequest{JobName: "job1"}
-		jobs := fake.New[*queue.JobEvent]().WithEnqueue(func(action *queue.JobEvent) {
+		router := fake.New[*queue.JobEvent]().WithEnqueue(func(action *queue.JobEvent) {
 			assert.Equal(t, "job1", action.JobName)
 			assert.Equal(t, execute, action.GetAction().GetExecuteRequest())
 		})
 
-		c := &control{jobs: jobs, act: actionerfake.New()}
+		c := &control{router: router, act: actionerfake.New()}
 
 		err := c.Handle(t.Context(), &queue.ControlEvent{
 			Action: &queue.ControlEvent_ExecuteRequest{ExecuteRequest: execute},
@@ -72,16 +72,16 @@ func Test_control(t *testing.T) {
 		require.NoError(t, err)
 	})
 
-	t.Run("ExecuteResponse should enqueue to jobs loop", func(t *testing.T) {
+	t.Run("ExecuteResponse should enqueue to router loop", func(t *testing.T) {
 		t.Parallel()
 
 		response := &queue.ExecuteResponse{JobName: "job2"}
-		jobs := fake.New[*queue.JobEvent]().WithEnqueue(func(action *queue.JobEvent) {
+		router := fake.New[*queue.JobEvent]().WithEnqueue(func(action *queue.JobEvent) {
 			assert.Equal(t, "job2", action.JobName)
 			assert.Equal(t, response, action.GetAction().GetExecuteResponse())
 		})
 
-		c := &control{jobs: jobs, act: actionerfake.New()}
+		c := &control{router: router, act: actionerfake.New()}
 
 		err := c.Handle(t.Context(), &queue.ControlEvent{
 			Action: &queue.ControlEvent_ExecuteResponse{ExecuteResponse: response},
@@ -89,7 +89,7 @@ func Test_control(t *testing.T) {
 		require.NoError(t, err)
 	})
 
-	t.Run("DeliverablePrefixes should call actioner and enqueue deliverable jobs", func(t *testing.T) {
+	t.Run("DeliverablePrefixes should call actioner and enqueue deliverable router", func(t *testing.T) {
 		t.Parallel()
 
 		act := actionerfake.New().WithDeliverablePrefixes(func(prefixes ...string) []string {
@@ -98,11 +98,11 @@ func Test_control(t *testing.T) {
 		})
 
 		var enqueued []string
-		jobs := fake.New[*queue.JobEvent]().WithEnqueue(func(action *queue.JobEvent) {
+		router := fake.New[*queue.JobEvent]().WithEnqueue(func(action *queue.JobEvent) {
 			enqueued = append(enqueued, action.JobName)
 		})
 
-		c := &control{jobs: jobs, act: act}
+		c := &control{router: router, act: act}
 
 		err := c.Handle(t.Context(), &queue.ControlEvent{
 			Action: &queue.ControlEvent_DeliverablePrefixes{
@@ -122,7 +122,7 @@ func Test_control(t *testing.T) {
 			assert.ElementsMatch(t, []string{"badPrefix"}, prefixes)
 		})
 
-		c := &control{jobs: fake.New[*queue.JobEvent](), act: act}
+		c := &control{router: fake.New[*queue.JobEvent](), act: act}
 
 		err := c.Handle(t.Context(), &queue.ControlEvent{
 			Action: &queue.ControlEvent_UndeliverablePrefixes{
@@ -137,11 +137,11 @@ func Test_control(t *testing.T) {
 		t.Parallel()
 
 		var received *queue.JobEvent
-		jobs := fake.New[*queue.JobEvent]().WithEnqueue(func(action *queue.JobEvent) {
+		router := fake.New[*queue.JobEvent]().WithEnqueue(func(action *queue.JobEvent) {
 			received = action
 		})
 
-		c := &control{jobs: jobs, act: actionerfake.New()}
+		c := &control{router: router, act: actionerfake.New()}
 
 		err := c.Handle(t.Context(), &queue.ControlEvent{
 			Action: &queue.ControlEvent_CloseJob{
@@ -154,16 +154,16 @@ func Test_control(t *testing.T) {
 		assert.NotNil(t, received.Action.GetCloseJob())
 	})
 
-	t.Run("Close should trigger close on jobs loop", func(t *testing.T) {
+	t.Run("Close should trigger close on router loop", func(t *testing.T) {
 		t.Parallel()
 
 		closed := false
-		jobs := fake.New[*queue.JobEvent]().WithClose(func(event *queue.JobEvent) {
+		router := fake.New[*queue.JobEvent]().WithClose(func(event *queue.JobEvent) {
 			closed = true
 			assert.NotNil(t, event.Action.GetClose())
 		})
 
-		c := &control{jobs: jobs, act: actionerfake.New()}
+		c := &control{router: router, act: actionerfake.New()}
 
 		err := c.Handle(t.Context(), &queue.ControlEvent{
 			Action: &queue.ControlEvent_Close{},
@@ -175,7 +175,7 @@ func Test_control(t *testing.T) {
 	t.Run("unknown event should return error", func(t *testing.T) {
 		t.Parallel()
 
-		c := &control{jobs: fake.New[*queue.JobEvent](), act: actionerfake.New()}
+		c := &control{router: fake.New[*queue.JobEvent](), act: actionerfake.New()}
 
 		err := c.Handle(t.Context(), &queue.ControlEvent{
 			Action: nil,

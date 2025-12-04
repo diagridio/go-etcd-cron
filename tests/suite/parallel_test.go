@@ -7,10 +7,10 @@ package suite
 
 import (
 	"strconv"
-	"sync/atomic"
 	"testing"
 	"time"
 
+	"github.com/dapr/kit/concurrency/slice"
 	"github.com/dapr/kit/ptr"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -21,6 +21,8 @@ import (
 
 func Test_parallel(t *testing.T) {
 	t.Parallel()
+
+	const jobsN = 100
 
 	for _, test := range []struct {
 		name  string
@@ -33,31 +35,36 @@ func Test_parallel(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			t.Parallel()
 
-			releaseCh := make(chan struct{})
-			var waiting atomic.Int32
-			var done atomic.Int32
+			fns := slice.New[func(*api.TriggerResponse)]()
 			cron := integration.New(t, integration.Options{
 				Instances: total,
-				TriggerFn: func(*api.TriggerRequest) *api.TriggerResponse {
-					waiting.Add(1)
-					<-releaseCh
-					done.Add(1)
-					return &api.TriggerResponse{Result: api.TriggerResponseResult_SUCCESS}
+				TriggerFn: func(req *api.TriggerRequest, fn func(*api.TriggerResponse)) {
+					fns.Append(fn)
 				},
 			})
 
-			for i := range 100 {
+			for i := range jobsN {
 				require.NoError(t, cron.API().Add(cron.Context(), strconv.Itoa(i), &api.Job{
 					DueTime: ptr.Of("0s"),
 				}))
 			}
 
 			assert.EventuallyWithT(t, func(c *assert.CollectT) {
-				assert.Equal(c, int32(100), waiting.Load())
+				assert.Equal(c, jobsN, fns.Len())
 			}, 5*time.Second, 10*time.Millisecond)
-			close(releaseCh)
+
+			resp, err := cron.API().List(t.Context(), "")
+			require.NoError(t, err)
+			assert.Len(t, resp.Jobs, jobsN)
+
+			for _, fn := range fns.Slice() {
+				fn(&api.TriggerResponse{Result: api.TriggerResponseResult_SUCCESS})
+			}
+
 			assert.EventuallyWithT(t, func(c *assert.CollectT) {
-				assert.Equal(c, int32(100), done.Load())
+				resp, err = cron.API().List(t.Context(), "")
+				require.NoError(t, err)
+				assert.Empty(c, resp.Jobs)
 			}, 5*time.Second, 10*time.Millisecond)
 		})
 	}

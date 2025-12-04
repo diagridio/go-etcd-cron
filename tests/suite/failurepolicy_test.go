@@ -31,9 +31,9 @@ func Test_FailurePolicy(t *testing.T) {
 		cron := integration.New(t, integration.Options{
 			Instances: 1,
 			Client:    etcd.EmbeddedBareClient(t),
-			TriggerFn: func(*api.TriggerRequest) *api.TriggerResponse {
+			TriggerFn: func(_ *api.TriggerRequest, fn func(*api.TriggerResponse)) {
 				assert.GreaterOrEqual(t, uint32(8), got.Add(1))
-				return &api.TriggerResponse{Result: api.TriggerResponseResult_FAILED}
+				fn(&api.TriggerResponse{Result: api.TriggerResponseResult_FAILED})
 			},
 			GotCh: gotCh,
 		})
@@ -70,9 +70,9 @@ func Test_FailurePolicy(t *testing.T) {
 		cron := integration.New(t, integration.Options{
 			Instances: 1,
 			Client:    etcd.EmbeddedBareClient(t),
-			TriggerFn: func(*api.TriggerRequest) *api.TriggerResponse {
+			TriggerFn: func(_ *api.TriggerRequest, fn func(*api.TriggerResponse)) {
 				assert.GreaterOrEqual(t, uint32(2), got.Add(1))
-				return &api.TriggerResponse{Result: api.TriggerResponseResult_FAILED}
+				fn(&api.TriggerResponse{Result: api.TriggerResponseResult_FAILED})
 			},
 			GotCh: gotCh,
 		})
@@ -112,12 +112,13 @@ func Test_FailurePolicy(t *testing.T) {
 		cron := integration.New(t, integration.Options{
 			Instances: 1,
 			Client:    etcd.EmbeddedBareClient(t),
-			TriggerFn: func(*api.TriggerRequest) *api.TriggerResponse {
+			TriggerFn: func(_ *api.TriggerRequest, fn func(*api.TriggerResponse)) {
 				assert.GreaterOrEqual(t, uint32(5), got.Add(1))
 				if got.Load() == 3 {
-					return &api.TriggerResponse{Result: api.TriggerResponseResult_SUCCESS}
+					fn(&api.TriggerResponse{Result: api.TriggerResponseResult_SUCCESS})
+					return
 				}
-				return &api.TriggerResponse{Result: api.TriggerResponseResult_FAILED}
+				fn(&api.TriggerResponse{Result: api.TriggerResponseResult_FAILED})
 			},
 			GotCh: gotCh,
 		})
@@ -161,12 +162,13 @@ func Test_FailurePolicy(t *testing.T) {
 		cron := integration.New(t, integration.Options{
 			Instances: 1,
 			Client:    etcd.EmbeddedBareClient(t),
-			TriggerFn: func(*api.TriggerRequest) *api.TriggerResponse {
+			TriggerFn: func(_ *api.TriggerRequest, fn func(*api.TriggerResponse)) {
 				assert.GreaterOrEqual(t, uint32(100), got.Add(1))
 				if got.Load() == 100 {
-					return &api.TriggerResponse{Result: api.TriggerResponseResult_SUCCESS}
+					fn(&api.TriggerResponse{Result: api.TriggerResponseResult_SUCCESS})
+					return
 				}
-				return &api.TriggerResponse{Result: api.TriggerResponseResult_FAILED}
+				fn(&api.TriggerResponse{Result: api.TriggerResponseResult_FAILED})
 			},
 			GotCh: gotCh,
 		})
