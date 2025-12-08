@@ -242,7 +242,9 @@ func (h *handler) DeletePrefixes(ctx context.Context, prefixes ...string) error 
 			continue
 		}
 
-		if err := h.validator.JobName(prefix); err != nil {
+		// In cases of non-DNS compatible suffix characters, add a dummy character
+		// to ensure validation passes.
+		if err := h.validator.JobName(prefix + "a"); err != nil {
 			return err
 		}
 	}
