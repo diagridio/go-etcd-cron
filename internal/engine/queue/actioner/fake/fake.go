@@ -10,39 +10,38 @@ import (
 
 	"github.com/diagridio/go-etcd-cron/api"
 	"github.com/diagridio/go-etcd-cron/internal/api/queue"
-	"github.com/diagridio/go-etcd-cron/internal/api/stored"
 	"github.com/diagridio/go-etcd-cron/internal/counter"
 )
 
 type Fake struct {
-	scheduleFn              func(context.Context, string, int64, *stored.Job) (counter.Interface, error)
+	scheduleFn              func(context.Context, string, *queue.QueuedJob) (counter.Interface, error)
 	enqueueFn               func(counter.Interface)
 	descheduleFn            func(counter.Interface)
 	removeConsumerFn        func(counter.Interface)
 	triggerFn               func(*api.TriggerRequest, func(*api.TriggerResponse))
 	addToControlLoopFn      func(*queue.ControlEvent)
-	deliverablePrefixesFn   func(...string) []string
+	deliverablePrefixesFn   func(...string) []int64
 	unDeliverablePrefixesFn func(...string)
-	stageFn                 func(string) bool
-	unstageFn               func(string)
+	stageFn                 func(int64, string) bool
+	unstageFn               func(int64)
 }
 
 func New() *Fake {
 	return &Fake{
-		scheduleFn:              func(context.Context, string, int64, *stored.Job) (counter.Interface, error) { return nil, nil },
+		scheduleFn:              func(context.Context, string, *queue.QueuedJob) (counter.Interface, error) { return nil, nil },
 		enqueueFn:               func(counter.Interface) {},
 		descheduleFn:            func(counter.Interface) {},
 		triggerFn:               func(*api.TriggerRequest, func(*api.TriggerResponse)) {},
 		removeConsumerFn:        func(counter.Interface) {},
 		addToControlLoopFn:      func(*queue.ControlEvent) {},
-		deliverablePrefixesFn:   func(...string) []string { return nil },
+		deliverablePrefixesFn:   func(...string) []int64 { return nil },
 		unDeliverablePrefixesFn: func(...string) {},
-		stageFn:                 func(string) bool { return false },
-		unstageFn:               func(string) {},
+		stageFn:                 func(int64, string) bool { return false },
+		unstageFn:               func(int64) {},
 	}
 }
 
-func (f *Fake) WithSchedule(fn func(context.Context, string, int64, *stored.Job) (counter.Interface, error)) *Fake {
+func (f *Fake) WithSchedule(fn func(context.Context, string, *queue.QueuedJob) (counter.Interface, error)) *Fake {
 	f.scheduleFn = fn
 	return f
 }
@@ -67,7 +66,7 @@ func (f *Fake) WithAddToControlLoop(fn func(*queue.ControlEvent)) *Fake {
 	return f
 }
 
-func (f *Fake) WithDeliverablePrefixes(fn func(...string) []string) *Fake {
+func (f *Fake) WithDeliverablePrefixes(fn func(...string) []int64) *Fake {
 	f.deliverablePrefixesFn = fn
 	return f
 }
@@ -82,18 +81,18 @@ func (f *Fake) WithRemoveConsumer(fn func(counter.Interface)) *Fake {
 	return f
 }
 
-func (f *Fake) WithStage(fn func(string) bool) *Fake {
+func (f *Fake) WithStage(fn func(int64, string) bool) *Fake {
 	f.stageFn = fn
 	return f
 }
 
-func (f *Fake) WithUnstage(fn func(string)) *Fake {
+func (f *Fake) WithUnstage(fn func(int64)) *Fake {
 	f.unstageFn = fn
 	return f
 }
 
-func (f *Fake) Schedule(ctx context.Context, id string, t int64, job *stored.Job) (counter.Interface, error) {
-	return f.scheduleFn(ctx, id, t, job)
+func (f *Fake) Schedule(ctx context.Context, id string, job *queue.QueuedJob) (counter.Interface, error) {
+	return f.scheduleFn(ctx, id, job)
 }
 
 func (f *Fake) Enqueue(c counter.Interface) {
@@ -112,7 +111,7 @@ func (f *Fake) AddToControlLoop(event *queue.ControlEvent) {
 	f.addToControlLoopFn(event)
 }
 
-func (f *Fake) DeliverablePrefixes(prefixes ...string) []string {
+func (f *Fake) DeliverablePrefixes(prefixes ...string) []int64 {
 	return f.deliverablePrefixesFn(prefixes...)
 }
 
@@ -120,14 +119,14 @@ func (f *Fake) UnDeliverablePrefixes(prefixes ...string) {
 	f.unDeliverablePrefixesFn(prefixes...)
 }
 
-func (f *Fake) Stage(id string) bool {
-	return f.stageFn(id)
+func (f *Fake) Stage(id int64, name string) bool {
+	return f.stageFn(id, name)
 }
 
 func (f *Fake) RemoveConsumer(c counter.Interface) {
 	f.removeConsumerFn(c)
 }
 
-func (f *Fake) Unstage(id string) {
+func (f *Fake) Unstage(id int64) {
 	f.unstageFn(id)
 }

@@ -15,7 +15,7 @@ import (
 
 type Fake struct {
 	scheduledTimeFn  func() time.Time
-	key              string
+	key              int64
 	jobName          string
 	job              *stored.Job
 	triggerRequestFn func() *api.TriggerRequest
@@ -26,7 +26,7 @@ type Fake struct {
 func New() *Fake {
 	return &Fake{
 		scheduledTimeFn: time.Now,
-		key:             "key",
+		key:             1,
 		jobName:         "job",
 		triggerRequestFn: func() *api.TriggerRequest {
 			return &api.TriggerRequest{}
@@ -45,7 +45,7 @@ func (f *Fake) WithScheduledTime(fn func() time.Time) *Fake {
 	return f
 }
 
-func (f *Fake) WithKey(key string) *Fake {
+func (f *Fake) WithKey(key int64) *Fake {
 	f.key = key
 	return f
 }
@@ -79,7 +79,7 @@ func (f *Fake) ScheduledTime() time.Time {
 	return f.scheduledTimeFn()
 }
 
-func (f *Fake) Key() string {
+func (f *Fake) Key() int64 {
 	return f.key
 }
 

@@ -125,7 +125,7 @@ func Test_Run(t *testing.T) {
 			select {
 			case ev := <-ch:
 				assert.False(t, ev.IsPut)
-				assert.Nil(t, ev.Job)
+				assert.Nil(t, ev.GetQueuedJob().Stored)
 			case <-time.After(time.Second):
 				t.Fatalf("timed out waiting for event %d", i)
 			}
@@ -133,7 +133,7 @@ func Test_Run(t *testing.T) {
 			select {
 			case ev := <-ch:
 				assert.True(t, ev.IsPut)
-				assert.True(t, proto.Equal(&jobs[i], ev.Job))
+				assert.True(t, proto.Equal(&jobs[i], ev.GetQueuedJob().Stored))
 			case <-time.After(time.Second):
 				t.Fatalf("timed out waiting for event %d", i)
 			}
@@ -198,10 +198,10 @@ func Test_Run(t *testing.T) {
 		}()
 
 		expEvents := []*queue.Informed{
-			{IsPut: false, Job: nil, Name: "1"},
-			{IsPut: true, Job: &jobs[0], Name: "2", JobModRevision: modRevision[1]},
-			{IsPut: false, Job: nil, Name: "3"},
-			{IsPut: true, Job: &jobs[1], Name: "4", JobModRevision: modRevision[3]},
+			{IsPut: false, QueuedJob: nil, Name: "1"},
+			{IsPut: true, QueuedJob: &jobs[0], Name: "2", JobModRevision: modRevision[1]},
+			{IsPut: false, QueuedJob: nil, Name: "3"},
+			{IsPut: true, QueuedJob: &jobs[1], Name: "4", JobModRevision: modRevision[3]},
 		}
 
 		for _, expEvent := range expEvents {

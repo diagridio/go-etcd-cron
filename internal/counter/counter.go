@@ -14,6 +14,7 @@ import (
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	"github.com/diagridio/go-etcd-cron/api"
+	"github.com/diagridio/go-etcd-cron/internal/api/queue"
 	"github.com/diagridio/go-etcd-cron/internal/api/stored"
 	clientapi "github.com/diagridio/go-etcd-cron/internal/client/api"
 	"github.com/diagridio/go-etcd-cron/internal/key"
@@ -34,12 +35,8 @@ type Options struct {
 	// Schedule is the schedule of this job.
 	Schedule scheduler.Interface
 
-	// Job is the job to count.
-	Job *stored.Job
-
-	// JobModRevision is the mod revision of the job which is shared by this
-	// counter.
-	JobModRevision int64
+	// Queued Job is the job to count.
+	Job *queue.QueuedJob
 }
 
 // Interface is a counter, tracking state of a scheduled job as it is triggered
@@ -48,8 +45,7 @@ type Options struct {
 // adding the counter object to the garbage collector.
 type Interface interface {
 	ScheduledTime() time.Time
-	Key() string
-	JobName() string
+	Key() int64
 	Job() *stored.Job
 	TriggerRequest() *api.TriggerRequest
 	TriggerSuccess(ctx context.Context) (bool, error)
@@ -64,16 +60,14 @@ var CounterCache = sync.Pool{
 
 // counter is the implementation of the counter interface.
 type counter struct {
-	name           string
 	jobKey         string
 	counterKey     string
 	client         clientapi.Interface
 	schedule       scheduler.Interface
-	job            *stored.Job
+	job            *queue.QueuedJob
 	count          *stored.Counter
 	next           time.Time
 	triggerRequest *api.TriggerRequest
-	modRevision    int64
 }
 
 func New(ctx context.Context, opts Options) (Interface, bool, error) {
@@ -87,7 +81,6 @@ func New(ctx context.Context, opts Options) (Interface, bool, error) {
 	}
 
 	c := CounterCache.Get().(*counter)
-	c.name = opts.Name
 	c.jobKey = jobKey
 	c.counterKey = counterKey
 	c.client = opts.Client
@@ -97,13 +90,12 @@ func New(ctx context.Context, opts Options) (Interface, bool, error) {
 	c.next = time.Time{}
 	c.triggerRequest = &api.TriggerRequest{
 		Name:     opts.Name,
-		Metadata: opts.Job.GetJob().GetMetadata(),
-		Payload:  opts.Job.GetJob().GetPayload(),
+		Metadata: opts.Job.GetStored().GetJob().GetMetadata(),
+		Payload:  opts.Job.GetStored().GetJob().GetPayload(),
 	}
-	c.modRevision = opts.JobModRevision
 
 	if res.Count == 0 {
-		c.count = &stored.Counter{JobPartitionId: opts.Job.GetPartitionId()}
+		c.count = &stored.Counter{JobPartitionId: opts.Job.GetStored().GetPartitionId()}
 
 		if ok, err := c.tickNext(); err != nil || !ok {
 			return nil, false, err
@@ -119,8 +111,8 @@ func New(ctx context.Context, opts Options) (Interface, bool, error) {
 
 	// If the job partition ID is the same, recover the counter state, else we
 	// start again.
-	if count.GetJobPartitionId() != opts.Job.GetPartitionId() {
-		count = &stored.Counter{JobPartitionId: opts.Job.GetPartitionId()}
+	if count.GetJobPartitionId() != opts.Job.GetStored().GetPartitionId() {
+		count = &stored.Counter{JobPartitionId: opts.Job.GetStored().GetPartitionId()}
 		if ok, err := c.put(ctx, count); err != nil || !ok {
 			return nil, ok, err
 		}
@@ -143,13 +135,8 @@ func (c *counter) ScheduledTime() time.Time {
 
 // Key returns the Etcd key of the job. Implements the kit events queueable
 // item.
-func (c *counter) Key() string {
-	return c.jobKey
-}
-
-// JobName returns the consumer name of the job.
-func (c *counter) JobName() string {
-	return c.name
+func (c *counter) Key() int64 {
+	return c.job.GetModRevision()
 }
 
 // TriggerRequest is the trigger request representation for the job.
@@ -159,7 +146,7 @@ func (c *counter) TriggerRequest() *api.TriggerRequest {
 
 // Job returns the job representation for the job.
 func (c *counter) Job() *stored.Job {
-	return c.job
+	return c.job.GetStored()
 }
 
 // TriggerSuccess updates the counter state given what the next trigger time
@@ -210,7 +197,7 @@ func (c *counter) TriggerFailed(ctx context.Context) (bool, error) {
 // policyTryAgain returns true if the failure policy indicates this job should
 // be tried again at this tick.
 func (c *counter) policyTryAgain() bool {
-	fp := c.job.GetJob().GetFailurePolicy()
+	fp := c.job.GetStored().GetJob().GetFailurePolicy()
 	if fp == nil {
 		c.count.LastTrigger = timestamppb.New(c.next)
 		return false
@@ -257,7 +244,7 @@ func (c *counter) tickNext() (bool, error) {
 		clientapi.DeleteBothIfOtherHasRevisionOpts{
 			Key:           c.counterKey,
 			OtherKey:      c.jobKey,
-			OtherRevision: c.modRevision,
+			OtherRevision: c.job.GetModRevision(),
 		},
 	)
 }
@@ -267,7 +254,7 @@ func (c *counter) tickNext() (bool, error) {
 // expired.
 func (c *counter) updateNext() bool {
 	// If job completed repeats, delete the counter.
-	if c.job.GetJob().Repeats != nil && (c.count.GetCount() >= c.job.GetJob().GetRepeats()) {
+	if c.job.GetStored().GetJob().Repeats != nil && (c.count.GetCount() >= c.job.GetStored().GetJob().GetRepeats()) {
 		return false
 	}
 
@@ -281,7 +268,7 @@ func (c *counter) updateNext() bool {
 	// If the job has an expiration, delete the counter if the next trigger is
 	// after the expiration.
 	//nolint:protogetter
-	if c.job.Expiration != nil && (next.After(c.job.GetExpiration().AsTime())) {
+	if c.job.GetStored().Expiration != nil && (next.After(c.job.GetStored().GetExpiration().AsTime())) {
 		return false
 	}
 
@@ -304,6 +291,6 @@ func (c *counter) put(ctx context.Context, count *stored.Counter) (bool, error) 
 		Key:           c.counterKey,
 		Val:           string(b),
 		OtherKey:      c.jobKey,
-		OtherRevision: c.modRevision,
+		OtherRevision: c.job.GetModRevision(),
 	})
 }
