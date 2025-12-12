@@ -26,7 +26,6 @@ func Test_control(t *testing.T) {
 		router := fake.New[*queue.JobEvent]().WithEnqueue(func(action *queue.JobEvent) {
 			called++
 			assert.Equal(t, &queue.JobEvent{
-				JobName: "test",
 				Action: &queue.JobAction{
 					Action: &queue.JobAction_Informed{
 						Informed: &queue.Informed{
@@ -58,9 +57,8 @@ func Test_control(t *testing.T) {
 	t.Run("ExecuteRequest should enqueue to router loop", func(t *testing.T) {
 		t.Parallel()
 
-		execute := &queue.ExecuteRequest{JobName: "job1"}
+		execute := &queue.ExecuteRequest{ModRevision: 42}
 		router := fake.New[*queue.JobEvent]().WithEnqueue(func(action *queue.JobEvent) {
-			assert.Equal(t, "job1", action.JobName)
 			assert.Equal(t, execute, action.GetAction().GetExecuteRequest())
 		})
 
@@ -75,9 +73,8 @@ func Test_control(t *testing.T) {
 	t.Run("ExecuteResponse should enqueue to router loop", func(t *testing.T) {
 		t.Parallel()
 
-		response := &queue.ExecuteResponse{JobName: "job2"}
+		response := &queue.ExecuteResponse{ModRevision: 84}
 		router := fake.New[*queue.JobEvent]().WithEnqueue(func(action *queue.JobEvent) {
-			assert.Equal(t, "job2", action.JobName)
 			assert.Equal(t, response, action.GetAction().GetExecuteResponse())
 		})
 
@@ -92,14 +89,14 @@ func Test_control(t *testing.T) {
 	t.Run("DeliverablePrefixes should call actioner and enqueue deliverable router", func(t *testing.T) {
 		t.Parallel()
 
-		act := actionerfake.New().WithDeliverablePrefixes(func(prefixes ...string) []string {
+		act := actionerfake.New().WithDeliverablePrefixes(func(prefixes ...string) []int64 {
 			assert.ElementsMatch(t, []string{"prefix1", "prefix2"}, prefixes)
-			return []string{"jobA", "jobB"}
+			return []int64{42, 84}
 		})
 
-		var enqueued []string
+		var enqueued []int64
 		router := fake.New[*queue.JobEvent]().WithEnqueue(func(action *queue.JobEvent) {
-			enqueued = append(enqueued, action.JobName)
+			enqueued = append(enqueued, action.GetAction().GetDeliverable().ModRevision)
 		})
 
 		c := &control{router: router, act: act}
@@ -110,7 +107,7 @@ func Test_control(t *testing.T) {
 			},
 		})
 		require.NoError(t, err)
-		assert.ElementsMatch(t, []string{"jobA", "jobB"}, enqueued)
+		assert.ElementsMatch(t, []int64{42, 84}, enqueued)
 	})
 
 	t.Run("UndeliverablePrefixes should call UnDeliverablePrefixes on actioner", func(t *testing.T) {
@@ -145,12 +142,12 @@ func Test_control(t *testing.T) {
 
 		err := c.Handle(t.Context(), &queue.ControlEvent{
 			Action: &queue.ControlEvent_CloseJob{
-				CloseJob: &queue.CloseJob{JobName: "closeme"},
+				CloseJob: &queue.CloseJob{ModRevision: 100},
 			},
 		})
 		require.NoError(t, err)
 
-		assert.Equal(t, "closeme", received.JobName)
+		assert.Equal(t, int64(100), received.Action.GetCloseJob().ModRevision)
 		assert.NotNil(t, received.Action.GetCloseJob())
 	})
 

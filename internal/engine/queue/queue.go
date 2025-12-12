@@ -66,7 +66,7 @@ type Queue struct {
 
 	consumer    *consumer.Consumer
 	controlLoop loop.Interface[*queue.ControlEvent]
-	queue       *eventsqueue.Processor[string, counter.Interface]
+	queue       *eventsqueue.Processor[int64, counter.Interface]
 	workers     uint32
 
 	readyCh chan struct{}
@@ -86,8 +86,8 @@ func New(opts Options) *Queue {
 		workers: opts.Workers,
 	}
 
-	q.queue = eventsqueue.NewProcessor[string, counter.Interface](
-		eventsqueue.Options[string, counter.Interface]{
+	q.queue = eventsqueue.NewProcessor[int64, counter.Interface](
+		eventsqueue.Options[int64, counter.Interface]{
 			Clock:     opts.Clock,
 			ExecuteFn: q.execute,
 		},
@@ -191,8 +191,7 @@ func (q *Queue) execute(counter counter.Interface) {
 	q.controlLoop.Enqueue(&queue.ControlEvent{
 		Action: &queue.ControlEvent_ExecuteRequest{
 			ExecuteRequest: &queue.ExecuteRequest{
-				JobName:    counter.JobName(),
-				CounterKey: counter.Key(),
+				ModRevision: counter.Key(),
 			},
 		},
 	})

@@ -19,7 +19,7 @@ type Staging struct {
 	// consumer has signalled that the job is currently undeliverable. When the
 	// consumer signals a prefix has become deliverable, counters in that prefix
 	// will be enqueued. Indexed by the Job Name.
-	staged map[string]struct{}
+	staged map[int64]string
 
 	// activeConsumerPrefixes tracks the job name prefixes which are currently
 	// deliverable. Since consumer may indicate the same prefix is deliverable
@@ -33,7 +33,7 @@ type Staging struct {
 func New() *Staging {
 	return &Staging{
 		deliverablePrefixes: make(map[string]*uint64),
-		staged:              make(map[string]struct{}),
+		staged:              make(map[int64]string),
 	}
 }
 
@@ -43,19 +43,19 @@ func New() *Staging {
 // longer be delivered. Multiple of the same prefix can be added and are
 // tracked as a pool, meaning the prefix is still active if at least one
 // instance is still registered.
-func (s *Staging) DeliverablePrefixes(prefixes ...string) []string {
+func (s *Staging) DeliverablePrefixes(prefixes ...string) []int64 {
 	s.lock.Lock()
 	defer s.lock.Unlock()
 
-	var toEnqueue []string
+	var toEnqueue []int64
 	for _, prefix := range prefixes {
 		if _, ok := s.deliverablePrefixes[prefix]; !ok {
 			s.deliverablePrefixes[prefix] = new(uint64)
 
-			for jobName := range s.staged {
+			for modRevision, jobName := range s.staged {
 				if strings.HasPrefix(jobName, prefix) {
-					delete(s.staged, jobName)
-					toEnqueue = append(toEnqueue, jobName)
+					delete(s.staged, modRevision)
+					toEnqueue = append(toEnqueue, modRevision)
 				}
 			}
 		}
@@ -88,7 +88,7 @@ func (s *Staging) UnDeliverablePrefixes(prefixes ...string) {
 // loop ordering returns false if the counter can actually be delivered now
 // based on the current deliverable prefixes and should be immediately
 // re-queued at the current count.
-func (s *Staging) Stage(jobName string) bool {
+func (s *Staging) Stage(modRevision int64, jobName string) bool {
 	s.lock.Lock()
 	defer s.lock.Unlock()
 
@@ -99,15 +99,15 @@ func (s *Staging) Stage(jobName string) bool {
 		}
 	}
 
-	s.staged[jobName] = struct{}{}
+	s.staged[modRevision] = jobName
 
 	return true
 }
 
 // Unstage removes the job from the staging queue as it can now be delivered.
-func (s *Staging) Unstage(jobName string) {
+func (s *Staging) Unstage(modRevision int64) {
 	s.lock.Lock()
 	defer s.lock.Unlock()
 
-	delete(s.staged, jobName)
+	delete(s.staged, modRevision)
 }
