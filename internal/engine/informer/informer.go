@@ -11,7 +11,6 @@ import (
 	"fmt"
 	"sync/atomic"
 
-	mvccpb "go.etcd.io/etcd/api/v3/mvccpb"
 	clientv3 "go.etcd.io/etcd/client/v3"
 	"google.golang.org/protobuf/proto"
 
@@ -80,10 +79,12 @@ func (i *Informer) Run(ctx context.Context) error {
 				continue
 			}
 
-			select {
-			case i.ch <- event:
-			case <-ctx.Done():
-				return ctx.Err()
+			for _, event := range event {
+				select {
+				case i.ch <- event:
+				case <-ctx.Done():
+					return ctx.Err()
+				}
 			}
 		}
 	}
@@ -102,62 +103,86 @@ func (i *Informer) Run(ctx context.Context) error {
 			return nil
 		case evs := <-ch:
 			for _, ev := range evs.Events {
-				event, err := i.handleEvent(ev)
+				events, err := i.handleEvent(ev)
 				if err != nil {
 					return fmt.Errorf("failed to handle informer event: %w", err)
 				}
 
-				if event == nil {
+				if len(events) == 0 {
 					continue
 				}
 
-				select {
-				case i.ch <- event:
-				case <-ctx.Done():
-					return ctx.Err()
+				for _, event := range events {
+					select {
+					case i.ch <- event:
+					case <-ctx.Done():
+						return ctx.Err()
+					}
 				}
 			}
 		}
 	}
 }
 
-func (i *Informer) handleEvent(ev *clientv3.Event) (*queue.Informed, error) {
-	var isPut bool
-	var kv *mvccpb.KeyValue
+func (i *Informer) handleEvent(ev *clientv3.Event) ([]*queue.Informed, error) {
 	switch ev.Type {
 	case clientv3.EventTypePut:
-		isPut = true
-		kv = ev.Kv
-	case clientv3.EventTypeDelete:
+		var job stored.Job
+		if err := proto.Unmarshal(ev.Kv.Value, &job); err != nil {
+			return nil, fmt.Errorf("failed to unmarshal job: %w", err)
+		}
 
-		kv = ev.PrevKv
+		if i.part.IsJobManaged(job.GetPartitionId()) {
+			if ev.IsCreate() {
+				return []*queue.Informed{{
+					IsPut: true,
+					Name:  i.key.JobName(ev.Kv.Key),
+					QueuedJob: &queue.QueuedJob{
+						Stored:      &job,
+						ModRevision: ev.Kv.ModRevision,
+					},
+				}}, nil
+			}
+
+			return []*queue.Informed{{
+				IsPut: false,
+				QueuedJob: &queue.QueuedJob{
+					ModRevision: ev.PrevKv.ModRevision,
+				},
+			}, {
+				IsPut: true,
+				Name:  i.key.JobName(ev.Kv.Key),
+				QueuedJob: &queue.QueuedJob{
+					Stored:      &job,
+					ModRevision: ev.Kv.ModRevision,
+				},
+			}}, nil
+		}
+
+		// If the event is a creation and the job is not managed by this partition,
+		// we can ignore it.
+		if ev.IsCreate() {
+			return nil, nil
+		}
+
+		return []*queue.Informed{{
+			IsPut: false,
+			QueuedJob: &queue.QueuedJob{
+				ModRevision: ev.PrevKv.ModRevision,
+			},
+		}}, nil
+
+	case clientv3.EventTypeDelete:
+		return []*queue.Informed{{
+			IsPut: false,
+			QueuedJob: &queue.QueuedJob{
+				ModRevision: ev.PrevKv.ModRevision,
+			},
+		}}, nil
+
 	default:
 		return nil, errors.New("unexpected event type")
 	}
-
-	var job stored.Job
-	if err := proto.Unmarshal(kv.Value, &job); err != nil {
-		return nil, fmt.Errorf("failed to unmarshal job: %w", err)
-	}
-
-	// TODO: @joshvanl: remove the need to serialize the job name here- we should
-	// attempt to only serialize the job name on `Get` etc. API calls, since this
-	// uses a large number of allocations.
-	jobName := i.key.JobName(ev.Kv.Key)
-	if !i.part.IsJobManaged(job.GetPartitionId()) {
-		return &queue.Informed{
-			IsPut: false,
-			Name:  jobName,
-		}, nil
-	}
-
-	return &queue.Informed{
-		IsPut: isPut,
-		Name:  jobName,
-		Job:   &job,
-
-		JobModRevision: kv.ModRevision,
-	}, nil
 }
 
 func (i *Informer) Ready(ctx context.Context) error {

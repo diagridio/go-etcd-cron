@@ -7,7 +7,7 @@ package consumer
 
 import (
 	"github.com/diagridio/go-etcd-cron/api"
-	"github.com/diagridio/go-etcd-cron/internal/api/stored"
+	"github.com/diagridio/go-etcd-cron/internal/api/queue"
 )
 
 type Options struct {
@@ -26,33 +26,32 @@ func New(opts Options) *Consumer {
 	}
 }
 
-func (c *Consumer) Put(name string, job *stored.Job) {
+func (c *Consumer) Put(name string, job *queue.QueuedJob) {
 	if c.sink == nil {
 		return
 	}
 
 	c.sink <- &api.InformerEvent{
 		Event: &api.InformerEvent_Put{
-			Put: &api.InformerEventJob{
-				Name:     name,
-				Metadata: job.GetJob().GetMetadata(),
-				Payload:  job.GetJob().GetPayload(),
+			Put: &api.InformerEventJobPut{
+				Name:        name,
+				ModRevision: job.GetModRevision(),
+				Metadata:    job.GetStored().GetJob().GetMetadata(),
+				Payload:     job.GetStored().GetJob().GetPayload(),
 			},
 		},
 	}
 }
 
-func (c *Consumer) Delete(name string, job *stored.Job) {
+func (c *Consumer) Delete(modRevision int64) {
 	if c.sink == nil {
 		return
 	}
 
 	c.sink <- &api.InformerEvent{
 		Event: &api.InformerEvent_Delete{
-			Delete: &api.InformerEventJob{
-				Name:     name,
-				Metadata: job.GetJob().GetMetadata(),
-				Payload:  job.GetJob().GetPayload(),
+			Delete: &api.InformerEventJobDelete{
+				ModRevision: modRevision,
 			},
 		},
 	}

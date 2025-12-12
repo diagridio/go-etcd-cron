@@ -18,9 +18,10 @@ import (
 )
 
 type Options struct {
-	Actioner actioner.Interface
-	Name     string
-	Log      logr.Logger
+	Actioner    actioner.Interface
+	ModRevision int64
+	Name        string
+	Log         logr.Logger
 }
 
 // Counters is a loop which is responsible for executing a particular job. It
@@ -28,12 +29,12 @@ type Options struct {
 // may be reused if the Job is updated, or simply the resource has not been
 // garbage collected before a Job with the same name is created.
 type Counters struct {
-	act  actioner.Interface
-	name string
-	log  logr.Logger
+	act         actioner.Interface
+	modRevision int64
+	name        string
+	log         logr.Logger
 
-	jobVersion int64
-	counter    counter.Interface
+	counter counter.Interface
 }
 
 // LoopsFacory and CountersCache are used to cache the loops and Counters
@@ -49,6 +50,7 @@ var (
 
 func New(opts Options) *Counters {
 	c := CountersCache.Get().(*Counters)
+	c.modRevision = opts.ModRevision
 	c.name = opts.Name
 	c.act = opts.Actioner
 	c.log = opts.Log
@@ -81,13 +83,11 @@ func (c *Counters) Handle(ctx context.Context, event *queue.JobAction) error {
 }
 
 func (c *Counters) handleInformed(ctx context.Context, action *queue.Informed) error {
-	c.act.Unstage(c.name)
+	c.act.Unstage(c.modRevision)
 
 	if action.GetIsPut() {
-		c.jobVersion = action.GetJobModRevision()
-
 		var err error
-		c.counter, err = c.act.Schedule(ctx, c.name, c.jobVersion, action.GetJob())
+		c.counter, err = c.act.Schedule(ctx, c.name, action.GetQueuedJob())
 		return err
 	}
 
@@ -108,16 +108,14 @@ func (c *Counters) handleExecuteRequest(action *queue.ExecuteRequest) {
 		return
 	}
 
-	jobVersion := c.jobVersion
+	modRevision := c.modRevision
 
 	c.act.Trigger(counter.TriggerRequest(), func(result *api.TriggerResponse) {
 		c.act.AddToControlLoop(&queue.ControlEvent{
 			Action: &queue.ControlEvent_ExecuteResponse{
 				ExecuteResponse: &queue.ExecuteResponse{
-					JobName:    action.GetJobName(),
-					CounterKey: action.GetCounterKey(),
-					Result:     result,
-					Uid:        jobVersion,
+					ModRevision: modRevision,
+					Result:      result,
 				},
 			},
 		})
@@ -125,11 +123,11 @@ func (c *Counters) handleExecuteRequest(action *queue.ExecuteRequest) {
 }
 
 func (c *Counters) handleExecuteResponse(ctx context.Context, action *queue.ExecuteResponse) error {
-	// Ignore if the execution response if the jobVersion has been changed. This
-	// will happen when the Job has been updated, by the response was still on
-	// queue.
-	if c.jobVersion != action.GetUid() || c.counter == nil {
-		c.log.WithName("counters").WithValues("job", c.name, "uid", action.GetUid()).Info(
+	// Ignore if the execution response if the mod revision has been changed.
+	// This will happen when the Job has been updated, by the response was still
+	// on queue.
+	if c.modRevision != action.GetModRevision() || c.counter == nil {
+		c.log.WithName("counters").WithValues("job", c.name, "uid", action.GetModRevision()).Info(
 			"dropped ExecuteResponse for old job version",
 		)
 		return nil
@@ -185,7 +183,7 @@ func (c *Counters) handleTrigger(ctx context.Context, result api.TriggerResponse
 		// fact now deliverable, we need to re-enqueue jmmediately, else simply
 		// keep jt jn staging until the prefix is deliverable.
 	case api.TriggerResponseResult_UNDELIVERABLE:
-		if !c.act.Stage(c.name) {
+		if !c.act.Stage(c.modRevision, c.name) {
 			c.act.Enqueue(c.counter)
 		}
 		return true, nil
@@ -203,17 +201,19 @@ func (c *Counters) handleDeliverable() {
 }
 
 func (c *Counters) close() {
-	// Setting jobVersion to 0 indicates that this inner loop job counter handler
-	// is ready for garbage collection. It is the inner manager which is
+	modRevision := c.modRevision
+
+	// Setting modRevision to 0 indicates that this inner loop job counter
+	// handler is ready for garbage collection. It is the inner manager which is
 	// responsible for closing the active inner loop to avoid race.
-	c.jobVersion = 0
+	c.modRevision = 0
 
 	c.act.RemoveConsumer(c.counter)
 	c.counter = nil
 
 	c.act.AddToControlLoop(&queue.ControlEvent{
 		Action: &queue.ControlEvent_CloseJob{
-			CloseJob: &queue.CloseJob{JobName: c.name},
+			CloseJob: &queue.CloseJob{ModRevision: modRevision},
 		},
 	})
 }

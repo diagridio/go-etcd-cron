@@ -86,23 +86,23 @@ func Test_DeliverablePrefixes(t *testing.T) {
 		t.Parallel()
 
 		s := New()
-		s.staged = map[string]struct{}{
-			"abc123": struct{}{}, "abc234": struct{}{},
-			"def123": struct{}{}, "def234": struct{}{},
-			"xyz123": struct{}{}, "xyz234": struct{}{},
+		s.staged = map[int64]string{
+			123: "abc123", 234: "abc234",
+			124: "def123", 235: "def234",
+			125: "xyz123", 236: "xyz234",
 		}
 
 		assert.ElementsMatch(t,
-			[]string{"abc123", "abc234", "xyz123", "xyz234"},
+			[]int64{123, 234, 125, 236},
 			s.DeliverablePrefixes("abc", "xyz"),
 		)
 		assert.Equal(t,
-			map[string]struct{}{"def123": struct{}{}, "def234": struct{}{}},
+			map[int64]string{124: "def123", 235: "def234"},
 			s.staged,
 		)
 
 		assert.ElementsMatch(t,
-			[]string{"def123", "def234"},
+			[]int64{124, 235},
 			s.DeliverablePrefixes("d"),
 		)
 		assert.Empty(t, s.staged)
@@ -113,36 +113,43 @@ func Test_Stage(t *testing.T) {
 	t.Parallel()
 
 	tests := map[string]struct {
+		id                  int64
 		jobName             string
 		deliverablePrefixes []string
 		expStaged           bool
 	}{
 		"no deliverable prefixes, should stage": {
+			id:                  123,
 			jobName:             "abc123",
 			deliverablePrefixes: []string{},
 			expStaged:           true,
 		},
 		"deliverable prefixes but different, should stage": {
+			id:                  123,
 			jobName:             "abc123",
 			deliverablePrefixes: []string{"def", "cba"},
 			expStaged:           true,
 		},
 		"deliverable prefixes and matches, should not stage": {
+			id:                  123,
 			jobName:             "abc123",
 			deliverablePrefixes: []string{"abc123"},
 			expStaged:           false,
 		},
 		"multiple deliverable prefixes and matches, should not stage": {
+			id:                  123,
 			jobName:             "abc123",
 			deliverablePrefixes: []string{"def", "abc123", "cba"},
 			expStaged:           false,
 		},
 		"multiple deliverable prefixes and matches on prefix, should not stage": {
+			id:                  123,
 			jobName:             "abc123",
 			deliverablePrefixes: []string{"def", "cba", "abc"},
 			expStaged:           false,
 		},
 		"multiple deliverable prefixes and not matches on prefix, should stage": {
+			id:                  123,
 			jobName:             "abc123",
 			deliverablePrefixes: []string{"def", "cba", "abc1234"},
 			expStaged:           true,
@@ -159,7 +166,7 @@ func Test_Stage(t *testing.T) {
 				(*s.deliverablePrefixes[prefix])++
 			}
 
-			got := s.Stage(test.jobName)
+			got := s.Stage(test.id, test.jobName)
 
 			assert.Equal(t, test.expStaged, got)
 			assert.Equal(t, test.expStaged, len(s.staged) == 1)
