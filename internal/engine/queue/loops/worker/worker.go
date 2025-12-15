@@ -7,6 +7,7 @@ package worker
 
 import (
 	"context"
+	"fmt"
 	"sync"
 
 	"github.com/go-logr/logr"
@@ -26,7 +27,7 @@ type worker struct {
 	log logr.Logger
 	act actioner.Interface
 
-	counters map[string]*counters.Counters
+	counters map[int64]*counters.Counters
 	wg       sync.WaitGroup
 }
 
@@ -34,7 +35,7 @@ func New(opts Options) loop.Interface[*queue.JobEvent] {
 	return loop.New[*queue.JobEvent](1024).NewLoop(&worker{
 		log:      opts.Log.WithName("worker"),
 		act:      opts.Actioner,
-		counters: make(map[string]*counters.Counters),
+		counters: make(map[int64]*counters.Counters),
 	})
 }
 
@@ -54,50 +55,75 @@ func (w *worker) Handle(ctx context.Context, event *queue.JobEvent) error {
 }
 
 func (w *worker) handleEvent(ctx context.Context, event *queue.JobEvent) error {
-	jobName := event.GetJobName()
+	var counter *counters.Counters
+	var ok bool
 
-	// If the counter doesn't exist yet, create.
-	counter, ok := w.counters[jobName]
-	if !ok {
-		// If this is an execute response and no counter to handle, return.
-		if event.Action.GetExecuteResponse() != nil {
+	switch action := event.GetAction().Action.(type) {
+	case *queue.JobAction_ExecuteRequest:
+		modRevision := action.ExecuteRequest.GetModRevision()
+		counter, ok = w.counters[modRevision]
+		if !ok {
+			panic(fmt.Sprintf("counter not found for modRevision: %d", modRevision))
+		}
+
+	case *queue.JobAction_ExecuteResponse:
+		modRevision := action.ExecuteResponse.GetModRevision()
+		counter, ok = w.counters[modRevision]
+		if !ok {
 			return nil
 		}
 
-		// If we are being informed of a counter which has already been removed
-		// from the store, ignore.
-		i := event.Action.GetInformed()
-		if i == nil || !i.IsPut {
+	case *queue.JobAction_Deliverable:
+		modRevision := action.Deliverable.GetModRevision()
+		counter, ok = w.counters[modRevision]
+		if !ok {
 			return nil
 		}
 
-		counter = w.newCounter(ctx, jobName)
+	case *queue.JobAction_Informed:
+		modRevision := action.Informed.GetQueuedJob().GetModRevision()
+		counter, ok = w.counters[modRevision]
+		// If the counter doesn't exist yet, create.
+		if !ok {
+			// If we are being informed of a counter which has already been removed
+			// from the store, ignore.
+			i := action.Informed
+			if i == nil || !i.IsPut {
+				return nil
+			}
+
+			counter = w.newCounter(ctx, modRevision, i.GetName())
+		}
+
+	default:
+		panic(fmt.Sprintf("unsupported action type: %T", event.GetAction().Action))
 	}
 
 	return counter.Handle(ctx, event.GetAction())
 }
 
 // Create a new counters loop, and start it.
-func (w *worker) newCounter(ctx context.Context, jobName string) *counters.Counters {
+func (w *worker) newCounter(ctx context.Context, modRevision int64, name string) *counters.Counters {
 	c := counters.New(counters.Options{
-		Actioner: w.act,
-		Name:     jobName,
-		Log:      w.log,
+		Actioner:    w.act,
+		ModRevision: modRevision,
+		Name:        name,
+		Log:         w.log,
 	})
 
-	w.counters[jobName] = c
+	w.counters[modRevision] = c
 
 	return c
 }
 
 // The inner job loop has been signalled to be closed to release its resources.
 func (w *worker) handleCloseJob(ctx context.Context, event *queue.JobEvent) {
-	jobName := event.GetJobName()
-	counter, ok := w.counters[jobName]
+	modRevision := event.GetAction().GetCloseJob().GetModRevision()
+	counter, ok := w.counters[modRevision]
 	if !ok {
 		return
 	}
-	delete(w.counters, jobName)
+	delete(w.counters, modRevision)
 	counters.CountersCache.Put(counter)
 }
 

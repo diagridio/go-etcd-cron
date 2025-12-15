@@ -66,7 +66,6 @@ func (c *control) Handle(_ context.Context, event *queue.ControlEvent) error {
 
 func (c *control) handleInformed(action *queue.Informed) {
 	c.router.Enqueue(&queue.JobEvent{
-		JobName: action.GetName(),
 		Action: &queue.JobAction{
 			Action: &queue.JobAction_Informed{Informed: action},
 		},
@@ -75,7 +74,6 @@ func (c *control) handleInformed(action *queue.Informed) {
 
 func (c *control) handleExecuteRequest(action *queue.ExecuteRequest) {
 	c.router.Enqueue(&queue.JobEvent{
-		JobName: action.GetJobName(),
 		Action: &queue.JobAction{
 			Action: &queue.JobAction_ExecuteRequest{ExecuteRequest: action},
 		},
@@ -84,7 +82,6 @@ func (c *control) handleExecuteRequest(action *queue.ExecuteRequest) {
 
 func (c *control) handleExecuteResponse(action *queue.ExecuteResponse) {
 	c.router.Enqueue(&queue.JobEvent{
-		JobName: action.GetJobName(),
 		Action: &queue.JobAction{
 			Action: &queue.JobAction_ExecuteResponse{ExecuteResponse: action},
 		},
@@ -92,12 +89,15 @@ func (c *control) handleExecuteResponse(action *queue.ExecuteResponse) {
 }
 
 func (c *control) handleDeliverablePrefixes(action *queue.DeliverablePrefixes) {
-	jobNames := c.act.DeliverablePrefixes(action.GetPrefixes()...)
+	modRevisions := c.act.DeliverablePrefixes(action.GetPrefixes()...)
 
-	for _, jobName := range jobNames {
+	for _, modRevision := range modRevisions {
 		c.router.Enqueue(&queue.JobEvent{
-			JobName: jobName,
-			Action:  &queue.JobAction{Action: new(queue.JobAction_Deliverable)},
+			Action: &queue.JobAction{Action: &queue.JobAction_Deliverable{
+				Deliverable: &queue.DeliverableJob{
+					ModRevision: modRevision,
+				},
+			}},
 		})
 	}
 }
@@ -108,9 +108,10 @@ func (c *control) handleUndeliverablePrefixes(action *queue.UndeliverablePrefixe
 
 func (c *control) handleCloseJob(action *queue.CloseJob) {
 	c.router.Enqueue(&queue.JobEvent{
-		JobName: action.GetJobName(),
 		Action: &queue.JobAction{Action: &queue.JobAction_CloseJob{
-			CloseJob: new(queue.CloseJob),
+			CloseJob: &queue.CloseJob{
+				ModRevision: action.GetModRevision(),
+			},
 		}},
 	})
 }

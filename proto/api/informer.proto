@@ -14,22 +14,33 @@ option go_package = "github.com/diagridio/go-etcd-cron/api";
 // InformerEvent is sent by cron to the consumer to signal CRUD events of jobs.
 message InformerEvent {
   oneof event {
-    InformerEventJob put = 1;
-    InformerEventJob delete = 2;
+    InformerEventJobPut put = 1;
+    InformerEventJobDelete delete = 2;
     InformerEventDropAll drop_all = 3;
   }
 }
 
-// InformerEventJob is some event associated with a job.
-message InformerEventJob {
+// InformerEventJobPut is some event associated with a job.
+message InformerEventJobPut {
   // name is the name of the job that was put.
   string name = 1;
 
+  // mod_revision is the etcd mod revision of the job that was put.
+  int64 mod_revision = 2;
+
   // metadata is the arbitrary metadata associated with the job.
-  google.protobuf.Any metadata = 2;
+  google.protobuf.Any metadata = 3;
 
   // payload is the job payload.
-  google.protobuf.Any payload = 3;
+  google.protobuf.Any payload = 4;
+}
+
+// InformerEventJobDelete is sent when a job is deleted.
+// It contains only the mod_revision of the deleted job.
+message InformerEventJobDelete {
+  // mod_revision is the etcd mod revision of the job that was deleted.
+  // This can be used to identify which version of the job was deleted.
+  int64 mod_revision = 1;
 }
 
 // InformerEventDropAll is sent when leadership election is occurring, or the

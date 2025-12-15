@@ -16,7 +16,6 @@ import (
 
 	"github.com/diagridio/go-etcd-cron/api"
 	"github.com/diagridio/go-etcd-cron/internal/api/queue"
-	"github.com/diagridio/go-etcd-cron/internal/api/stored"
 	"github.com/diagridio/go-etcd-cron/internal/counter"
 	counterfake "github.com/diagridio/go-etcd-cron/internal/counter/fake"
 	"github.com/diagridio/go-etcd-cron/internal/engine/queue/actioner/fake"
@@ -32,19 +31,19 @@ func Test_Counters(t *testing.T) {
 		require.Error(t, c.Handle(t.Context(), new(queue.JobAction)))
 	})
 
-	t.Run("a delete informer event should unstage, dechedule, set counter to nil, set jobVersion to 0, queue the job to be closed", func(t *testing.T) {
+	t.Run("a delete informer event should unstage, dechedule, set counter to nil, set idx to 0, queue the job to be closed", func(t *testing.T) {
 		cnter := counterfake.New()
 		var called int
 
 		act := fake.New().
-			WithUnstage(func(name string) {
-				assert.Equal(t, "test-job", name)
+			WithUnstage(func(id int64) {
+				assert.Equal(t, int64(123), id)
 				called++
 			}).
 			WithAddToControlLoop(func(event *queue.ControlEvent) {
 				assert.Equal(t, &queue.ControlEvent{
 					Action: &queue.ControlEvent_CloseJob{
-						CloseJob: &queue.CloseJob{JobName: "test-job"},
+						CloseJob: &queue.CloseJob{ModRevision: 123},
 					},
 				}, event)
 				called++
@@ -55,36 +54,38 @@ func Test_Counters(t *testing.T) {
 			})
 
 		c := &Counters{
-			act:     act,
-			name:    "test-job",
-			counter: cnter,
+			act:         act,
+			name:        "test-job",
+			modRevision: 123,
+			counter:     cnter,
 		}
-		c.jobVersion = 123
 
 		require.NoError(t, c.Handle(t.Context(), &queue.JobAction{
 			Action: &queue.JobAction_Informed{
 				Informed: &queue.Informed{
-					Name:  "test-job",
-					Job:   &stored.Job{},
+					Name: "test-job",
+					QueuedJob: &queue.QueuedJob{
+						ModRevision: 123,
+					},
 					IsPut: false,
 				},
 			},
 		}))
 
-		assert.Equal(t, int64(0), c.jobVersion)
+		assert.Equal(t, int64(0), c.modRevision)
 		assert.Nil(t, c.counter)
 		assert.Equal(t, 3, called)
 	})
 
-	t.Run("a put event should increase the jobVersion and schedule with a new counter", func(t *testing.T) {
+	t.Run("a put event should increase the idx and schedule with a new counter", func(t *testing.T) {
 		t.Parallel()
 
 		var called int
 
-		act := fake.New().WithSchedule(func(_ context.Context, name string, id int64, _ *stored.Job) (counter.Interface, error) {
+		act := fake.New().WithSchedule(func(_ context.Context, name string, job *queue.QueuedJob) (counter.Interface, error) {
 			called++
 			assert.Equal(t, "test-job", name)
-			assert.Equal(t, int64(456), id)
+			assert.Equal(t, &queue.QueuedJob{ModRevision: 456}, job)
 			return counterfake.New(), nil
 		})
 
@@ -96,15 +97,16 @@ func Test_Counters(t *testing.T) {
 		require.NoError(t, c.Handle(t.Context(), &queue.JobAction{
 			Action: &queue.JobAction_Informed{
 				Informed: &queue.Informed{
-					Name:           "test-job",
-					JobModRevision: 456,
-					IsPut:          true,
-					Job:            &stored.Job{},
+					IsPut: true,
+					Name:  "test-job",
+					QueuedJob: &queue.QueuedJob{
+						ModRevision: 456,
+					},
 				},
 			},
 		}))
 
-		assert.NotEqual(t, c.jobVersion, 0)
+		assert.NotEqual(t, 0, c.modRevision)
 		assert.NotNil(t, c.counter)
 		assert.Equal(t, 1, called)
 	})
@@ -113,7 +115,7 @@ func Test_Counters(t *testing.T) {
 		t.Parallel()
 
 		var called int
-		act := fake.New().WithSchedule(func(_ context.Context, name string, id int64, _ *stored.Job) (counter.Interface, error) {
+		act := fake.New().WithSchedule(func(_ context.Context, name string, job *queue.QueuedJob) (counter.Interface, error) {
 			called++
 			return nil, assert.AnError
 		})
@@ -126,15 +128,16 @@ func Test_Counters(t *testing.T) {
 		require.Error(t, c.Handle(t.Context(), &queue.JobAction{
 			Action: &queue.JobAction_Informed{
 				Informed: &queue.Informed{
-					Name:           "test-job",
-					JobModRevision: 456,
-					IsPut:          true,
-					Job:            &stored.Job{},
+					IsPut: true,
+					QueuedJob: &queue.QueuedJob{
+						ModRevision: 456,
+					},
+					Name: "test-job",
 				},
 			},
 		}))
 
-		assert.NotEqual(t, c.jobVersion, 0)
+		assert.NotEqual(t, c.modRevision, 0)
 		assert.Nil(t, c.counter)
 		assert.Equal(t, 1, called)
 	})
@@ -147,7 +150,7 @@ func Test_Counters(t *testing.T) {
 		require.NoError(t, c.Handle(t.Context(), &queue.JobAction{
 			Action: &queue.JobAction_ExecuteRequest{
 				ExecuteRequest: &queue.ExecuteRequest{
-					JobName: "test-job",
+					ModRevision: 789,
 				},
 			},
 		}))
@@ -168,8 +171,7 @@ func Test_Counters(t *testing.T) {
 			assert.Equal(t, &queue.ControlEvent{
 				Action: &queue.ControlEvent_ExecuteResponse{
 					ExecuteResponse: &queue.ExecuteResponse{
-						JobName: "test-job",
-						Uid:     1234,
+						ModRevision: 1234,
 						Result: &api.TriggerResponse{
 							Result: api.TriggerResponseResult_UNDELIVERABLE,
 						},
@@ -185,17 +187,17 @@ func Test_Counters(t *testing.T) {
 				return &api.TriggerRequest{Name: "test-job"}
 			}),
 		}
-		c.jobVersion = 1234
+		c.modRevision = 1234
 
 		require.NoError(t, c.Handle(t.Context(), &queue.JobAction{
 			Action: &queue.JobAction_ExecuteRequest{
 				ExecuteRequest: &queue.ExecuteRequest{
-					JobName: "test-job",
+					ModRevision: 5678,
 				},
 			},
 		}))
 
-		assert.Equal(t, int64(1234), c.jobVersion)
+		assert.Equal(t, int64(1234), c.modRevision)
 		assert.NotNil(t, c.counter)
 		assert.EventuallyWithT(t, func(c *assert.CollectT) {
 			assert.Equal(c, uint64(2), called.Load())
@@ -243,13 +245,12 @@ func Test_Counters(t *testing.T) {
 		c := &Counters{
 			name: "test-job",
 		}
-		c.jobVersion = 999
+		c.modRevision = 999
 
 		assert.NoError(t, c.Handle(t.Context(), &queue.JobAction{
 			Action: &queue.JobAction_ExecuteResponse{
 				ExecuteResponse: &queue.ExecuteResponse{
-					JobName: "test-job",
-					Uid:     999,
+					ModRevision: 999,
 					Result: &api.TriggerResponse{
 						Result: api.TriggerResponseResult_SUCCESS,
 					},

@@ -12,7 +12,6 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/diagridio/go-etcd-cron/internal/api/queue"
-	"github.com/diagridio/go-etcd-cron/internal/api/stored"
 	actionerfake "github.com/diagridio/go-etcd-cron/internal/engine/queue/actioner/fake"
 	"github.com/diagridio/go-etcd-cron/internal/engine/queue/loops/counters"
 )
@@ -24,14 +23,15 @@ func Test_worker(t *testing.T) {
 		t.Parallel()
 
 		w := &worker{
-			counters: make(map[string]*counters.Counters),
+			counters: make(map[int64]*counters.Counters),
 		}
 
 		require.NoError(t, w.Handle(t.Context(), &queue.JobEvent{
-			JobName: "123",
 			Action: &queue.JobAction{
 				Action: &queue.JobAction_CloseJob{
-					CloseJob: new(queue.CloseJob),
+					CloseJob: &queue.CloseJob{
+						ModRevision: 1,
+					},
 				},
 			},
 		}))
@@ -41,23 +41,24 @@ func Test_worker(t *testing.T) {
 		t.Parallel()
 
 		w := &worker{
-			counters: map[string]*counters.Counters{
-				"1": counters.New(counters.Options{}),
-				"2": counters.New(counters.Options{}),
+			counters: map[int64]*counters.Counters{
+				1: counters.New(counters.Options{}),
+				2: counters.New(counters.Options{}),
 			},
 		}
 
 		require.NoError(t, w.Handle(t.Context(), &queue.JobEvent{
-			JobName: "1",
 			Action: &queue.JobAction{
 				Action: &queue.JobAction_CloseJob{
-					CloseJob: new(queue.CloseJob),
+					CloseJob: &queue.CloseJob{
+						ModRevision: 1,
+					},
 				},
 			},
 		}))
 
-		assert.Equal(t, map[string]*counters.Counters{
-			"2": counters.New(counters.Options{}),
+		assert.Equal(t, map[int64]*counters.Counters{
+			2: counters.New(counters.Options{}),
 		}, w.counters)
 	})
 
@@ -65,12 +66,12 @@ func Test_worker(t *testing.T) {
 		t.Parallel()
 
 		w := &worker{
-			counters: map[string]*counters.Counters{
-				"1": counters.New(counters.Options{}),
-				"2": counters.New(counters.Options{}),
-				"3": counters.New(counters.Options{}),
-				"4": counters.New(counters.Options{}),
-				"5": counters.New(counters.Options{}),
+			counters: map[int64]*counters.Counters{
+				1: counters.New(counters.Options{}),
+				2: counters.New(counters.Options{}),
+				3: counters.New(counters.Options{}),
+				4: counters.New(counters.Options{}),
+				5: counters.New(counters.Options{}),
 			},
 		}
 
@@ -90,26 +91,25 @@ func Test_worker(t *testing.T) {
 
 		exp := &queue.JobAction{Action: &queue.JobAction_Informed{
 			Informed: &queue.Informed{
-				Name:  "test-job",
-				IsPut: true,
-				Job: &stored.Job{
-					PartitionId: 1,
+				Name: "test-job",
+				QueuedJob: &queue.QueuedJob{
+					ModRevision: 1,
 				},
+				IsPut: true,
 			},
 		}}
 
 		w := &worker{
 			act: actionerfake.New(),
-			counters: map[string]*counters.Counters{
-				"2": counters.New(counters.Options{
+			counters: map[int64]*counters.Counters{
+				2: counters.New(counters.Options{
 					Actioner: actionerfake.New(),
 				}),
 			},
 		}
 
 		require.NoError(t, w.Handle(t.Context(), &queue.JobEvent{
-			JobName: "1",
-			Action:  exp,
+			Action: exp,
 		}))
 
 		assert.Len(t, w.counters, 2)
@@ -122,24 +122,23 @@ func Test_worker(t *testing.T) {
 			Informed: &queue.Informed{
 				Name:  "test-job",
 				IsPut: false,
-				Job: &stored.Job{
-					PartitionId: 1,
+				QueuedJob: &queue.QueuedJob{
+					ModRevision: 1,
 				},
 			},
 		}}
 
 		w := &worker{
 			act: actionerfake.New(),
-			counters: map[string]*counters.Counters{
-				"test-job": counters.New(counters.Options{
+			counters: map[int64]*counters.Counters{
+				1: counters.New(counters.Options{
 					Actioner: actionerfake.New(),
 				}),
 			},
 		}
 
 		require.NoError(t, w.Handle(t.Context(), &queue.JobEvent{
-			JobName: "1",
-			Action:  exp,
+			Action: exp,
 		}))
 
 		assert.Len(t, w.counters, 1)

@@ -13,7 +13,6 @@ import (
 	"github.com/dapr/kit/events/loop"
 	"github.com/diagridio/go-etcd-cron/api"
 	"github.com/diagridio/go-etcd-cron/internal/api/queue"
-	"github.com/diagridio/go-etcd-cron/internal/api/stored"
 	clientapi "github.com/diagridio/go-etcd-cron/internal/client/api"
 	"github.com/diagridio/go-etcd-cron/internal/counter"
 	"github.com/diagridio/go-etcd-cron/internal/engine/informer/consumer"
@@ -23,7 +22,7 @@ import (
 )
 
 type Options struct {
-	Queue        *eventsqueue.Processor[string, counter.Interface]
+	Queue        *eventsqueue.Processor[int64, counter.Interface]
 	TriggerFn    api.TriggerFunction
 	ControlLoop  *loop.Interface[*queue.ControlEvent]
 	SchedBuilder *scheduler.Builder
@@ -33,21 +32,21 @@ type Options struct {
 }
 
 type Interface interface {
-	Schedule(context.Context, string, int64, *stored.Job) (counter.Interface, error)
+	Schedule(context.Context, string, *queue.QueuedJob) (counter.Interface, error)
 	Enqueue(counter.Interface)
 	Deschedule(counter.Interface)
 	RemoveConsumer(counter.Interface)
 	Trigger(*api.TriggerRequest, func(*api.TriggerResponse))
 	AddToControlLoop(*queue.ControlEvent)
-	DeliverablePrefixes(...string) []string
+	DeliverablePrefixes(...string) []int64
 	UnDeliverablePrefixes(...string)
-	Stage(string) bool
-	Unstage(string)
+	Stage(int64, string) bool
+	Unstage(int64)
 }
 
 type actioner struct {
 	staging      *staging.Staging
-	queue        *eventsqueue.Processor[string, counter.Interface]
+	queue        *eventsqueue.Processor[int64, counter.Interface]
 	triggerFn    api.TriggerFunction
 	ctrlloop     *loop.Interface[*queue.ControlEvent]
 	schedBuilder *scheduler.Builder
@@ -69,19 +68,18 @@ func New(opts Options) Interface {
 	}
 }
 
-func (a *actioner) Schedule(ctx context.Context, jobName string, revision int64, job *stored.Job) (counter.Interface, error) {
-	schedule, err := a.schedBuilder.Schedule(job)
+func (a *actioner) Schedule(ctx context.Context, jobName string, job *queue.QueuedJob) (counter.Interface, error) {
+	schedule, err := a.schedBuilder.Schedule(job.GetStored())
 	if err != nil {
 		return nil, err
 	}
 
 	counter, ok, err := counter.New(ctx, counter.Options{
-		Name:           jobName,
-		Key:            a.key,
-		Schedule:       schedule,
-		Client:         a.client,
-		Job:            job,
-		JobModRevision: revision,
+		Name:     jobName,
+		Key:      a.key,
+		Client:   a.client,
+		Schedule: schedule,
+		Job:      job,
 	})
 	if err != nil || !ok {
 		return nil, err
@@ -105,7 +103,7 @@ func (a *actioner) Deschedule(counter counter.Interface) {
 
 // RemoveConsumer sends a signal to the consumer that the job no longer exists.
 func (a *actioner) RemoveConsumer(counter counter.Interface) {
-	a.consumer.Delete(counter.JobName(), counter.Job())
+	a.consumer.Delete(counter.Key())
 }
 
 func (a *actioner) Trigger(req *api.TriggerRequest, fn func(*api.TriggerResponse)) {
@@ -116,7 +114,7 @@ func (a *actioner) AddToControlLoop(event *queue.ControlEvent) {
 	(*a.ctrlloop).Enqueue(event)
 }
 
-func (a *actioner) DeliverablePrefixes(prefixes ...string) []string {
+func (a *actioner) DeliverablePrefixes(prefixes ...string) []int64 {
 	return a.staging.DeliverablePrefixes(prefixes...)
 }
 
@@ -124,10 +122,10 @@ func (a *actioner) UnDeliverablePrefixes(prefixes ...string) {
 	a.staging.UnDeliverablePrefixes(prefixes...)
 }
 
-func (a *actioner) Stage(jobName string) bool {
-	return a.staging.Stage(jobName)
+func (a *actioner) Stage(modRevision int64, jobName string) bool {
+	return a.staging.Stage(modRevision, jobName)
 }
 
-func (a *actioner) Unstage(jobName string) {
-	a.staging.Unstage(jobName)
+func (a *actioner) Unstage(modRevision int64) {
+	a.staging.Unstage(modRevision)
 }
