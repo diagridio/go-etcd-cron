@@ -211,15 +211,11 @@ func Test_JobName(t *testing.T) {
 		expJobName string
 	}{
 		{
-			key:        "jobs/abc",
+			key:        "/123/jobs/abc",
 			expJobName: "abc",
 		},
 		{
-			key:        "123/jobs/abc",
-			expJobName: "abc",
-		},
-		{
-			key:        "/123/abc/jobs/def",
+			key:        "/123/jobs/def",
 			expJobName: "def",
 		},
 	}

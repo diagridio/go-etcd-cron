@@ -65,21 +65,21 @@ func Test_consumersink(t *testing.T) {
 			Payload:  pay1,
 		}))
 
+		event := <-ch
 		assert.True(t, proto.Equal(&api.InformerEvent{
 			Event: &api.InformerEvent_Put{
-				Put: &api.InformerEventJob{
-					Name:     "name1",
-					Metadata: meta1,
-					Payload:  pay1,
+				Put: &api.InformerEventJobPut{
+					ModRevision: event.GetPut().GetModRevision(),
+					Name:        "name1",
+					Metadata:    meta1,
+					Payload:     pay1,
 				},
 			},
-		}, <-ch))
+		}, event))
 		assert.True(t, proto.Equal(&api.InformerEvent{
 			Event: &api.InformerEvent_Delete{
-				Delete: &api.InformerEventJob{
-					Name:     "name1",
-					Metadata: meta1,
-					Payload:  pay1,
+				Delete: &api.InformerEventJobDelete{
+					ModRevision: event.GetPut().GetModRevision(),
 				},
 			},
 		}, <-ch))
@@ -91,21 +91,21 @@ func Test_consumersink(t *testing.T) {
 		}))
 		require.NoError(t, c.Delete(t.Context(), "name2"))
 
+		event = <-ch
 		assert.True(t, proto.Equal(&api.InformerEvent{
 			Event: &api.InformerEvent_Put{
-				Put: &api.InformerEventJob{
-					Name:     "name2",
-					Metadata: meta2,
-					Payload:  pay2,
+				Put: &api.InformerEventJobPut{
+					ModRevision: event.GetPut().GetModRevision(),
+					Name:        "name2",
+					Metadata:    meta2,
+					Payload:     pay2,
 				},
 			},
-		}, <-ch))
+		}, event))
 		assert.True(t, proto.Equal(&api.InformerEvent{
 			Event: &api.InformerEvent_Delete{
-				Delete: &api.InformerEventJob{
-					Name:     "name2",
-					Metadata: meta2,
-					Payload:  pay2,
+				Delete: &api.InformerEventJobDelete{
+					ModRevision: event.GetPut().GetModRevision(),
 				},
 			},
 		}, <-ch))
@@ -140,11 +140,12 @@ func Test_consumersink(t *testing.T) {
 		assert.Eventually(t, c1.IsElected, time.Second*10, time.Millisecond*10)
 
 		require.NoError(t, c1.Add(t.Context(), "name1", &api.Job{DueTime: ptr.Of("120s")}))
+		event := <-ch1
 		assert.True(t, proto.Equal(&api.InformerEvent{
 			Event: &api.InformerEvent_Put{
-				Put: &api.InformerEventJob{Name: "name1"},
+				Put: &api.InformerEventJobPut{Name: "name1", ModRevision: event.GetPut().GetModRevision()},
 			},
-		}, <-ch1))
+		}, event))
 
 		c2ctx, cancel := context.WithCancel(t.Context())
 		opts2, ch2 := optsFn("456")
@@ -174,7 +175,7 @@ func Test_consumersink(t *testing.T) {
 			assert.Fail(t, "did not receive event")
 		}
 		assert.True(t, proto.Equal(&api.InformerEvent{
-			Event: &api.InformerEvent_Put{Put: &api.InformerEventJob{Name: "name1"}},
+			Event: &api.InformerEvent_Put{Put: &api.InformerEventJobPut{Name: "name1", ModRevision: e.GetPut().GetModRevision()}},
 		}, e))
 
 		opts3, ch3 := optsFn("789")
@@ -204,7 +205,7 @@ func Test_consumersink(t *testing.T) {
 			assert.Fail(t, "did not receive event")
 		}
 		assert.True(t, proto.Equal(&api.InformerEvent{
-			Event: &api.InformerEvent_Put{Put: &api.InformerEventJob{Name: "name1"}},
+			Event: &api.InformerEvent_Put{Put: &api.InformerEventJobPut{Name: "name1", ModRevision: e.GetPut().GetModRevision()}},
 		}, e))
 
 		cancel()
@@ -227,7 +228,7 @@ func Test_consumersink(t *testing.T) {
 			assert.Fail(t, "did not receive event")
 		}
 		assert.True(t, proto.Equal(&api.InformerEvent{
-			Event: &api.InformerEvent_Put{Put: &api.InformerEventJob{Name: "name1"}},
+			Event: &api.InformerEvent_Put{Put: &api.InformerEventJobPut{Name: "name1", ModRevision: e.GetPut().GetModRevision()}},
 		}, e))
 	})
 }

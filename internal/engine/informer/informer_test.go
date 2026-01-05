@@ -124,16 +124,8 @@ func Test_Run(t *testing.T) {
 		for i := range 2 {
 			select {
 			case ev := <-ch:
-				assert.False(t, ev.IsPut)
-				assert.Nil(t, ev.Job)
-			case <-time.After(time.Second):
-				t.Fatalf("timed out waiting for event %d", i)
-			}
-
-			select {
-			case ev := <-ch:
 				assert.True(t, ev.IsPut)
-				assert.True(t, proto.Equal(&jobs[i], ev.Job))
+				assert.True(t, proto.Equal(&jobs[i], ev.GetQueuedJob().Stored))
 			case <-time.After(time.Second):
 				t.Fatalf("timed out waiting for event %d", i)
 			}
@@ -198,10 +190,14 @@ func Test_Run(t *testing.T) {
 		}()
 
 		expEvents := []*queue.Informed{
-			{IsPut: false, Job: nil, Name: "1"},
-			{IsPut: true, Job: &jobs[0], Name: "2", JobModRevision: modRevision[1]},
-			{IsPut: false, Job: nil, Name: "3"},
-			{IsPut: true, Job: &jobs[1], Name: "4", JobModRevision: modRevision[3]},
+			{IsPut: true, QueuedJob: &queue.QueuedJob{
+				Stored:      &jobs[0],
+				ModRevision: modRevision[1],
+			}, Name: "2"},
+			{IsPut: true, QueuedJob: &queue.QueuedJob{
+				Stored:      &jobs[1],
+				ModRevision: modRevision[3],
+			}, Name: "4"},
 		}
 
 		for _, expEvent := range expEvents {
@@ -228,11 +224,11 @@ func Test_Run(t *testing.T) {
 		require.NoError(t, err)
 
 		expEvents = []*queue.Informed{
-			{IsPut: false, Job: nil, Name: "1"},
-			{IsPut: false, Job: &jobs[0], Name: "2", JobModRevision: modRevision[1]},
-			{IsPut: false, Job: nil, Name: "5"},
-			{IsPut: true, Job: &jobs[2], Name: "6", JobModRevision: modRevision[5]},
-			{IsPut: false, Job: &jobs[1], Name: "4", JobModRevision: modRevision[3]},
+			{IsPut: false, QueuedJob: &queue.QueuedJob{ModRevision: modRevision[0]}},
+			{IsPut: false, QueuedJob: &queue.QueuedJob{ModRevision: modRevision[1]}},
+			{IsPut: true, QueuedJob: &queue.QueuedJob{
+				Stored: &jobs[2], ModRevision: modRevision[5]}, Name: "6"},
+			{IsPut: false, QueuedJob: &queue.QueuedJob{ModRevision: modRevision[3]}},
 		}
 		for _, expEvent := range expEvents {
 			select {
@@ -264,7 +260,7 @@ func Test_handleEvent(t *testing.T) {
 
 	tests := map[string]struct {
 		ev       *clientv3.Event
-		expEvent *queue.Informed
+		expEvent []*queue.Informed
 		expErr   bool
 	}{
 		"if event is not recognized, it should return an error": {
@@ -285,19 +281,19 @@ func Test_handleEvent(t *testing.T) {
 			expEvent: nil,
 			expErr:   true,
 		},
-		"if job is for different partition, return delete event": {
+		"if job is for different partition, return nothing": {
 			ev: &clientv3.Event{
 				Type: clientv3.EventTypePut,
 				Kv: &mvccpb.KeyValue{
 					Key:   []byte("abc/jobs/2"),
 					Value: jobUID1,
 				},
+				PrevKv: &mvccpb.KeyValue{
+					ModRevision: 1234,
+				},
 			},
-			expEvent: &queue.Informed{
-				IsPut: false,
-				Name:  "2",
-			},
-			expErr: false,
+			expEvent: nil,
+			expErr:   false,
 		},
 		"if job is for partition, return job on PUT": {
 			ev: &clientv3.Event{
@@ -307,24 +303,23 @@ func Test_handleEvent(t *testing.T) {
 					Key:   []byte("abc/jobs/3"),
 				},
 			},
-			expEvent: &queue.Informed{
-				IsPut: true,
-				Job:   &job2,
-				Name:  "3",
-			},
+			expEvent: []*queue.Informed{{
+				IsPut:     true,
+				QueuedJob: &queue.QueuedJob{Stored: &job2},
+				Name:      "3",
+			}},
 			expErr: false,
 		},
 		"if job is for partition, return job on DELETE": {
 			ev: &clientv3.Event{
 				Type:   clientv3.EventTypeDelete,
 				Kv:     &mvccpb.KeyValue{Value: jobUID2, Key: []byte("abc/jobs/3")},
-				PrevKv: &mvccpb.KeyValue{Value: jobUID2},
+				PrevKv: &mvccpb.KeyValue{Value: jobUID2, ModRevision: 1234},
 			},
-			expEvent: &queue.Informed{
-				IsPut: false,
-				Job:   &job2,
-				Name:  "3",
-			},
+			expEvent: []*queue.Informed{{
+				IsPut:     false,
+				QueuedJob: &queue.QueuedJob{ModRevision: 1234},
+			}},
 			expErr: false,
 		},
 	}
@@ -354,7 +349,7 @@ func Test_handleEvent(t *testing.T) {
 				Key:         key,
 			})
 			gotEvent, err := i.handleEvent(testInLoop.ev)
-			assert.Equal(t, testInLoop.expEvent, gotEvent)
+			assert.Equal(t, testInLoop.expEvent, gotEvent, "%v != %v", testInLoop.expEvent, gotEvent)
 			assert.Equal(t, testInLoop.expErr, err != nil, "%v", err)
 		})
 	}

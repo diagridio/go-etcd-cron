@@ -31,11 +31,8 @@ message ControlEvent {
 // JobEvent is queue events that should be processed by the inner Job event
 // loop. These events are performed on a per-job handler.
 message JobEvent {
-  // job_name is the name of the job associated with this event.
-  string job_name = 1;
-
   // action is the typed action which should be executed by the job event.
-  JobAction action = 2;
+  JobAction action = 1;
 }
 
 message JobAction {
@@ -51,45 +48,43 @@ message JobAction {
   }
 }
 
+// QueuedJob is a job stored in the queue with its modification revision.
+message QueuedJob {
+  // mod_revision is the storage modification revision of the job.
+  int64 mod_revision = 1;
+
+  // stored is the stored job object.
+  stored.Job stored = 2;
+}
+
 // Informed is the event that is sent to the queue when a job is added or
 // deleted from the storage informer.
 message Informed {
-  // job is the stored job object.
-  stored.Job job = 1;
+  // queued_job is the job object that was added or deleted.
+  QueuedJob queued_job = 1;
 
   // name is the name of the job object.
   string name = 2;
 
   // is_put is true if the event is a put event, false if it is a delete event.
   bool is_put = 3;
-
-  // job_mod_revision is the key revision of the job object in the storage.
-  int64 job_mod_revision = 4;
 }
 
 // ExecuteRequest is the queue event to execute a job.
 message ExecuteRequest {
-  // job_name is the name of the job to execute.
-  string job_name = 1;
-
-  // counter_key is the storage key of the job counter to execute.
-  string counter_key = 2;
+  // mod_revision is the mod revision of the  key of the job counter to execute.
+  int64 mod_revision = 1;
 }
 
 // ExecuteResponse is to report the result of a job execution.
 message ExecuteResponse {
-  // job_name is the name of the job to execute.
-  string job_name = 1;
-
-  // counter_key is the storage key of the job counter to execute.
-  string counter_key = 2;
-
-  // uid tracks the id of this execution to account for mid-execution
+  // mod_revision is the mod revision of the key of the job counter to execute.
+  // tracks the id of this execution to account for mid-execution
   // cancellations.
-  int64 uid = 3;
+  int64 mod_revision = 1;
 
   // result is the trigger result of executing this job counter.
-  api.TriggerResponse result = 4;
+  api.TriggerResponse result = 3;
 }
 
 // DeliverablePrefixes is a queue event which instructs that the given prefixes
@@ -106,17 +101,19 @@ message UndeliverablePrefixes {
   repeated string prefixes = 1;
 }
 
-// Close is a queue event which instructs that the queue executor should
-// close.
+// Close is a queue event which instructs that the queue executor should close.
 message Close {}
 
-// CloseJob is a queue event which instructs the given job name has been closed
-// and the associated resources should be released.
+// CloseJob is a queue event which instructs the given job mod revision has
+// been closed and the associated resources should be released.
 message CloseJob {
-  // job_name is the job whose resources should be closed.
-  string job_name = 1;
+  // mod_revision is the job whose resources should be closed.
+  int64 mod_revision = 1;
 }
 
 // DeliverableJob is a job event which instructs that the given job can now be
 // executed by the queue executor.
-message DeliverableJob {}
+message DeliverableJob {
+  // mod_revision is the job mod revision that can now be executed.
+  int64 mod_revision = 1;
+}

@@ -7,7 +7,7 @@ package router
 
 import (
 	"context"
-	"hash/fnv"
+	"fmt"
 
 	"github.com/go-logr/logr"
 
@@ -41,12 +41,27 @@ func (r *router) Handle(ctx context.Context, event *queue.JobEvent) error {
 		r.handleClose()
 
 	default:
-		h := fnv.New32a()
-		h.Write([]byte(event.GetJobName()))
-		r.workers[int(h.Sum32())%len(r.workers)].Enqueue(event)
+		r.workers[r.modRevisionFromEvent(event)%int64(len(r.workers))].Enqueue(event)
 	}
 
 	return nil
+}
+
+func (r *router) modRevisionFromEvent(event *queue.JobEvent) int64 {
+	switch action := event.GetAction().Action.(type) {
+	case *queue.JobAction_Informed:
+		return action.Informed.GetQueuedJob().GetModRevision()
+	case *queue.JobAction_ExecuteRequest:
+		return action.ExecuteRequest.GetModRevision()
+	case *queue.JobAction_ExecuteResponse:
+		return action.ExecuteResponse.GetModRevision()
+	case *queue.JobAction_Deliverable:
+		return action.Deliverable.GetModRevision()
+	case *queue.JobAction_CloseJob:
+		return action.CloseJob.GetModRevision()
+	default:
+		panic(fmt.Sprintf("unknown action type: %T", event.GetAction().Action))
+	}
 }
 
 func (r *router) handleClose() {

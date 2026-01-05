@@ -20,6 +20,7 @@ import (
 	"github.com/dapr/kit/ptr"
 
 	"github.com/diagridio/go-etcd-cron/api"
+	"github.com/diagridio/go-etcd-cron/internal/api/queue"
 	"github.com/diagridio/go-etcd-cron/internal/api/stored"
 	clientapi "github.com/diagridio/go-etcd-cron/internal/client/api"
 	"github.com/diagridio/go-etcd-cron/internal/client/fake"
@@ -61,7 +62,7 @@ func Test_New(t *testing.T) {
 		counterBytes, err := proto.Marshal(counter)
 		require.NoError(t, err)
 
-		_, err = client.Put(t.Context(), "abc/jobs/1", string(jobBytes))
+		presp, err := client.Put(t.Context(), "abc/jobs/1", string(jobBytes))
 		require.NoError(t, err)
 		_, err = client.Put(t.Context(), "abc/counters/1", string(counterBytes))
 		require.NoError(t, err)
@@ -77,14 +78,16 @@ func Test_New(t *testing.T) {
 			Key:      key,
 			Client:   client,
 			Schedule: sched,
-			Job:      job,
+			Job: &queue.QueuedJob{
+				ModRevision: presp.Header.Revision,
+				Stored:      job,
+			},
 		})
-
 		require.NoError(t, err)
 		assert.True(t, ok)
 		assert.NotNil(t, c)
 
-		assert.Equal(t, "1", c.JobName())
+		assert.Equal(t, presp.Header.Revision, c.Key())
 
 		resp, err := client.Get(t.Context(), "abc/jobs/1")
 		require.NoError(t, err)
@@ -138,12 +141,14 @@ func Test_New(t *testing.T) {
 		})
 		require.NoError(t, err)
 		c, ok, err := New(t.Context(), Options{
-			Name:           "1",
-			Key:            key,
-			Client:         client,
-			Schedule:       sched,
-			Job:            job,
-			JobModRevision: presp.Header.GetRevision(),
+			Name:     "1",
+			Key:      key,
+			Client:   client,
+			Schedule: sched,
+			Job: &queue.QueuedJob{
+				ModRevision: presp.Header.GetRevision(),
+				Stored:      job,
+			},
 		})
 
 		require.NoError(t, err)
@@ -209,12 +214,14 @@ func Test_New(t *testing.T) {
 		})
 		require.NoError(t, err)
 		c, ok, err := New(t.Context(), Options{
-			Name:           "1",
-			Key:            key,
-			Client:         client,
-			Schedule:       sched,
-			Job:            job,
-			JobModRevision: presp.Header.GetRevision(),
+			Name:     "1",
+			Key:      key,
+			Client:   client,
+			Schedule: sched,
+			Job: &queue.QueuedJob{
+				ModRevision: presp.Header.GetRevision(),
+				Stored:      job,
+			},
 		})
 
 		require.NoError(t, err)
@@ -252,7 +259,7 @@ func Test_New(t *testing.T) {
 		jobBytes, err := proto.Marshal(job)
 		require.NoError(t, err)
 
-		_, err = client.Put(t.Context(), "abc/jobs/1", string(jobBytes))
+		presp, err := client.Put(t.Context(), "abc/jobs/1", string(jobBytes))
 		require.NoError(t, err)
 
 		key, err := key.New(key.Options{
@@ -265,7 +272,10 @@ func Test_New(t *testing.T) {
 			Key:      key,
 			Client:   client,
 			Schedule: sched,
-			Job:      job,
+			Job: &queue.QueuedJob{
+				ModRevision: presp.Header.Revision,
+				Stored:      job,
+			},
 		})
 
 		require.NoError(t, err)
@@ -318,14 +328,16 @@ func Test_TriggerSuccess(t *testing.T) {
 		require.NoError(t, err)
 
 		c := &counter{
-			client:      client,
-			job:         job,
-			count:       scounter,
-			schedule:    sched,
-			jobKey:      "abc/jobs/1",
-			counterKey:  "abc/counters/1",
-			next:        now,
-			modRevision: presp.Header.GetRevision(),
+			client: client,
+			job: &queue.QueuedJob{
+				ModRevision: presp.Header.GetRevision(),
+				Stored:      job,
+			},
+			count:      scounter,
+			schedule:   sched,
+			jobKey:     "abc/jobs/1",
+			counterKey: "abc/counters/1",
+			next:       now,
 		}
 
 		ok, err := c.TriggerSuccess(t.Context())
@@ -385,14 +397,16 @@ func Test_TriggerSuccess(t *testing.T) {
 		require.NoError(t, err)
 
 		c := &counter{
-			client:      client,
-			job:         job,
-			next:        now,
-			count:       scounter,
-			schedule:    sched,
-			jobKey:      "abc/jobs/1",
-			counterKey:  "abc/counters/1",
-			modRevision: presp.Header.GetRevision(),
+			client: client,
+			job: &queue.QueuedJob{
+				ModRevision: presp.Header.GetRevision(),
+				Stored:      job,
+			},
+			next:       now,
+			count:      scounter,
+			schedule:   sched,
+			jobKey:     "abc/jobs/1",
+			counterKey: "abc/counters/1",
 		}
 
 		ok, err := c.TriggerSuccess(t.Context())
@@ -440,14 +454,16 @@ func Test_TriggerSuccess(t *testing.T) {
 		require.NoError(t, err)
 
 		c := &counter{
-			client:      client,
-			job:         job,
-			count:       scounter,
-			schedule:    sched,
-			jobKey:      "abc/jobs/1",
-			counterKey:  "abc/counters/1",
-			next:        now,
-			modRevision: presp.Header.GetRevision(),
+			client: client,
+			job: &queue.QueuedJob{
+				ModRevision: presp.Header.GetRevision(),
+				Stored:      job,
+			},
+			count:      scounter,
+			schedule:   sched,
+			jobKey:     "abc/jobs/1",
+			counterKey: "abc/counters/1",
+			next:       now,
 		}
 
 		ok, err := c.TriggerSuccess(t.Context())
@@ -508,13 +524,15 @@ func Test_tickNext(t *testing.T) {
 		require.NoError(t, err)
 
 		c := &counter{
-			client:      client,
-			job:         job,
-			count:       scounter,
-			schedule:    sched,
-			jobKey:      "abc/jobs/1",
-			counterKey:  "abc/counters/1",
-			modRevision: presp.Header.GetRevision(),
+			client: client,
+			job: &queue.QueuedJob{
+				ModRevision: presp.Header.GetRevision(),
+				Stored:      job,
+			},
+			count:      scounter,
+			schedule:   sched,
+			jobKey:     "abc/jobs/1",
+			counterKey: "abc/counters/1",
 		}
 
 		ok, err := c.tickNext()
@@ -567,13 +585,15 @@ func Test_tickNext(t *testing.T) {
 		require.NoError(t, err)
 
 		c := &counter{
-			client:      client,
-			job:         job,
-			count:       scounter,
-			schedule:    sched,
-			jobKey:      "abc/jobs/1",
-			counterKey:  "abc/counters/1",
-			modRevision: presp.Header.GetRevision(),
+			client: client,
+			job: &queue.QueuedJob{
+				ModRevision: presp.Header.GetRevision(),
+				Stored:      job,
+			},
+			count:      scounter,
+			schedule:   sched,
+			jobKey:     "abc/jobs/1",
+			counterKey: "abc/counters/1",
 		}
 
 		ok, err := c.tickNext()
@@ -638,9 +658,11 @@ func Test_updateNext(t *testing.T) {
 		"if the number of counts is the same as repeats return false": {
 			counter: &counter{
 				schedule: repeats,
-				job: &stored.Job{Job: &api.Job{
-					Repeats: ptr.Of(uint32(4)),
-				}},
+				job: &queue.QueuedJob{
+					Stored: &stored.Job{Job: &api.Job{
+						Repeats: ptr.Of(uint32(4)),
+					}},
+				},
 				count: &stored.Counter{
 					Count: 4,
 				},
@@ -650,9 +672,11 @@ func Test_updateNext(t *testing.T) {
 		"if the number of counts is more than repeats return false (should never happen)": {
 			counter: &counter{
 				schedule: repeats,
-				job: &stored.Job{Job: &api.Job{
-					Repeats: ptr.Of(uint32(4)),
-				}},
+				job: &queue.QueuedJob{
+					Stored: &stored.Job{Job: &api.Job{
+						Repeats: ptr.Of(uint32(4)),
+					}},
+				},
 				count: &stored.Counter{Count: 5},
 			},
 			exp: false,
@@ -660,9 +684,11 @@ func Test_updateNext(t *testing.T) {
 		"if the last trigger time if the same as the expiry, expect false": {
 			counter: &counter{
 				schedule: expires,
-				job: &stored.Job{Job: &api.Job{
-					Repeats: ptr.Of(uint32(4)),
-				}},
+				job: &queue.QueuedJob{
+					Stored: &stored.Job{Job: &api.Job{
+						Repeats: ptr.Of(uint32(4)),
+					}},
+				},
 				count: &stored.Counter{
 					Count:       2,
 					LastTrigger: timestamppb.New(now.Add(5 * time.Second)),
@@ -673,9 +699,11 @@ func Test_updateNext(t *testing.T) {
 		"if the count is equal to total, return false": {
 			counter: &counter{
 				schedule: expires,
-				job: &stored.Job{Job: &api.Job{
-					Repeats: ptr.Of(uint32(4)),
-				}},
+				job: &queue.QueuedJob{
+					Stored: &stored.Job{Job: &api.Job{
+						Repeats: ptr.Of(uint32(4)),
+					}},
+				},
 				count: &stored.Counter{
 					Count:       4,
 					LastTrigger: timestamppb.New(now),
@@ -686,9 +714,11 @@ func Test_updateNext(t *testing.T) {
 		"if under the number of counts, but job is past expiry time, return false": {
 			counter: &counter{
 				schedule: expires,
-				job: &stored.Job{
-					Expiration: timestamppb.New(now.Add(-5 * time.Second)),
-					Job:        new(api.Job),
+				job: &queue.QueuedJob{
+					Stored: &stored.Job{
+						Expiration: timestamppb.New(now.Add(-5 * time.Second)),
+						Job:        new(api.Job),
+					},
 				},
 				count: &stored.Counter{
 					Count:       0,
@@ -700,7 +730,9 @@ func Test_updateNext(t *testing.T) {
 		"if time is past the trigger time but no triggered yet for one shot, return true and set trigger time": {
 			counter: &counter{
 				schedule: oneshot,
-				job:      &stored.Job{Job: new(api.Job)},
+				job: &queue.QueuedJob{
+					Stored: &stored.Job{Job: new(api.Job)},
+				},
 				count: &stored.Counter{
 					Count:       0,
 					LastTrigger: nil,
@@ -712,7 +744,9 @@ func Test_updateNext(t *testing.T) {
 		"if oneshot trigger but has already been triggered, expect false": {
 			counter: &counter{
 				schedule: oneshot,
-				job:      &stored.Job{Job: new(api.Job)},
+				job: &queue.QueuedJob{
+					Stored: &stored.Job{Job: new(api.Job)},
+				},
 				count: &stored.Counter{
 					Count:       1,
 					LastTrigger: nil,
@@ -1457,10 +1491,12 @@ func Test_TriggerFailed(t *testing.T) {
 					Count:       test.count,
 					LastTrigger: test.lastTriggerTime,
 				},
-				job:         job,
-				next:        next,
-				schedule:    sched,
-				modRevision: 123,
+				job: &queue.QueuedJob{
+					ModRevision: 123,
+					Stored:      job,
+				},
+				next:     next,
+				schedule: sched,
 			}
 
 			ok, err := counter.TriggerFailed(t.Context())
@@ -1520,9 +1556,12 @@ func Test_TriggerFailureSuccess(t *testing.T) {
 		counterKey: "abc/counters/1",
 		client:     client,
 		count:      new(stored.Counter),
-		job:        job,
-		next:       now,
-		schedule:   sched,
+		job: &queue.QueuedJob{
+			ModRevision: 1234,
+			Stored:      job,
+		},
+		next:     now,
+		schedule: sched,
 	}
 
 	assert.True(t, proto.Equal(counter.count, &stored.Counter{
