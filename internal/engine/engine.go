@@ -69,6 +69,7 @@ func New(opts Options) (Interface, error) {
 		Key:         opts.Key,
 		Client:      opts.Client,
 		Partitioner: opts.Partitioner,
+		Log:         opts.Log,
 	})
 
 	schedBuilder := scheduler.NewBuilder()
