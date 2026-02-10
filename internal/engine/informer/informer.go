@@ -19,6 +19,7 @@ import (
 	"github.com/diagridio/go-etcd-cron/internal/client/api"
 	"github.com/diagridio/go-etcd-cron/internal/key"
 	"github.com/diagridio/go-etcd-cron/internal/leadership/partitioner"
+	"github.com/go-logr/logr"
 )
 
 // Options are the options for the Informer.
@@ -31,6 +32,9 @@ type Options struct {
 
 	// Partitioner determines if a job belongs to this partition.
 	Partitioner partitioner.Interface
+
+	// Log is the logger to use for logging.
+	Log logr.Logger
 }
 
 // Informer informs when a job is either created or deleted in the etcd data
@@ -39,6 +43,7 @@ type Informer struct {
 	key    *key.Key
 	client api.Interface
 	part   partitioner.Interface
+	log    logr.Logger
 
 	ch      chan *queue.Informed
 	readyCh chan struct{}
@@ -53,6 +58,7 @@ func New(opts Options) (*Informer, chan *queue.Informed) {
 		part:    opts.Partitioner,
 		client:  opts.Client,
 		ch:      ch,
+		log:     opts.Log.WithName("informer"),
 		readyCh: make(chan struct{}),
 	}, ch
 }
@@ -105,7 +111,8 @@ func (i *Informer) Run(ctx context.Context) error {
 			for _, ev := range evs.Events {
 				events, err := i.handleEvent(ev)
 				if err != nil {
-					return fmt.Errorf("failed to handle informer event: %w", err)
+					i.log.Error(err, "Failed to handle informer event, backing out to rebuild queue.")
+					return nil
 				}
 
 				if len(events) == 0 {
@@ -163,6 +170,10 @@ func (i *Informer) handleEvent(ev *clientv3.Event) ([]*queue.Informed, error) {
 		// we can ignore it.
 		if ev.IsCreate() {
 			return nil, nil
+		}
+
+		if ev.PrevKv == nil {
+			return nil, errors.New("previous key is nil for non-create event, likely due to loss of leadership or compaction, returning to rebuild queue")
 		}
 
 		return []*queue.Informed{{
