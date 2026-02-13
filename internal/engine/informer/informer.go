@@ -109,7 +109,7 @@ func (i *Informer) Run(ctx context.Context) error {
 			return nil
 		case evs := <-ch:
 			for _, ev := range evs.Events {
-				events, err := i.handleEvent(ev)
+				events, err := i.handleEvent(ev, false)
 				if err != nil {
 					i.log.Error(err, "Failed to handle informer event, backing out to rebuild queue.")
 					return nil
@@ -141,7 +141,7 @@ func (i *Informer) getSyncBase(ctx context.Context) (mirror.Syncer, []*queue.Inf
 			event, err := i.handleEvent(&clientv3.Event{
 				Type: clientv3.EventTypePut,
 				Kv:   ev,
-			})
+			}, true)
 			if err != nil {
 				return nil, nil, err
 			}
@@ -153,7 +153,7 @@ func (i *Informer) getSyncBase(ctx context.Context) (mirror.Syncer, []*queue.Inf
 	return syncer, events, <-errCh
 }
 
-func (i *Informer) handleEvent(ev *clientv3.Event) ([]*queue.Informed, error) {
+func (i *Informer) handleEvent(ev *clientv3.Event, base bool) ([]*queue.Informed, error) {
 	switch ev.Type {
 	case clientv3.EventTypePut:
 		var job stored.Job
@@ -188,9 +188,9 @@ func (i *Informer) handleEvent(ev *clientv3.Event) ([]*queue.Informed, error) {
 			}}, nil
 		}
 
-		// If the event is a creation and the job is not managed by this partition,
-		// we can ignore it.
-		if ev.IsCreate() {
+		// If the event is a creation or we are doing the base sync and the job is
+		// not managed by this partition, we can ignore it.
+		if base || ev.IsCreate() {
 			return nil, nil
 		}
 

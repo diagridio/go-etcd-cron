@@ -348,7 +348,7 @@ func Test_handleEvent(t *testing.T) {
 				Partitioner: part,
 				Key:         key,
 			})
-			gotEvent, err := i.handleEvent(testInLoop.ev)
+			gotEvent, err := i.handleEvent(testInLoop.ev, false)
 			assert.Equal(t, testInLoop.expEvent, gotEvent, "%v != %v", testInLoop.expEvent, gotEvent)
 			assert.Equal(t, testInLoop.expErr, err != nil, "%v", err)
 		})
