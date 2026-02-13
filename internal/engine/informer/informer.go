@@ -10,8 +10,10 @@ import (
 	"errors"
 	"fmt"
 	"sync/atomic"
+	"time"
 
 	clientv3 "go.etcd.io/etcd/client/v3"
+	"go.etcd.io/etcd/client/v3/mirror"
 	"google.golang.org/protobuf/proto"
 
 	"github.com/diagridio/go-etcd-cron/internal/api/queue"
@@ -69,35 +71,33 @@ func (i *Informer) Run(ctx context.Context) error {
 		return errors.New("informer already running")
 	}
 
-	syncer := newSyncer(i.client, i.key.JobNamespace(), 0)
-	respCh, errCh := syncer.SyncBase(ctx)
-	for resp := range respCh {
-		for _, ev := range resp.Kvs {
-			event, err := i.handleEvent(&clientv3.Event{
-				Type: clientv3.EventTypePut,
-				Kv:   ev,
-			})
-			if err != nil {
-				return fmt.Errorf("failed to handle base sync informer event: %w", err)
-			}
+	var syncer mirror.Syncer
+	var events []*queue.Informed
+	var err error
+	for {
+		syncer, events, err = i.getSyncBase(ctx)
+		if err == nil {
+			break
+		}
 
-			if event == nil {
-				continue
-			}
+		if ctx.Err() != nil {
+			return err
+		}
 
-			for _, event := range event {
-				select {
-				case i.ch <- event:
-				case <-ctx.Done():
-					return ctx.Err()
-				}
-			}
+		i.log.Error(err, "Failed to get base sync from informer, retrying.")
+		select {
+		case <-time.After(time.Second):
+		case <-ctx.Done():
+			return ctx.Err()
 		}
 	}
 
-	err := <-errCh
-	if err != nil {
-		return err
+	for _, ev := range events {
+		select {
+		case i.ch <- ev:
+		case <-ctx.Done():
+			return ctx.Err()
+		}
 	}
 
 	close(i.readyCh)
@@ -129,6 +129,28 @@ func (i *Informer) Run(ctx context.Context) error {
 			}
 		}
 	}
+}
+
+func (i *Informer) getSyncBase(ctx context.Context) (mirror.Syncer, []*queue.Informed, error) {
+	var events []*queue.Informed
+
+	syncer := newSyncer(i.client, i.key.JobNamespace(), 0)
+	respCh, errCh := syncer.SyncBase(ctx)
+	for resp := range respCh {
+		for _, ev := range resp.Kvs {
+			event, err := i.handleEvent(&clientv3.Event{
+				Type: clientv3.EventTypePut,
+				Kv:   ev,
+			})
+			if err != nil {
+				return nil, nil, err
+			}
+
+			events = append(events, event...)
+		}
+	}
+
+	return syncer, events, <-errCh
 }
 
 func (i *Informer) handleEvent(ev *clientv3.Event) ([]*queue.Informed, error) {
