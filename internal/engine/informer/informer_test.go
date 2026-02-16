@@ -247,7 +247,7 @@ func Test_Run(t *testing.T) {
 	})
 }
 
-func Test_handleEvent(t *testing.T) {
+func Test_handleEvent_nonbase(t *testing.T) {
 	t.Parallel()
 
 	jobUID1, err := proto.Marshal(&stored.Job{PartitionId: 1})
@@ -349,6 +349,136 @@ func Test_handleEvent(t *testing.T) {
 				Key:         key,
 			})
 			gotEvent, err := i.handleEvent(testInLoop.ev, false)
+			assert.Equal(t, testInLoop.expEvent, gotEvent, "%v != %v", testInLoop.expEvent, gotEvent)
+			assert.Equal(t, testInLoop.expErr, err != nil, "%v", err)
+		})
+	}
+}
+
+func Test_handleEvent_base(t *testing.T) {
+	t.Parallel()
+
+	jobUID1, err := proto.Marshal(&stored.Job{PartitionId: 1})
+	require.NoError(t, err)
+	jobUID2, err := proto.Marshal(&stored.Job{PartitionId: 2})
+	require.NoError(t, err)
+
+	var job2 stored.Job
+	require.NoError(t, proto.Unmarshal(jobUID2, &job2))
+
+	tests := map[string]struct {
+		ev       *clientv3.Event
+		expEvent []*queue.Informed
+		expErr   bool
+	}{
+		"if event is not recognized, it should return an error": {
+			ev: &clientv3.Event{
+				Type: mvccpb.Event_EventType(50),
+			},
+			expEvent: nil,
+			expErr:   true,
+		},
+		"if value has bad data then error": {
+			ev: &clientv3.Event{
+				Type: clientv3.EventTypePut,
+				Kv: &mvccpb.KeyValue{
+					Key:   []byte("abc/jobs/1"),
+					Value: []byte("bad data"),
+				},
+			},
+			expEvent: nil,
+			expErr:   true,
+		},
+		"if job is for different partition, return nothing": {
+			ev: &clientv3.Event{
+				Type: clientv3.EventTypePut,
+				Kv: &mvccpb.KeyValue{
+					Key:   []byte("abc/jobs/2"),
+					Value: jobUID1,
+				},
+				PrevKv: &mvccpb.KeyValue{
+					ModRevision: 1234,
+				},
+			},
+			expEvent: nil,
+			expErr:   false,
+		},
+		"if job is for partition, return job on PUT": {
+			ev: &clientv3.Event{
+				Type: clientv3.EventTypePut,
+				Kv: &mvccpb.KeyValue{
+					Value: jobUID2,
+					Key:   []byte("abc/jobs/3"),
+				},
+			},
+			expEvent: []*queue.Informed{{
+				IsPut:     true,
+				QueuedJob: &queue.QueuedJob{Stored: &job2},
+				Name:      "3",
+			}},
+			expErr: false,
+		},
+		"if job is for partition, return job on DELETE": {
+			ev: &clientv3.Event{
+				Type:   clientv3.EventTypeDelete,
+				Kv:     &mvccpb.KeyValue{Value: jobUID2, Key: []byte("abc/jobs/3")},
+				PrevKv: &mvccpb.KeyValue{Value: jobUID2, ModRevision: 1234},
+			},
+			expEvent: []*queue.Informed{{
+				IsPut:     false,
+				QueuedJob: &queue.QueuedJob{ModRevision: 1234},
+			}},
+			expErr: false,
+		},
+		"don't expect delete event when base": {
+			ev: &clientv3.Event{
+				Type: clientv3.EventTypePut,
+				Kv: &mvccpb.KeyValue{
+					Value: jobUID2,
+					Key:   []byte("abc/jobs/3"),
+				},
+			},
+			expEvent: []*queue.Informed{{
+				IsPut:     true,
+				QueuedJob: &queue.QueuedJob{Stored: &job2},
+				Name:      "3",
+			}},
+			expErr: false,
+		},
+		"if job is for partition but no prev kv, error": {
+			ev: &clientv3.Event{
+				Type: clientv3.EventTypeDelete,
+				Kv:   &mvccpb.KeyValue{Value: jobUID2, Key: []byte("abc/jobs/3")},
+			},
+			expErr: true,
+		},
+	}
+
+	for name, test := range tests {
+		testInLoop := test
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			key, err := key.New(key.Options{
+				Namespace: "abc",
+				ID:        "0",
+			})
+			require.NoError(t, err)
+
+			part, err := partitioner.New(partitioner.Options{
+				Key: key,
+				Leaders: []*mvccpb.KeyValue{
+					{Key: []byte("abc/leader/0")},
+					{Key: []byte("abc/leader/1")},
+				},
+			})
+			require.NoError(t, err)
+
+			i, _ := New(Options{
+				Partitioner: part,
+				Key:         key,
+			})
+			gotEvent, err := i.handleEvent(testInLoop.ev, true)
 			assert.Equal(t, testInLoop.expEvent, gotEvent, "%v != %v", testInLoop.expEvent, gotEvent)
 			assert.Equal(t, testInLoop.expErr, err != nil, "%v", err)
 		})
