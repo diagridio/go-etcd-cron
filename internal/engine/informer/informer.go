@@ -162,7 +162,7 @@ func (i *Informer) handleEvent(ev *clientv3.Event, base bool) ([]*queue.Informed
 		}
 
 		if i.part.IsJobManaged(job.GetPartitionId()) {
-			if ev.IsCreate() {
+			if base || ev.IsCreate() {
 				return []*queue.Informed{{
 					IsPut: true,
 					Name:  i.key.JobName(ev.Kv.Key),
@@ -171,6 +171,10 @@ func (i *Informer) handleEvent(ev *clientv3.Event, base bool) ([]*queue.Informed
 						ModRevision: ev.Kv.ModRevision,
 					},
 				}}, nil
+			}
+
+			if ev.PrevKv == nil {
+				return nil, errors.New("previous key is nil for non-create event, likely due to loss of leadership or compaction, returning to rebuild queue")
 			}
 
 			return []*queue.Informed{{
@@ -206,6 +210,10 @@ func (i *Informer) handleEvent(ev *clientv3.Event, base bool) ([]*queue.Informed
 		}}, nil
 
 	case clientv3.EventTypeDelete:
+		if ev.PrevKv == nil {
+			return nil, errors.New("previous key is nil for delete event, likely due to loss of leadership or compaction, returning to rebuild queue")
+		}
+
 		return []*queue.Informed{{
 			IsPut: false,
 			QueuedJob: &queue.QueuedJob{
