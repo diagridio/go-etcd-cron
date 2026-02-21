@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/dapr/kit/ptr"
 	"github.com/go-logr/logr"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -339,4 +340,47 @@ func Test_Elect(t *testing.T) {
 			}
 		}
 	})
+}
+
+func Test_LeaseTTL(t *testing.T) {
+	t.Parallel()
+
+	client := etcd.Embedded(t)
+	key, err := key.New(key.Options{
+		Namespace: "abc",
+		ID:        "helloworld",
+	})
+	require.NoError(t, err)
+	replicaData := &anypb.Any{Value: []byte("hello")}
+
+	leader := New(Options{
+		Log:         logr.Discard(),
+		Client:      client,
+		Key:         key,
+		ReplicaData: replicaData,
+		leaseTTL:    ptr.Of(time.Second),
+	})
+
+	errCh := make(chan error, 1)
+	ctx, cancel := context.WithCancel(t.Context())
+	t.Cleanup(cancel)
+	go func() { errCh <- leader.Run(ctx) }()
+
+	_, elected, err := leader.Elect(ctx)
+	require.NoError(t, err)
+	assert.Len(t, elected.LeadershipData, 1)
+
+	leases, err := client.Leases(ctx)
+	require.NoError(t, err)
+	require.Len(t, leases.Leases, 1)
+
+	_, err = client.Revoke(ctx, leases.Leases[0].ID)
+	require.NoError(t, err)
+
+	select {
+	case <-time.After(5 * time.Second):
+		require.Fail(t, "timed out waiting for leader to stop")
+	case err := <-errCh:
+		require.NoError(t, err)
+	}
 }
