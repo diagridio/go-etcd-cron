@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/go-logr/logr"
+	"go.etcd.io/etcd/api/v3/v3rpc/rpctypes"
 	"google.golang.org/protobuf/types/known/anypb"
 
 	"github.com/diagridio/go-etcd-cron/internal/client/api"
@@ -34,6 +35,10 @@ type Options struct {
 	// ReplicaData is the replicaData for the instance using the cron library.
 	// This will contain data like host + port for keeping track of active replicas.
 	ReplicaData *anypb.Any
+
+	// LeaseTTL is the TTL for the leadership lease. Used for testing. Default
+	// 20s.
+	leaseTTL *time.Duration
 }
 
 // Leadership manages the leadership for this replica. It will elect and
@@ -44,7 +49,8 @@ type Leadership struct {
 	key         *key.Key
 	replicaData *anypb.Any
 
-	elector *elector.Elector
+	leaseTTL int64
+	elector  *elector.Elector
 
 	running  atomic.Bool
 	readyCh  chan struct{}
@@ -53,10 +59,16 @@ type Leadership struct {
 }
 
 func New(opts Options) *Leadership {
+	leaseTTL := int64(20)
+	if opts.leaseTTL != nil {
+		leaseTTL = int64(opts.leaseTTL.Seconds())
+	}
+
 	return &Leadership{
 		log:         opts.Log.WithName("leadership"),
 		client:      opts.Client,
 		key:         opts.Key,
+		leaseTTL:    leaseTTL,
 		replicaData: opts.ReplicaData,
 
 		readyCh:  make(chan struct{}),
@@ -80,7 +92,7 @@ func (l *Leadership) Run(ctx context.Context) error {
 		return err
 	}
 
-	lease, err := l.client.Grant(ctx, 20)
+	lease, err := l.client.Grant(ctx, l.leaseTTL)
 	if err != nil {
 		return err
 	}
@@ -112,7 +124,9 @@ func (l *Leadership) Run(ctx context.Context) error {
 	defer cancel()
 
 	_, err = l.client.Revoke(rctx, lease.ID)
-	if errors.Is(err, context.DeadlineExceeded) {
+	if errors.Is(err, context.DeadlineExceeded) ||
+		errors.Is(err, rpctypes.ErrLeaseNotFound) ||
+		errors.Is(err, rpctypes.ErrGRPCLeaseNotFound) {
 		return nil
 	}
 
