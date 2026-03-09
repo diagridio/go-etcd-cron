@@ -60,11 +60,13 @@ func (b *Builder) Schedule(job *stored.Job) (Interface, error) {
 		return nil, err
 	}
 
-	//nolint:protogetter
 	r := &repeats{
-		exp:   job.Expiration,
 		cron:  cronSched,
 		total: job.GetJob().Repeats,
+	}
+
+	if job.Expiration != nil {
+		r.exp = ptr.Of(job.GetExpiration().AsTime())
 	}
 
 	switch t := job.GetBegin().(type) {
