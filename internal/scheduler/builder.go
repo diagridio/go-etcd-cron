@@ -65,6 +65,7 @@ func (b *Builder) Schedule(job *stored.Job) (Interface, error) {
 		total: job.GetJob().Repeats,
 	}
 
+	//nolint:protogetter
 	if job.Expiration != nil {
 		r.exp = ptr.Of(job.GetExpiration().AsTime())
 	}
