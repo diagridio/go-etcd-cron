@@ -10,6 +10,7 @@ import (
 	"math/rand"
 	"time"
 
+	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/durationpb"
 	"google.golang.org/protobuf/types/known/timestamppb"
 	"k8s.io/utils/clock"
@@ -102,8 +103,10 @@ func (b *Builder) Parse(job *api.Job) (*stored.Job, error) {
 		}
 	}
 
+	// Clone the job to avoid mutating the caller's input when applying defaults.
 	//nolint:protogetter
 	if job.FailurePolicy == nil {
+		job = proto.Clone(job).(*api.Job)
 		job.FailurePolicy = &api.FailurePolicy{
 			Policy: &api.FailurePolicy_Constant{
 				Constant: &api.FailurePolicyConstant{
