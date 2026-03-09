@@ -270,17 +270,27 @@ func (h *handler) List(ctx context.Context, prefix string) (*cronapi.ListRespons
 	}
 
 	var jobs []*cronapi.NamedJob
+	var rev int64
 	key := h.key.JobKey(prefix)
 	end := clientv3.GetPrefixRangeEnd(key)
 
 	for {
-		resp, err := h.client.Get(ctx, key,
+		opts := []clientv3.OpOption{
 			clientv3.WithRange(end),
 			clientv3.WithLimit(1000),
 			clientv3.WithSort(clientv3.SortByKey, clientv3.SortAscend),
-		)
+		}
+		if rev != 0 {
+			opts = append(opts, clientv3.WithRev(rev))
+		}
+
+		resp, err := h.client.Get(ctx, key, opts...)
 		if err != nil {
 			return nil, err
+		}
+
+		if rev == 0 {
+			rev = resp.Header.Revision
 		}
 
 		for _, kv := range resp.Kvs {
