@@ -119,9 +119,10 @@ func (c *Counters) handleExecuteRequest(action *queue.ExecuteRequest) {
 	}
 
 	modRevision := c.modRevision
+	act := c.act
 
-	c.act.Trigger(counter.TriggerRequest(), func(result *api.TriggerResponse) {
-		c.act.AddToControlLoop(&queue.ControlEvent{
+	act.Trigger(counter.TriggerRequest(), func(result *api.TriggerResponse) {
+		act.AddToControlLoop(&queue.ControlEvent{
 			Action: &queue.ControlEvent_ExecuteResponse{
 				ExecuteResponse: &queue.ExecuteResponse{
 					ModRevision: modRevision,
