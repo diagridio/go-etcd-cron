@@ -6,6 +6,7 @@ Licensed under the MIT License.
 package staging
 
 import (
+	"sort"
 	"strings"
 	"sync"
 )
@@ -26,6 +27,10 @@ type Staging struct {
 	// multiple times due to pooling, we track the length, and remove the prefix
 	// when the length is 0. Indexed by the prefix strings.
 	deliverablePrefixes map[string]*uint64
+
+	// sortedPrefixes maintains a sorted slice of the currently deliverable
+	// prefixes for efficient binary search in Stage().
+	sortedPrefixes []string
 
 	lock sync.Mutex
 }
@@ -51,6 +56,8 @@ func (s *Staging) DeliverablePrefixes(prefixes ...string) []int64 {
 	for _, prefix := range prefixes {
 		if _, ok := s.deliverablePrefixes[prefix]; !ok {
 			s.deliverablePrefixes[prefix] = new(uint64)
+			s.sortedPrefixes = append(s.sortedPrefixes, prefix)
+			sort.Strings(s.sortedPrefixes)
 
 			for modRevision, jobName := range s.staged {
 				if strings.HasPrefix(jobName, prefix) {
@@ -79,9 +86,36 @@ func (s *Staging) UnDeliverablePrefixes(prefixes ...string) {
 			(*i)--
 			if *i <= 0 {
 				delete(s.deliverablePrefixes, prefix)
+				idx := sort.SearchStrings(s.sortedPrefixes, prefix)
+				if idx < len(s.sortedPrefixes) && s.sortedPrefixes[idx] == prefix {
+					s.sortedPrefixes = append(s.sortedPrefixes[:idx], s.sortedPrefixes[idx+1:]...)
+				}
 			}
 		}
 	}
+}
+
+// hasMatchingPrefix checks if any registered deliverable prefix matches the
+// given job name using binary search on the sorted prefix list.
+func (s *Staging) hasMatchingPrefix(jobName string) bool {
+	if len(s.sortedPrefixes) == 0 {
+		return false
+	}
+
+	// Find the position where jobName would be inserted.
+	idx := sort.SearchStrings(s.sortedPrefixes, jobName)
+
+	// Check the entry at idx (if equal or a prefix starting after).
+	if idx < len(s.sortedPrefixes) && strings.HasPrefix(jobName, s.sortedPrefixes[idx]) {
+		return true
+	}
+
+	// Check the entry just before idx (the largest prefix <= jobName).
+	if idx > 0 && strings.HasPrefix(jobName, s.sortedPrefixes[idx-1]) {
+		return true
+	}
+
+	return false
 }
 
 // Stage adds the counter (job) to the staging queue. Accounting for control
@@ -93,10 +127,8 @@ func (s *Staging) Stage(modRevision int64, jobName string) bool {
 	defer s.lock.Unlock()
 
 	// Check if the job is actually now deliverable.
-	for prefix := range s.deliverablePrefixes {
-		if strings.HasPrefix(jobName, prefix) {
-			return false
-		}
+	if s.hasMatchingPrefix(jobName) {
+		return false
 	}
 
 	s.staged[modRevision] = jobName
