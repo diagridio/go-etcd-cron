@@ -262,31 +262,45 @@ func (h *handler) DeletePrefixes(ctx context.Context, prefixes ...string) error 
 }
 
 // List lists all cron jobs with the given job name prefix.
+// Results are fetched from etcd in batches of 1000 to avoid unbounded
+// responses, then aggregated before being returned.
 func (h *handler) List(ctx context.Context, prefix string) (*cronapi.ListResponse, error) {
 	if err := h.waitReady(ctx); err != nil {
 		return nil, err
 	}
 
-	resp, err := h.client.Get(ctx,
-		h.key.JobKey(prefix),
-		clientv3.WithPrefix(),
-		clientv3.WithLimit(0),
-	)
-	if err != nil {
-		return nil, err
-	}
+	var jobs []*cronapi.NamedJob
+	key := h.key.JobKey(prefix)
+	end := clientv3.GetPrefixRangeEnd(key)
 
-	jobs := make([]*cronapi.NamedJob, 0, resp.Count)
-	for _, kv := range resp.Kvs {
-		var stored stored.Job
-		if err := proto.Unmarshal(kv.Value, &stored); err != nil {
-			return nil, fmt.Errorf("failed to unmarshal job from prefix %q: %w", prefix, err)
+	for {
+		resp, err := h.client.Get(ctx, key,
+			clientv3.WithRange(end),
+			clientv3.WithLimit(1000),
+			clientv3.WithSort(clientv3.SortByKey, clientv3.SortAscend),
+		)
+		if err != nil {
+			return nil, err
 		}
 
-		jobs = append(jobs, &cronapi.NamedJob{
-			Name: string(kv.Key),
-			Job:  stored.GetJob(),
-		})
+		for _, kv := range resp.Kvs {
+			var stored stored.Job
+			if err := proto.Unmarshal(kv.Value, &stored); err != nil {
+				return nil, fmt.Errorf("failed to unmarshal job from prefix %q: %w", prefix, err)
+			}
+
+			jobs = append(jobs, &cronapi.NamedJob{
+				Name: string(kv.Key),
+				Job:  stored.GetJob(),
+			})
+		}
+
+		if !resp.More {
+			break
+		}
+
+		// Move cursor past the last key received.
+		key = string(append(resp.Kvs[len(resp.Kvs)-1].Key, 0))
 	}
 
 	return &cronapi.ListResponse{
