@@ -96,23 +96,12 @@ func (s *Staging) UnDeliverablePrefixes(prefixes ...string) {
 }
 
 // hasMatchingPrefix checks if any registered deliverable prefix matches the
-// given job name using binary search on the sorted prefix list.
+// given job name.
 func (s *Staging) hasMatchingPrefix(jobName string) bool {
-	if len(s.sortedPrefixes) == 0 {
-		return false
-	}
-
-	// Find the position where jobName would be inserted.
-	idx := sort.SearchStrings(s.sortedPrefixes, jobName)
-
-	// Check the entry at idx (if equal or a prefix starting after).
-	if idx < len(s.sortedPrefixes) && strings.HasPrefix(jobName, s.sortedPrefixes[idx]) {
-		return true
-	}
-
-	// Check the entry just before idx (the largest prefix <= jobName).
-	if idx > 0 && strings.HasPrefix(jobName, s.sortedPrefixes[idx-1]) {
-		return true
+	for _, prefix := range s.sortedPrefixes {
+		if strings.HasPrefix(jobName, prefix) {
+			return true
+		}
 	}
 
 	return false
