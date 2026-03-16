@@ -68,6 +68,7 @@ type counter struct {
 	count          *stored.Counter
 	next           time.Time
 	triggerRequest *api.TriggerRequest
+	marshalBuf     []byte
 }
 
 func New(ctx context.Context, opts Options) (Interface, bool, error) {
@@ -282,14 +283,15 @@ func (c *counter) updateNext() bool {
 // longer active. The next Job counter handler will pick up the counter key,
 // and correctly overwrite (or delete) the counter key.
 func (c *counter) put(ctx context.Context, count *stored.Counter) (bool, error) {
-	b, err := proto.Marshal(count)
+	var err error
+	c.marshalBuf, err = proto.MarshalOptions{}.MarshalAppend(c.marshalBuf[:0], count)
 	if err != nil {
 		return false, err
 	}
 
 	return c.client.PutIfOtherHasRevision(ctx, clientapi.PutIfOtherHasRevisionOpts{
 		Key:           c.counterKey,
-		Val:           string(b),
+		Val:           string(c.marshalBuf),
 		OtherKey:      c.jobKey,
 		OtherRevision: c.job.GetModRevision(),
 	})
