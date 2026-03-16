@@ -77,6 +77,24 @@ func (i *Informer) Next(ctx context.Context) (*clientv3.GetResponse, error) {
 		if err := e.Err(); err != nil {
 			return nil, fmt.Errorf("leadership informer watch error: %w", err)
 		}
+
+		// Drain any additional pending watch events to coalesce rapid
+		// changes into a single GET call instead of one GET per event.
+	drain:
+		for {
+			select {
+			case e, ok = <-i.ch:
+				if !ok {
+					return nil, errors.New("leadership informer watch channel closed")
+				}
+				if err := e.Err(); err != nil {
+					return nil, fmt.Errorf("leadership informer watch error: %w", err)
+				}
+			default:
+				break drain
+			}
+		}
+
 		resp, err := i.client.Get(ctx, i.nsKey, clientv3.WithPrefix())
 		if err != nil {
 			return nil, fmt.Errorf("failed to get key: %w", err)
