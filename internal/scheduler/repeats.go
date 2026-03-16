@@ -26,7 +26,7 @@ type repeats struct {
 	dueTime *time.Time
 
 	// exp is the optional time at which the schedule ends.
-	exp *timestamppb.Timestamp
+	exp *time.Time
 
 	// cron is the cron schedule.
 	cron cron.Schedule
@@ -49,7 +49,7 @@ func (r *repeats) Next(count uint32, last *timestamppb.Timestamp) *time.Time {
 	}
 
 	next := r.cron.Next(last.AsTime())
-	if r.exp != nil && next.After(r.exp.AsTime()) {
+	if r.exp != nil && next.After(*r.exp) {
 		return nil
 	}
 

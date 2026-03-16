@@ -23,7 +23,7 @@ func Test_repeats(t *testing.T) {
 	start := time.Now().Add(time.Hour).UTC()
 
 	tests := map[string]struct {
-		exp      *timestamppb.Timestamp
+		exp      *time.Time
 		schedule string
 		total    *uint32
 		count    uint32
@@ -96,7 +96,7 @@ func Test_repeats(t *testing.T) {
 			expNext:  ptr.Of(start.Add(time.Hour)),
 		},
 		"no count, no total, last, exp, returns next time if before expiry": {
-			exp:      timestamppb.New(start.Add(time.Hour*2 + 1)),
+			exp:      ptr.Of(start.Add(time.Hour*2 + 1)),
 			schedule: "@every 1h",
 			total:    nil,
 			start:    &start,
@@ -105,7 +105,7 @@ func Test_repeats(t *testing.T) {
 			expNext:  ptr.Of(start.Add(time.Hour * 2)),
 		},
 		"no count, no total, last, exp, returns nil if after expiry": {
-			exp:      timestamppb.New(start.Add(time.Hour*2 + 1)),
+			exp:      ptr.Of(start.Add(time.Hour*2 + 1)),
 			schedule: "@every 1h",
 			total:    nil,
 			start:    &start,
@@ -114,7 +114,7 @@ func Test_repeats(t *testing.T) {
 			expNext:  nil,
 		},
 		"if dueTime and scheduler in future, expect trigger at dueTime": {
-			exp:      timestamppb.New(start.Add(time.Second)),
+			exp:      ptr.Of(start.Add(time.Second)),
 			schedule: "@every 1h",
 			total:    nil,
 			dueTime:  ptr.Of(start.Add(time.Second)),
@@ -123,7 +123,7 @@ func Test_repeats(t *testing.T) {
 			expNext:  ptr.Of(start.Add(time.Second)),
 		},
 		"if dueTime and scheduler in future, expect trigger at start + schedule": {
-			exp:      timestamppb.New(start.Add(time.Second)),
+			exp:      ptr.Of(start.Add(time.Second)),
 			schedule: "@every 1h",
 			total:    nil,
 			start:    ptr.Of(start.Add(time.Second)),
