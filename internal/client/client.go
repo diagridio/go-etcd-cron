@@ -159,6 +159,7 @@ func genericP[T any, O any, R any](ctx context.Context, log logr.Logger, c *clie
 }
 
 func generic(ctx context.Context, log logr.Logger, c *client, op func(context.Context) error) error {
+	backoff := time.Second
 	for {
 		err := op(ctx)
 		if err == nil {
@@ -173,9 +174,11 @@ func generic(ctx context.Context, log logr.Logger, c *client, op func(context.Co
 
 		jitter := time.Duration(rand.IntN(1000)) * time.Millisecond
 		select {
-		case <-c.clock.After(time.Second + jitter):
+		case <-c.clock.After(backoff + jitter):
 		case <-ctx.Done():
 			return ctx.Err()
 		}
+
+		backoff = min(backoff*2, 30*time.Second)
 	}
 }
