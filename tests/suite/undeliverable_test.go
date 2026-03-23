@@ -372,7 +372,10 @@ func Test_undeliverable(t *testing.T) {
 
 		jobBytes, err := proto.Marshal(&stored.Job{
 			Begin:       &stored.Job_DueTime{DueTime: timestamppb.New(time.Now())},
-			PartitionId: 123,
+			// Use PartitionId 0 so that the job is owned by instance 0
+			// regardless of intermediate quorum totals during startup
+			// rebalancing (0 % N == 0 for all N), preventing double-triggers.
+			PartitionId: 0,
 			Job:         &api.Job{DueTime: ptr.Of(time.Now().Format(time.RFC3339))},
 		})
 		require.NoError(t, err)
