@@ -8,6 +8,7 @@ package scheduler
 import (
 	"errors"
 	"math/rand"
+	"sync"
 	"time"
 
 	"google.golang.org/protobuf/types/known/durationpb"
@@ -30,6 +31,10 @@ type Builder struct {
 
 	// parser parses job schedules.
 	parser cron.Parser
+
+	// scheduleCache caches parsed cron schedules keyed by schedule string to
+	// avoid double-parsing the same expression in Parse and Schedule.
+	scheduleCache sync.Map
 }
 
 // NewBuilder creates a new scheduler builder.
@@ -55,9 +60,15 @@ func (b *Builder) Schedule(job *stored.Job) (Interface, error) {
 		}, nil
 	}
 
-	cronSched, err := b.parser.Parse(job.GetJob().GetSchedule())
-	if err != nil {
-		return nil, err
+	var cronSched cron.Schedule
+	if cached, ok := b.scheduleCache.Load(job.GetJob().GetSchedule()); ok {
+		cronSched = cached.(cron.Schedule)
+	} else {
+		var err error
+		cronSched, err = b.parser.Parse(job.GetJob().GetSchedule())
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	r := &repeats{
@@ -99,10 +110,11 @@ func (b *Builder) Parse(job *api.Job) (*stored.Job, error) {
 	}
 
 	if job.Schedule != nil {
-		_, err := b.parser.Parse(job.GetSchedule())
+		sched, err := b.parser.Parse(job.GetSchedule())
 		if err != nil {
 			return nil, err
 		}
+		b.scheduleCache.Store(job.GetSchedule(), sched)
 	}
 
 	//nolint:protogetter
