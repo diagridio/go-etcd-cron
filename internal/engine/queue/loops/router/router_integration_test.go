@@ -119,11 +119,13 @@ func waitClean(t *testing.T, h *routerHandle, errCh <-chan error) {
 	}
 }
 
+// Test_router_integration must NOT be t.Parallel() — the real router uses
+// counters.LoopsCache (a package-level sync.Pool). If unit tests run
+// concurrently, their fake loops can leak into the pool and be reused by
+// the integration test's real router, causing data races.
 func Test_router_integration(t *testing.T) {
-	t.Parallel()
 
 	t.Run("CloseJob for missing counter does not kill the router loop", func(t *testing.T) {
-		t.Parallel()
 
 		ctx, cancel := context.WithCancel(t.Context())
 		t.Cleanup(cancel)
@@ -138,7 +140,6 @@ func Test_router_integration(t *testing.T) {
 	})
 
 	t.Run("many ghost CloseJobs followed by real work", func(t *testing.T) {
-		t.Parallel()
 
 		ctx, cancel := context.WithCancel(t.Context())
 		t.Cleanup(cancel)
@@ -155,7 +156,6 @@ func Test_router_integration(t *testing.T) {
 	})
 
 	t.Run("duplicate CloseJob after counter already removed", func(t *testing.T) {
-		t.Parallel()
 
 		ctx, cancel := context.WithCancel(t.Context())
 		t.Cleanup(cancel)
@@ -179,7 +179,6 @@ func Test_router_integration(t *testing.T) {
 	})
 
 	t.Run("namespace deletion pattern: create, delete-inform, CloseJob, ghost CloseJob", func(t *testing.T) {
-		t.Parallel()
 
 		ctx, cancel := context.WithCancel(t.Context())
 		t.Cleanup(cancel)

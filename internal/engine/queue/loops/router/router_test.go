@@ -15,13 +15,27 @@ import (
 	"github.com/dapr/kit/events/loop/fake"
 	"github.com/diagridio/go-etcd-cron/internal/api/queue"
 	actionerfake "github.com/diagridio/go-etcd-cron/internal/engine/queue/actioner/fake"
+	"github.com/diagridio/go-etcd-cron/internal/engine/queue/loops/counters"
 )
 
+// drainLoopsCache removes any fake loops that handleCloseJob put into the
+// package-level counters.LoopsCache sync.Pool. Without this, integration
+// tests that create real routers can pull stale fakes from the pool,
+// causing data races on fake callback captures.
+func drainLoopsCache() {
+	for range 100 {
+		counters.LoopsCache.Get()
+	}
+}
+
+// Tests in this package must NOT use t.Parallel() at the top level.
+// handleCloseJob puts fake loops into counters.LoopsCache (a package-level
+// sync.Pool). The integration tests use real routers that pull from the same
+// pool. Running them concurrently causes data races on the fake callbacks.
 func Test_router(t *testing.T) {
-	t.Parallel()
+	t.Cleanup(drainLoopsCache)
 
 	t.Run("if handle close job but no counter, should return nil and not error", func(t *testing.T) {
-		t.Parallel()
 
 		r := &router{
 			counters: make(map[string]*counter),
@@ -38,7 +52,6 @@ func Test_router(t *testing.T) {
 	})
 
 	t.Run("if handle close job and counter is set to non-0 (not closed), then shouldn't take any action", func(t *testing.T) {
-		t.Parallel()
 
 		var idx atomic.Int64
 		idx.Store(123)
@@ -61,15 +74,11 @@ func Test_router(t *testing.T) {
 	})
 
 	t.Run("if handle job close then should close loop and delete from map", func(t *testing.T) {
-		t.Parallel()
 
 		var called int
+		var gotAction *queue.JobAction
 		loop := fake.New[*queue.JobAction]().WithClose(func(action *queue.JobAction) {
-			assert.Equal(t, &queue.JobAction{
-				Action: &queue.JobAction_Close{
-					Close: new(queue.Close),
-				},
-			}, action)
+			gotAction = action
 			called++
 		})
 
@@ -91,21 +100,24 @@ func Test_router(t *testing.T) {
 		}))
 
 		assert.Equal(t, 1, called)
+		assert.Equal(t, &queue.JobAction{
+			Action: &queue.JobAction_Close{
+				Close: new(queue.Close),
+			},
+		}, gotAction)
 		assert.Equal(t, map[string]*counter{
 			"test-2": {},
 		}, r.counters)
 	})
 
 	t.Run("if handle close, expect all loops to be closed", func(t *testing.T) {
-		t.Parallel()
-
-		exp := &queue.JobAction{
-			Action: new(queue.JobAction_Close),
-		}
 
 		var called atomic.Uint64
-		loop := fake.New[*queue.JobAction]().WithClose(func(action *queue.JobAction) {
-			assert.Equal(t, exp, action)
+		loop := fake.New[*queue.JobAction]().WithClose(func(_ *queue.JobAction) {
+			// Don't use t inside this callback — handleClose runs it in a
+			// goroutine, and using t from a goroutine that outlives the
+			// parent test causes "panic: Fail in goroutine after Test has
+			// completed". We verify the call count after Handle returns.
 			called.Add(1)
 		})
 
@@ -132,7 +144,6 @@ func Test_router(t *testing.T) {
 	})
 
 	t.Run("if handle event with existing counter, expect enqueue", func(t *testing.T) {
-		t.Parallel()
 
 		exp := &queue.JobAction{Action: &queue.JobAction_Informed{
 			Informed: &queue.Informed{
@@ -164,7 +175,6 @@ func Test_router(t *testing.T) {
 	})
 
 	t.Run("if handle event with non-existing counter, expect create and enqueue", func(t *testing.T) {
-		t.Parallel()
 
 		exp := &queue.JobAction{Action: &queue.JobAction_Informed{
 			Informed: &queue.Informed{
@@ -189,7 +199,6 @@ func Test_router(t *testing.T) {
 	})
 
 	t.Run("if handle event for delete with non-existing counter, expect no create or enqueue", func(t *testing.T) {
-		t.Parallel()
 
 		exp := &queue.JobAction{Action: &queue.JobAction_Informed{
 			Informed: &queue.Informed{
@@ -215,10 +224,9 @@ func Test_router(t *testing.T) {
 }
 
 func Test_handleCloseJob(t *testing.T) {
-	t.Parallel()
+	t.Cleanup(drainLoopsCache)
 
 	t.Run("missing counter returns nil, not error", func(t *testing.T) {
-		t.Parallel()
 
 		r := &router{
 			counters: make(map[string]*counter),
@@ -234,7 +242,6 @@ func Test_handleCloseJob(t *testing.T) {
 	})
 
 	t.Run("missing counter does not modify counters map", func(t *testing.T) {
-		t.Parallel()
 
 		r := &router{
 			counters: map[string]*counter{
@@ -254,7 +261,6 @@ func Test_handleCloseJob(t *testing.T) {
 	})
 
 	t.Run("missing counter with empty job name returns nil", func(t *testing.T) {
-		t.Parallel()
 
 		r := &router{
 			counters: make(map[string]*counter),
@@ -270,7 +276,6 @@ func Test_handleCloseJob(t *testing.T) {
 	})
 
 	t.Run("counter with non-zero idx is not closed (reused)", func(t *testing.T) {
-		t.Parallel()
 
 		var closeCalled int
 		loop := fake.New[*queue.JobAction]().WithClose(func(_ *queue.JobAction) {
@@ -297,7 +302,6 @@ func Test_handleCloseJob(t *testing.T) {
 	})
 
 	t.Run("counter with zero idx is closed and removed", func(t *testing.T) {
-		t.Parallel()
 
 		var closeCalled int
 		var closeAction *queue.JobAction
@@ -326,7 +330,6 @@ func Test_handleCloseJob(t *testing.T) {
 	})
 
 	t.Run("closing one counter does not affect others", func(t *testing.T) {
-		t.Parallel()
 
 		closedLoop := fake.New[*queue.JobAction]().WithClose(func(_ *queue.JobAction) {})
 
@@ -359,7 +362,6 @@ func Test_handleCloseJob(t *testing.T) {
 	})
 
 	t.Run("close same job twice, second is no-op", func(t *testing.T) {
-		t.Parallel()
 
 		var closeCalled int
 		loop := fake.New[*queue.JobAction]().WithClose(func(_ *queue.JobAction) {
@@ -390,7 +392,6 @@ func Test_handleCloseJob(t *testing.T) {
 	})
 
 	t.Run("close then re-add then close again", func(t *testing.T) {
-		t.Parallel()
 
 		var closeCalled int
 		loop1 := fake.New[*queue.JobAction]().WithClose(func(_ *queue.JobAction) {
@@ -430,7 +431,6 @@ func Test_handleCloseJob(t *testing.T) {
 	})
 
 	t.Run("idx transitions from non-zero to zero between calls allows close", func(t *testing.T) {
-		t.Parallel()
 
 		var closeCalled int
 		loop := fake.New[*queue.JobAction]().WithClose(func(_ *queue.JobAction) {
@@ -465,7 +465,6 @@ func Test_handleCloseJob(t *testing.T) {
 	})
 
 	t.Run("many counters, close only the targeted one", func(t *testing.T) {
-		t.Parallel()
 
 		closedJobs := make(map[string]bool)
 		makeLoop := func(name string) *fake.Fake[*queue.JobAction] {
@@ -503,7 +502,6 @@ func Test_handleCloseJob(t *testing.T) {
 	})
 
 	t.Run("close all counters one by one via handleCloseJob leaves empty map", func(t *testing.T) {
-		t.Parallel()
 
 		var idx atomic.Int64
 		names := []string{"a", "b", "c", "d"}
@@ -531,7 +529,6 @@ func Test_handleCloseJob(t *testing.T) {
 	})
 
 	t.Run("sequential close-job events for different missing counters all return nil", func(t *testing.T) {
-		t.Parallel()
 
 		r := &router{
 			counters: make(map[string]*counter),
@@ -552,10 +549,9 @@ func Test_handleCloseJob(t *testing.T) {
 }
 
 func Test_handleCloseJob_race_scenarios(t *testing.T) {
-	t.Parallel()
+	t.Cleanup(drainLoopsCache)
 
 	t.Run("close arrives after job already deleted by prefix delete", func(t *testing.T) {
-		t.Parallel()
 
 		// Simulates the production scenario: a namespace is deleted via
 		// DeletePrefixes which removes the job from etcd. The counter's inner
@@ -577,7 +573,6 @@ func Test_handleCloseJob_race_scenarios(t *testing.T) {
 	})
 
 	t.Run("rapid upsert: close arrives for old version, new version already running", func(t *testing.T) {
-		t.Parallel()
 
 		// Job is rapidly upserted. The old counter sends a CloseJob, but
 		// by the time it arrives, a new counter with the same name has been
@@ -607,7 +602,6 @@ func Test_handleCloseJob_race_scenarios(t *testing.T) {
 	})
 
 	t.Run("delete then re-create: stale close arrives after new counter created at idx 0", func(t *testing.T) {
-		t.Parallel()
 
 		// Job deleted, then immediately re-created. A stale CloseJob from the
 		// old lifecycle arrives. New counter is at idx=0 (just created, not yet
@@ -638,7 +632,6 @@ func Test_handleCloseJob_race_scenarios(t *testing.T) {
 	})
 
 	t.Run("multiple close events queued for same job, all safe", func(t *testing.T) {
-		t.Parallel()
 
 		// Due to race conditions, multiple CloseJob events can be enqueued for
 		// the same job. Only the first should close; subsequent should be no-ops.
@@ -672,7 +665,7 @@ func Test_handleCloseJob_race_scenarios(t *testing.T) {
 }
 
 func Test_handleCloseJob_does_not_propagate_error(t *testing.T) {
-	t.Parallel()
+	t.Cleanup(drainLoopsCache)
 
 	// This is the core safety test. Before the fix, a missing counter would
 	// return an error that propagated through the loop → router → cancel chain,
@@ -680,7 +673,6 @@ func Test_handleCloseJob_does_not_propagate_error(t *testing.T) {
 	// fix prevents that cascading failure.
 
 	t.Run("missing counter must never return error to prevent cascading failure", func(t *testing.T) {
-		t.Parallel()
 
 		cancelCalled := false
 		r := &router{
