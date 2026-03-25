@@ -95,14 +95,20 @@ func Test_CRUD(t *testing.T) {
 					errCh <- testInLoop(&client{kv: kv, clock: clock})
 				}()
 
-				sleepTime := time.Second + time.Millisecond*1000
-				assert.Eventually(t, clock.HasWaiters, sleepTime, time.Millisecond*10)
-				clock.Sleep(sleepTime)
-				assert.Eventually(t, clock.HasWaiters, sleepTime, time.Millisecond*10)
-				clock.Sleep(sleepTime)
-				assert.Eventually(t, clock.HasWaiters, sleepTime, time.Millisecond*10)
+				// Backoff doubles each retry: 1s, 2s, 4s (capped at 30s).
+				// Add 1s of jitter headroom.
+				backoffs := []time.Duration{
+					2 * time.Second,  // 1s backoff + up to 1s jitter
+					3 * time.Second,  // 2s backoff + up to 1s jitter
+					5 * time.Second,  // 4s backoff + up to 1s jitter
+				}
+				assert.Eventually(t, clock.HasWaiters, backoffs[0], time.Millisecond*10)
+				clock.Sleep(backoffs[0])
+				assert.Eventually(t, clock.HasWaiters, backoffs[1], time.Millisecond*10)
+				clock.Sleep(backoffs[1])
+				assert.Eventually(t, clock.HasWaiters, backoffs[2], time.Millisecond*10)
 				kv.WithError(nil)
-				clock.Sleep(sleepTime)
+				clock.Sleep(backoffs[2])
 			})
 
 			t.Run("Too many request errors should be retried until another error", func(t *testing.T) {
@@ -125,14 +131,20 @@ func Test_CRUD(t *testing.T) {
 					errCh <- testInLoop(&client{kv: kv, clock: clock})
 				}()
 
-				sleepTime := time.Second + time.Millisecond*1000
-				assert.Eventually(t, clock.HasWaiters, sleepTime, time.Millisecond*10)
-				clock.Sleep(sleepTime)
-				assert.Eventually(t, clock.HasWaiters, sleepTime, time.Millisecond*10)
-				clock.Sleep(sleepTime)
-				assert.Eventually(t, clock.HasWaiters, sleepTime, time.Millisecond*10)
+				// Backoff doubles each retry: 1s, 2s, 4s (capped at 30s).
+				// Add 1s of jitter headroom.
+				backoffs := []time.Duration{
+					2 * time.Second,  // 1s backoff + up to 1s jitter
+					3 * time.Second,  // 2s backoff + up to 1s jitter
+					5 * time.Second,  // 4s backoff + up to 1s jitter
+				}
+				assert.Eventually(t, clock.HasWaiters, backoffs[0], time.Millisecond*10)
+				clock.Sleep(backoffs[0])
+				assert.Eventually(t, clock.HasWaiters, backoffs[1], time.Millisecond*10)
+				clock.Sleep(backoffs[1])
+				assert.Eventually(t, clock.HasWaiters, backoffs[2], time.Millisecond*10)
 				kv.WithError(errors.New("this is an error"))
-				clock.Sleep(sleepTime)
+				clock.Sleep(backoffs[2])
 			})
 		})
 	}
