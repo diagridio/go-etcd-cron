@@ -7,7 +7,6 @@ package router
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"sync"
 	"sync/atomic"
@@ -127,7 +126,8 @@ func (r *router) handleCloseJob(event *queue.JobEvent) error {
 
 	counter, ok := r.counters[jobName]
 	if !ok {
-		return errors.New("catastrophic state machine error: lost inner loop reference")
+		r.log.V(1).Info("dropped CloseJob for unknown counter", "job", jobName)
+		return nil
 	}
 
 	// Ignore the close if the inner loop is now being reused.
