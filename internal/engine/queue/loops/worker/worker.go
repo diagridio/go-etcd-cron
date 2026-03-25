@@ -124,6 +124,7 @@ func (w *worker) handleCloseJob(ctx context.Context, event *queue.JobEvent) {
 		return
 	}
 	delete(w.counters, modRevision)
+	counter.Reset()
 	counters.CountersCache.Put(counter)
 }
 

@@ -58,6 +58,16 @@ func New(opts Options) *Counters {
 	return c
 }
 
+// Reset clears all fields so the Counters can be safely returned to
+// CountersCache without retaining references to old data.
+func (c *Counters) Reset() {
+	c.act = nil
+	c.modRevision = 0
+	c.name = ""
+	c.log = logr.Logger{}
+	c.counter = nil
+}
+
 func (c *Counters) Handle(ctx context.Context, event *queue.JobAction) error {
 	switch action := event.GetAction().(type) {
 	case *queue.JobAction_Informed:
@@ -109,9 +119,10 @@ func (c *Counters) handleExecuteRequest(action *queue.ExecuteRequest) {
 	}
 
 	modRevision := c.modRevision
+	act := c.act
 
-	c.act.Trigger(counter.TriggerRequest(), func(result *api.TriggerResponse) {
-		c.act.AddToControlLoop(&queue.ControlEvent{
+	act.Trigger(counter.TriggerRequest(), func(result *api.TriggerResponse) {
+		act.AddToControlLoop(&queue.ControlEvent{
 			Action: &queue.ControlEvent_ExecuteResponse{
 				ExecuteResponse: &queue.ExecuteResponse{
 					ModRevision: modRevision,
