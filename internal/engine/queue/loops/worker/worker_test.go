@@ -143,4 +143,53 @@ func Test_worker(t *testing.T) {
 
 		assert.Len(t, w.counters, 1)
 	})
+
+	t.Run("if handle ExecuteRequest with non-existing counter, expect error", func(t *testing.T) {
+		t.Parallel()
+
+		w := &worker{
+			act:      actionerfake.New(),
+			counters: make(map[int64]*counters.Counters),
+		}
+
+		err := w.Handle(t.Context(), &queue.JobEvent{
+			Action: &queue.JobAction{
+				Action: &queue.JobAction_ExecuteRequest{
+					ExecuteRequest: &queue.ExecuteRequest{
+						ModRevision: 42,
+					},
+				},
+			},
+		})
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "counter not found for modRevision: 42")
+	})
+
+	t.Run("if handle ExecuteRequest with non-existing counter, other counters are preserved and not panicked over", func(t *testing.T) {
+		t.Parallel()
+
+		w := &worker{
+			act: actionerfake.New(),
+			counters: map[int64]*counters.Counters{
+				7: counters.New(counters.Options{
+					Actioner: actionerfake.New(),
+				}),
+			},
+		}
+
+		assert.NotPanics(t, func() {
+			err := w.Handle(t.Context(), &queue.JobEvent{
+				Action: &queue.JobAction{
+					Action: &queue.JobAction_ExecuteRequest{
+						ExecuteRequest: &queue.ExecuteRequest{
+							ModRevision: 1,
+						},
+					},
+				},
+			})
+			require.Error(t, err)
+		})
+
+		assert.Len(t, w.counters, 1)
+	})
 }
