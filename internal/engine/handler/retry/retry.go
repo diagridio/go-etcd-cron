@@ -122,11 +122,14 @@ func (r *Retry) handle(ctx context.Context, fn func(handler.Interface) error) er
 
 		r.log.V(3).Info("retrying cron API call due to leadership transition", "error", err)
 
+		t := time.NewTimer(time.Millisecond * 300)
 		select {
-		case <-time.After(time.Millisecond * 300):
+		case <-t.C:
 		case <-r.closeCh:
+			t.Stop()
 			return errClosed
 		case <-ctx.Done():
+			t.Stop()
 			return ctx.Err()
 		}
 	}
