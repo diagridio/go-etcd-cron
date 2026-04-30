@@ -85,9 +85,11 @@ func (i *Informer) Run(ctx context.Context) error {
 		}
 
 		i.log.Error(err, "Failed to get base sync from informer, retrying.")
+		t := time.NewTimer(time.Second)
 		select {
-		case <-time.After(time.Second):
+		case <-t.C:
 		case <-ctx.Done():
+			t.Stop()
 			return ctx.Err()
 		}
 	}
