@@ -63,7 +63,7 @@ func (w *worker) handleEvent(ctx context.Context, event *queue.JobEvent) error {
 		modRevision := action.ExecuteRequest.GetModRevision()
 		counter, ok = w.counters[modRevision]
 		if !ok {
-			panic(fmt.Sprintf("counter not found for modRevision: %d", modRevision))
+			return fmt.Errorf("counter not found for modRevision: %d", modRevision)
 		}
 
 	case *queue.JobAction_ExecuteResponse:
