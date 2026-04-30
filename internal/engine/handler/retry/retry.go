@@ -15,7 +15,6 @@ import (
 	"github.com/go-logr/logr"
 
 	"github.com/diagridio/go-etcd-cron/api"
-	clienterrors "github.com/diagridio/go-etcd-cron/internal/client/errors"
 	"github.com/diagridio/go-etcd-cron/internal/engine"
 	"github.com/diagridio/go-etcd-cron/internal/engine/handler"
 )
@@ -117,12 +116,11 @@ func (r *Retry) handle(ctx context.Context, fn func(handler.Interface) error) er
 		}
 
 		err = fn(a)
-		if !clienterrors.ShouldRetry(err) &&
-			!errors.Is(err, handler.ErrClosed) {
+		if !errors.Is(err, handler.ErrClosed) {
 			return err
 		}
 
-		r.log.V(3).Info("retrying cron API call", "error", err)
+		r.log.V(3).Info("retrying cron API call due to leadership transition", "error", err)
 
 		t := time.NewTimer(time.Millisecond * 300)
 		select {
