@@ -161,10 +161,7 @@ func Test_Stage(t *testing.T) {
 			t.Parallel()
 
 			s := New()
-			for _, prefix := range test.deliverablePrefixes {
-				s.deliverablePrefixes[prefix] = new(uint64)
-				(*s.deliverablePrefixes[prefix])++
-			}
+			s.DeliverablePrefixes(test.deliverablePrefixes...)
 
 			got := s.Stage(test.id, test.jobName)
 

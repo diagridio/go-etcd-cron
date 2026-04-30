@@ -27,6 +27,11 @@ type Staging struct {
 	// when the length is 0. Indexed by the prefix strings.
 	deliverablePrefixes map[string]*uint64
 
+	// prefixLengths tracks the count of distinct registered prefixes for each
+	// prefix length. Stage() iterates this set rather than the full prefix map
+	// and probes deliverablePrefixes with jobName[:length] for each length.
+	prefixLengths map[int]int
+
 	lock sync.Mutex
 }
 
@@ -34,6 +39,7 @@ func New() *Staging {
 	return &Staging{
 		deliverablePrefixes: make(map[string]*uint64),
 		staged:              make(map[int64]string),
+		prefixLengths:       make(map[int]int),
 	}
 }
 
@@ -51,6 +57,7 @@ func (s *Staging) DeliverablePrefixes(prefixes ...string) []int64 {
 	for _, prefix := range prefixes {
 		if _, ok := s.deliverablePrefixes[prefix]; !ok {
 			s.deliverablePrefixes[prefix] = new(uint64)
+			s.prefixLengths[len(prefix)]++
 
 			for modRevision, jobName := range s.staged {
 				if strings.HasPrefix(jobName, prefix) {
@@ -79,9 +86,30 @@ func (s *Staging) UnDeliverablePrefixes(prefixes ...string) {
 			(*i)--
 			if *i <= 0 {
 				delete(s.deliverablePrefixes, prefix)
+				s.prefixLengths[len(prefix)]--
+				if s.prefixLengths[len(prefix)] == 0 {
+					delete(s.prefixLengths, len(prefix))
+				}
 			}
 		}
 	}
+}
+
+// hasMatchingPrefix reports whether any registered deliverable prefix is a
+// prefix of jobName. It probes deliverablePrefixes with jobName[:length] for
+// every distinct registered prefix length, giving O(L) lookups where L is
+// the number of distinct prefix lengths currently registered.
+func (s *Staging) hasMatchingPrefix(jobName string) bool {
+	for length := range s.prefixLengths {
+		if length > len(jobName) {
+			continue
+		}
+		if _, ok := s.deliverablePrefixes[jobName[:length]]; ok {
+			return true
+		}
+	}
+
+	return false
 }
 
 // Stage adds the counter (job) to the staging queue. Accounting for control
@@ -93,10 +121,8 @@ func (s *Staging) Stage(modRevision int64, jobName string) bool {
 	defer s.lock.Unlock()
 
 	// Check if the job is actually now deliverable.
-	for prefix := range s.deliverablePrefixes {
-		if strings.HasPrefix(jobName, prefix) {
-			return false
-		}
+	if s.hasMatchingPrefix(jobName) {
+		return false
 	}
 
 	s.staged[modRevision] = jobName
