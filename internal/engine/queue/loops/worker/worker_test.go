@@ -161,8 +161,7 @@ func Test_worker(t *testing.T) {
 				},
 			},
 		})
-		require.Error(t, err)
-		assert.Contains(t, err.Error(), "counter not found for modRevision: 42")
+		require.EqualError(t, err, "counter not found for modRevision: 42")
 	})
 
 	t.Run("if handle ExecuteRequest with non-existing counter, other counters are preserved and not panicked over", func(t *testing.T) {
