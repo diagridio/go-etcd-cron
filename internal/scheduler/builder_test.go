@@ -70,7 +70,7 @@ func Test_Schedule(t *testing.T) {
 			},
 			expScheduler: &repeats{
 				start: ptr.Of(now),
-				exp:   timestamppb.New(now.Add(2 * time.Hour)),
+				exp:   ptr.Of(now.Add(2 * time.Hour)),
 				cron:  cronSched,
 				total: nil,
 			},
