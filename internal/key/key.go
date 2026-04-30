@@ -76,7 +76,7 @@ func (k *Key) JobNamespace() string {
 
 // JobName returns the job name from the given key.
 func (k *Key) JobName(key []byte) string {
-	return string(key)[len(k.jobNamespace)+1:]
+	return string(key[len(k.jobNamespace)+1:])
 }
 
 // ID returns the replica ID.
