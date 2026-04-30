@@ -6,7 +6,6 @@ Licensed under the MIT License.
 package staging
 
 import (
-	"sort"
 	"strings"
 	"sync"
 )
@@ -28,9 +27,10 @@ type Staging struct {
 	// when the length is 0. Indexed by the prefix strings.
 	deliverablePrefixes map[string]*uint64
 
-	// sortedPrefixes maintains a sorted slice of the currently deliverable
-	// prefixes for efficient binary search in Stage().
-	sortedPrefixes []string
+	// prefixLengths tracks the count of distinct registered prefixes for each
+	// prefix length. Stage() iterates this set rather than the full prefix map
+	// and probes deliverablePrefixes with jobName[:length] for each length.
+	prefixLengths map[int]int
 
 	lock sync.Mutex
 }
@@ -39,6 +39,7 @@ func New() *Staging {
 	return &Staging{
 		deliverablePrefixes: make(map[string]*uint64),
 		staged:              make(map[int64]string),
+		prefixLengths:       make(map[int]int),
 	}
 }
 
@@ -56,8 +57,7 @@ func (s *Staging) DeliverablePrefixes(prefixes ...string) []int64 {
 	for _, prefix := range prefixes {
 		if _, ok := s.deliverablePrefixes[prefix]; !ok {
 			s.deliverablePrefixes[prefix] = new(uint64)
-			s.sortedPrefixes = append(s.sortedPrefixes, prefix)
-			sort.Strings(s.sortedPrefixes)
+			s.prefixLengths[len(prefix)]++
 
 			for modRevision, jobName := range s.staged {
 				if strings.HasPrefix(jobName, prefix) {
@@ -86,20 +86,25 @@ func (s *Staging) UnDeliverablePrefixes(prefixes ...string) {
 			(*i)--
 			if *i <= 0 {
 				delete(s.deliverablePrefixes, prefix)
-				idx := sort.SearchStrings(s.sortedPrefixes, prefix)
-				if idx < len(s.sortedPrefixes) && s.sortedPrefixes[idx] == prefix {
-					s.sortedPrefixes = append(s.sortedPrefixes[:idx], s.sortedPrefixes[idx+1:]...)
+				s.prefixLengths[len(prefix)]--
+				if s.prefixLengths[len(prefix)] == 0 {
+					delete(s.prefixLengths, len(prefix))
 				}
 			}
 		}
 	}
 }
 
-// hasMatchingPrefix checks if any registered deliverable prefix matches the
-// given job name.
+// hasMatchingPrefix reports whether any registered deliverable prefix is a
+// prefix of jobName. It probes deliverablePrefixes with jobName[:length] for
+// every distinct registered prefix length, giving O(L) lookups where L is
+// the number of distinct prefix lengths currently registered.
 func (s *Staging) hasMatchingPrefix(jobName string) bool {
-	for _, prefix := range s.sortedPrefixes {
-		if strings.HasPrefix(jobName, prefix) {
+	for length := range s.prefixLengths {
+		if length > len(jobName) {
+			continue
+		}
+		if _, ok := s.deliverablePrefixes[jobName[:length]]; ok {
 			return true
 		}
 	}
