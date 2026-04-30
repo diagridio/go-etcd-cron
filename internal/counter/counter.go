@@ -7,7 +7,6 @@ package counter
 
 import (
 	"context"
-	"sync"
 	"time"
 
 	"google.golang.org/protobuf/proto"
@@ -52,12 +51,6 @@ type Interface interface {
 	TriggerFailed(ctx context.Context) (bool, error)
 }
 
-var CounterCache = sync.Pool{
-	New: func() any {
-		return new(counter)
-	},
-}
-
 // counter is the implementation of the counter interface.
 type counter struct {
 	jobKey         string
@@ -81,7 +74,7 @@ func New(ctx context.Context, opts Options) (Interface, bool, error) {
 		return nil, false, err
 	}
 
-	c := CounterCache.Get().(*counter)
+	c := new(counter)
 	c.jobKey = jobKey
 	c.counterKey = counterKey
 	c.client = opts.Client
