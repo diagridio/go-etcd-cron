@@ -109,7 +109,34 @@ func (i *Informer) Run(ctx context.Context) error {
 		select {
 		case <-ctx.Done():
 			return nil
-		case evs := <-ch:
+		case evs, ok := <-ch:
+			if !ok {
+				// Watch channel closed by the etcd client. The clientv3 watcher
+				// has given up reconnecting, so we cannot rely on it any
+				// further. Returning nil makes the engine tear down and the
+				// cron leadership loop restart it, which performs a fresh
+				// SyncBase + SyncUpdates.
+				i.log.Info("watch channel closed, backing out to rebuild queue")
+				return nil
+			}
+
+			if evs.Canceled {
+				i.log.Info("watch canceled by server, backing out to rebuild queue",
+					"compactRevision", evs.CompactRevision, "err", evs.Err())
+				return nil
+			}
+
+			if err := evs.Err(); err != nil {
+				i.log.Error(err, "watch error, backing out to rebuild queue")
+				return nil
+			}
+
+			if evs.CompactRevision != 0 {
+				i.log.Info("watch revision compacted, backing out to rebuild queue",
+					"compactRevision", evs.CompactRevision)
+				return nil
+			}
+
 			for _, ev := range evs.Events {
 				events, err := i.handleEvent(ev, false)
 				if err != nil {
