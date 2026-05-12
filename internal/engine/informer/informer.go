@@ -128,20 +128,17 @@ func (i *Informer) Run(ctx context.Context) error {
 				return nil
 			}
 
-			if evs.Canceled {
-				i.log.Info("watch canceled by server, backing out to rebuild queue",
-					"compactRevision", evs.CompactRevision, "err", evs.Err())
-				return nil
-			}
-
-			if err := evs.Err(); err != nil {
-				i.log.Error(err, "watch error, backing out to rebuild queue")
-				return nil
-			}
-
-			if evs.CompactRevision != 0 {
-				i.log.Info("watch revision compacted, backing out to rebuild queue",
-					"compactRevision", evs.CompactRevision)
+			// Any of Canceled, a non-nil Err(), or a non-zero CompactRevision
+			// means the watch has ended and we cannot trust it for further
+			// events. They overlap (etcd typically sets Canceled together
+			// with CompactRevision, and Err() derives from those fields),
+			// so a single branch handles all of them and surfaces the
+			// available diagnostic fields in one log line.
+			if evs.Canceled || evs.CompactRevision != 0 || evs.Err() != nil {
+				i.log.Info("watch ended, backing out to rebuild queue",
+					"canceled", evs.Canceled,
+					"compactRevision", evs.CompactRevision,
+					"err", evs.Err())
 				return nil
 			}
 
