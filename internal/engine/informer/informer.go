@@ -116,6 +116,14 @@ func (i *Informer) Run(ctx context.Context) error {
 				// further. Returning nil makes the engine tear down and the
 				// cron leadership loop restart it, which performs a fresh
 				// SyncBase + SyncUpdates.
+				//
+				// On a normal shutdown, the etcd client closes its WatchChan
+				// when ctx is cancelled. select may pick this arm instead of
+				// ctx.Done(), so suppress the log to avoid misleading
+				// "watch channel closed" messages on every clean stop.
+				if ctx.Err() != nil {
+					return nil
+				}
 				i.log.Info("watch channel closed, backing out to rebuild queue")
 				return nil
 			}
