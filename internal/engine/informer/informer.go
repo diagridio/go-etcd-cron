@@ -109,7 +109,39 @@ func (i *Informer) Run(ctx context.Context) error {
 		select {
 		case <-ctx.Done():
 			return nil
-		case evs := <-ch:
+		case evs, ok := <-ch:
+			if !ok {
+				// Watch channel closed by the etcd client. The clientv3 watcher
+				// has given up reconnecting, so we cannot rely on it any
+				// further. Returning nil makes the engine tear down and the
+				// cron leadership loop restart it, which performs a fresh
+				// SyncBase + SyncUpdates.
+				//
+				// On a normal shutdown, the etcd client closes its WatchChan
+				// when ctx is cancelled. select may pick this arm instead of
+				// ctx.Done(), so suppress the log to avoid misleading
+				// "watch channel closed" messages on every clean stop.
+				if ctx.Err() != nil {
+					return nil
+				}
+				i.log.Info("watch channel closed, backing out to rebuild queue")
+				return nil
+			}
+
+			// Any of Canceled, a non-nil Err(), or a non-zero CompactRevision
+			// means the watch has ended and we cannot trust it for further
+			// events. They overlap (etcd typically sets Canceled together
+			// with CompactRevision, and Err() derives from those fields),
+			// so a single branch handles all of them and surfaces the
+			// available diagnostic fields in one log line.
+			if evs.Canceled || evs.CompactRevision != 0 || evs.Err() != nil {
+				i.log.Info("watch ended, backing out to rebuild queue",
+					"canceled", evs.Canceled,
+					"compactRevision", evs.CompactRevision,
+					"err", evs.Err())
+				return nil
+			}
+
 			for _, ev := range evs.Events {
 				events, err := i.handleEvent(ev, false)
 				if err != nil {

@@ -19,10 +19,23 @@ import (
 
 	"github.com/diagridio/go-etcd-cron/internal/api/queue"
 	"github.com/diagridio/go-etcd-cron/internal/api/stored"
+	"github.com/diagridio/go-etcd-cron/internal/client/api"
 	"github.com/diagridio/go-etcd-cron/internal/key"
 	"github.com/diagridio/go-etcd-cron/internal/leadership/partitioner"
 	"github.com/diagridio/go-etcd-cron/tests/framework/etcd"
 )
+
+// watchOverride wraps an api.Interface and replaces its Watch implementation
+// with a caller-supplied function so tests can drive specific watch
+// transitions (closed channel, Canceled, CompactRevision).
+type watchOverride struct {
+	api.Interface
+	watchFn func(context.Context, string, ...clientv3.OpOption) clientv3.WatchChan
+}
+
+func (w *watchOverride) Watch(ctx context.Context, key string, opts ...clientv3.OpOption) clientv3.WatchChan {
+	return w.watchFn(ctx, key, opts...)
+}
 
 func Test_Run(t *testing.T) {
 	t.Parallel()
@@ -245,6 +258,82 @@ func Test_Run(t *testing.T) {
 		case <-time.After(time.Second):
 		}
 	})
+}
+
+func Test_Run_watchTermination(t *testing.T) {
+	t.Parallel()
+
+	k, err := key.New(key.Options{Namespace: "abc", ID: "0"})
+	require.NoError(t, err)
+	part, err := partitioner.New(partitioner.Options{
+		Key: k,
+		Leaders: []*mvccpb.KeyValue{
+			{Key: []byte("abc/leader/0")},
+		},
+	})
+	require.NoError(t, err)
+
+	tests := map[string]struct {
+		watchFn func(context.Context, string, ...clientv3.OpOption) clientv3.WatchChan
+	}{
+		"closed channel exits Run": {
+			watchFn: func(_ context.Context, _ string, _ ...clientv3.OpOption) clientv3.WatchChan {
+				ch := make(chan clientv3.WatchResponse)
+				close(ch)
+				return ch
+			},
+		},
+		"Canceled response exits Run": {
+			watchFn: func(_ context.Context, _ string, _ ...clientv3.OpOption) clientv3.WatchChan {
+				ch := make(chan clientv3.WatchResponse, 1)
+				ch <- clientv3.WatchResponse{Canceled: true}
+				close(ch)
+				return ch
+			},
+		},
+		"CompactRevision response exits Run": {
+			watchFn: func(_ context.Context, _ string, _ ...clientv3.OpOption) clientv3.WatchChan {
+				ch := make(chan clientv3.WatchResponse, 1)
+				ch <- clientv3.WatchResponse{CompactRevision: 42}
+				close(ch)
+				return ch
+			},
+		},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			client := &watchOverride{
+				Interface: etcd.Embedded(t),
+				watchFn:   tc.watchFn,
+			}
+
+			i, _ := New(Options{
+				Partitioner: part,
+				Client:      client,
+				Key:         k,
+			})
+
+			ctx, cancel := context.WithCancel(t.Context())
+			t.Cleanup(cancel)
+
+			errCh := make(chan error, 1)
+			go func() {
+				errCh <- i.Run(ctx)
+			}()
+
+			require.NoError(t, i.Ready(ctx))
+
+			select {
+			case err := <-errCh:
+				require.NoError(t, err)
+			case <-time.After(5 * time.Second):
+				t.Fatal("Run did not exit after watch termination - informer is hot-spinning on closed channel")
+			}
+		})
+	}
 }
 
 func Test_handleEvent_nonbase(t *testing.T) {
