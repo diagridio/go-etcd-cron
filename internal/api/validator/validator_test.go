@@ -70,7 +70,7 @@ func Test_JobName(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.desc, func(t *testing.T) {
 			t.Parallel()
-			err := New(Options{}).JobName(test.name)
+			err := New().JobName(test.name)
 			assert.Equal(t, test.expErr, err != nil, "%v", err)
 		})
 	}

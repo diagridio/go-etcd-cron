@@ -24,18 +24,10 @@ const maxJobNameLength = 512
 // as the internal name delimiter, but a single '|' is permitted.
 const forbiddenJobNameChars = "#?/\\"
 
-// Options is a struct that contains options for the validator.
-type Options struct {
-	// JobNameSanitizer is a replacer that sanitizes job names before name
-	// validation. Retained for API compatibility; validation no longer depends
-	// on it and it is not applied (see JobName).
-	JobNameSanitizer *strings.Replacer
-}
-
 // Validator validates API request payloads.
 type Validator struct{}
 
-func New(opts Options) *Validator {
+func New() *Validator {
 	return &Validator{}
 }
 
