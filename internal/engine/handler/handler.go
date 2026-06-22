@@ -38,10 +38,6 @@ type Options struct {
 	SchedulerBuilder *scheduler.Builder
 	Queue            *queue.Queue
 	Informer         *informer.Informer
-
-	// JobNameSanitizer is a replacer that sanitizes job names before name
-	// validation.
-	JobNameSanitizer *strings.Replacer
 }
 
 // Interface is the internal API that implements the API backend.
@@ -102,13 +98,11 @@ func New(opts Options) Interface {
 		client:       opts.Client,
 		key:          opts.Key,
 		schedBuilder: opts.SchedulerBuilder,
-		validator: validator.New(validator.Options{
-			JobNameSanitizer: opts.JobNameSanitizer,
-		}),
-		queue:    opts.Queue,
-		informer: opts.Informer,
-		readyCh:  make(chan struct{}),
-		closeCh:  make(chan struct{}),
+		validator:    validator.New(),
+		queue:        opts.Queue,
+		informer:     opts.Informer,
+		readyCh:      make(chan struct{}),
+		closeCh:      make(chan struct{}),
 	}
 }
 
