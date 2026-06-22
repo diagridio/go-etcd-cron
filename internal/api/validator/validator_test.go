@@ -33,6 +33,7 @@ func Test_JobName(t *testing.T) {
 		{desc: "nul byte", name: "foo\x00bar", expErr: true},
 		{desc: "newline control char", name: "foo\nbar", expErr: true},
 		{desc: "del control char", name: "foo\x7fbar", expErr: true},
+		{desc: "unicode c1 control nel", name: "foo\u0085bar", expErr: true},
 		{desc: "too long", name: strings.Repeat("a", maxJobNameLength+1), expErr: true},
 
 		{desc: "single dot in middle", name: "fo.o", expErr: false},
@@ -48,6 +49,7 @@ func Test_JobName(t *testing.T) {
 		{desc: "underscore and hyphen", name: "foo.BAR_f-oo||foo", expErr: false},
 		{desc: "single pipe in segment", name: "foo|bar", expErr: false},
 		{desc: "at sign", name: "my@reminder", expErr: false},
+		{desc: "non-ascii letters", name: "café||piñata", expErr: false},
 		{
 			desc:   "workflow reminder name",
 			name:   "actorreminder||dapr-tests||dapr.internal.dapr-tests.perf-workflowsapp.workflow||24b3fbad-0db5-4e81-a272-71f6018a66a6||start-4NYDFil-",
