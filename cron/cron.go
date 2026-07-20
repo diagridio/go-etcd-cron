@@ -33,6 +33,9 @@ type Options struct {
 	// Log is the logger to use for logging.
 	Log logr.Logger
 
+	Backend       *string
+	BackendConfig any
+
 	// Client is the etcd client to use for storing cron entries.
 	Client *clientv3.Client
 
@@ -96,8 +99,28 @@ type cron struct {
 	running atomic.Bool
 }
 
-// New creates a new cron instance.
+func init() {
+	Register(BackendEtcd, newEtcd)
+}
+
+// New creates a new cron instance using the backend selected by Options.Backend
+// (or the last-registered backend if empty).
 func New(opts Options) (api.Interface, error) {
+	var backend string
+	if opts.Backend != nil {
+		backend = *opts.Backend
+	}
+
+	factory, err := resolveFactory(backend)
+	if err != nil {
+		return nil, err
+	}
+
+	return factory(opts)
+}
+
+// newEtcd is the Factory for the built-in etcd backend.
+func newEtcd(opts Options) (api.Interface, error) {
 	if opts.TriggerFn == nil {
 		return nil, errors.New("trigger function is required")
 	}
