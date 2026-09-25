@@ -62,8 +62,11 @@ func (w *worker) handleEvent(ctx context.Context, event *queue.JobEvent) error {
 	case *queue.JobAction_ExecuteRequest:
 		modRevision := action.ExecuteRequest.GetModRevision()
 		counter, ok = w.counters[modRevision]
+		// The queue fires triggers asynchronously to the job's lifecycle, so a
+		// trigger can land after the job was deleted and its counter closed.
 		if !ok {
-			return fmt.Errorf("counter not found for modRevision: %d", modRevision)
+			w.log.Info("dropped ExecuteRequest for closed job", "modRevision", modRevision)
+			return nil
 		}
 
 	case *queue.JobAction_ExecuteResponse:
