@@ -10,15 +10,18 @@ import (
 	"errors"
 	"fmt"
 	"math/rand/v2"
+	"time"
 
 	"github.com/go-logr/logr"
 	mvccpb "go.etcd.io/etcd/api/v3/mvccpb"
 	clientv3 "go.etcd.io/etcd/client/v3"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/anypb"
+	"k8s.io/utils/clock"
 
 	"github.com/diagridio/go-etcd-cron/internal/api/stored"
 	"github.com/diagridio/go-etcd-cron/internal/client/api"
+	clienterrors "github.com/diagridio/go-etcd-cron/internal/client/errors"
 	"github.com/diagridio/go-etcd-cron/internal/key"
 	"github.com/diagridio/go-etcd-cron/internal/leadership/informer"
 	"github.com/diagridio/go-etcd-cron/internal/leadership/partitioner"
@@ -56,6 +59,7 @@ type Elector struct {
 	client   api.Interface
 	leaseID  clientv3.LeaseID
 	informer *informer.Informer
+	clock    clock.Clock
 
 	key         *key.Key
 	leaderKey   string
@@ -80,6 +84,7 @@ func New(opts Options) *Elector {
 		leaseID:     opts.LeaseID,
 		replicaData: opts.ReplicaData,
 		informer:    opts.Informer,
+		clock:       clock.RealClock{},
 		key:         opts.Key,
 		leaderKey:   opts.Key.LeadershipKey(),
 		leaderNS:    opts.Key.LeadershipNamespace(),
@@ -125,6 +130,7 @@ func (e *Elector) Elect(ctx context.Context) (context.Context, *Elected, error) 
 
 	var ldata []*anypb.Any
 	var ok bool
+	backoff := 500 * time.Millisecond
 	for {
 		ldata, ok, err = e.quorumReconcile(ctx, resp)
 		if err != nil {
@@ -137,6 +143,14 @@ func (e *Elector) Elect(ctx context.Context) (context.Context, *Elected, error) 
 
 		if ok {
 			break
+		}
+
+		if clienterrors.ShouldRetry(err) {
+			resp, err = e.retryGet(ctx, &backoff)
+			if err != nil {
+				return nil, nil, err
+			}
+			continue
 		}
 
 		resp, err = e.informer.Next(ctx)
@@ -192,6 +206,7 @@ func (e *Elector) Reelect(ctx context.Context) (context.Context, *Elected, error
 
 	var ldata []*anypb.Any
 	var ok bool
+	backoff := 500 * time.Millisecond
 	for {
 		ldata, ok, err = e.quorumReconcile(ctx, resp)
 		if err != nil {
@@ -204,6 +219,14 @@ func (e *Elector) Reelect(ctx context.Context) (context.Context, *Elected, error
 
 		if ok {
 			break
+		}
+
+		if clienterrors.ShouldRetry(err) {
+			resp, err = e.retryGet(ctx, &backoff)
+			if err != nil {
+				return nil, nil, err
+			}
+			continue
 		}
 
 		resp, err = e.informer.Next(ctx)
@@ -416,4 +439,15 @@ func (e *Elector) attemptNewLeadership(ctx context.Context, resp *clientv3.GetRe
 	}
 
 	return gresp.Succeeded, nil
+}
+
+// retryGet waits with backoff and re-reads leadership.
+func (e *Elector) retryGet(ctx context.Context, backoff *time.Duration) (*clientv3.GetResponse, error) {
+	select {
+	case <-e.clock.After(*backoff + rand.N(500*time.Millisecond)): //nolint:gosec
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	}
+	*backoff = min(*backoff*2, 5*time.Second)
+	return e.client.Get(ctx, e.leaderNS, clientv3.WithPrefix())
 }
