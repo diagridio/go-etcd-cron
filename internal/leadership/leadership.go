@@ -13,12 +13,21 @@ import (
 
 	"github.com/go-logr/logr"
 	"go.etcd.io/etcd/api/v3/v3rpc/rpctypes"
+	clientv3 "go.etcd.io/etcd/client/v3"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/anypb"
 
 	"github.com/diagridio/go-etcd-cron/internal/client/api"
 	"github.com/diagridio/go-etcd-cron/internal/key"
 	"github.com/diagridio/go-etcd-cron/internal/leadership/elector"
 	"github.com/diagridio/go-etcd-cron/internal/leadership/informer"
+)
+
+const (
+	revokeBudget  = 5 * time.Second
+	revokeAttempt = time.Second
+	revokeBackoff = 200 * time.Millisecond
 )
 
 // Options are the options for the Leadership.
@@ -120,17 +129,56 @@ func (l *Leadership) Run(ctx context.Context) error {
 		}
 	}
 
-	rctx, cancel := context.WithTimeout(context.Background(), time.Second*5)
-	defer cancel()
+	return l.revoke(lease.ID)
+}
 
-	_, err = l.client.Revoke(rctx, lease.ID)
-	if errors.Is(err, context.DeadlineExceeded) ||
-		errors.Is(err, rpctypes.ErrLeaseNotFound) ||
-		errors.Is(err, rpctypes.ErrGRPCLeaseNotFound) {
-		return nil
+// A revoke sent during an etcd leader change is dropped and never applies,
+// so retry within the budget instead of waiting once for all of it.
+func (l *Leadership) revoke(id clientv3.LeaseID) error {
+	deadline := time.Now().Add(revokeBudget)
+
+	for {
+		rctx, cancel := context.WithTimeout(context.Background(), revokeAttempt)
+		_, err := l.client.Revoke(rctx, id)
+		cancel()
+
+		if err == nil ||
+			errors.Is(err, rpctypes.ErrLeaseNotFound) ||
+			errors.Is(err, rpctypes.ErrGRPCLeaseNotFound) {
+			return nil
+		}
+
+		if !revokeRetryable(err) {
+			l.log.Error(err, "failed to revoke leadership lease")
+			return err
+		}
+
+		if time.Now().After(deadline) {
+			l.log.Error(err, "failed to revoke leadership lease, it will expire after its TTL")
+			return nil
+		}
+
+		time.Sleep(revokeBackoff)
+	}
+}
+
+// revokeRetryable reports whether the request may not have applied and could
+// succeed if sent again. etcd reports a proposal dropped by a leader change
+// either by never answering or with raft.ErrProposalDropped as codes.Unknown.
+func revokeRetryable(err error) bool {
+	if errors.Is(err, context.DeadlineExceeded) {
+		return true
 	}
 
-	return err
+	s := status.Convert(err)
+	switch s.Code() {
+	case codes.Unavailable, codes.DeadlineExceeded:
+		return true
+	case codes.Unknown:
+		return s.Message() == "raft proposal dropped"
+	default:
+		return false
+	}
 }
 
 // Elect will elect this replica as the leader. It will return a context which
