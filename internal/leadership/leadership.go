@@ -13,12 +13,21 @@ import (
 
 	"github.com/go-logr/logr"
 	"go.etcd.io/etcd/api/v3/v3rpc/rpctypes"
+	clientv3 "go.etcd.io/etcd/client/v3"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/anypb"
 
 	"github.com/diagridio/go-etcd-cron/internal/client/api"
 	"github.com/diagridio/go-etcd-cron/internal/key"
 	"github.com/diagridio/go-etcd-cron/internal/leadership/elector"
 	"github.com/diagridio/go-etcd-cron/internal/leadership/informer"
+)
+
+const (
+	revokeBudget  = 2 * time.Second
+	revokeAttempt = 500 * time.Millisecond
+	revokeBackoff = 50 * time.Millisecond
 )
 
 // Options are the options for the Leadership.
@@ -120,17 +129,60 @@ func (l *Leadership) Run(ctx context.Context) error {
 		}
 	}
 
-	rctx, cancel := context.WithTimeout(context.Background(), time.Second*5)
+	return l.revoke(lease.ID)
+}
+
+// A revoke sent during an etcd leader change is dropped and never applies,
+// so retry within the budget instead of waiting once for all of it.
+func (l *Leadership) revoke(id clientv3.LeaseID) error {
+	ctx, cancel := context.WithTimeout(context.Background(), revokeBudget)
 	defer cancel()
 
-	_, err = l.client.Revoke(rctx, lease.ID)
-	if errors.Is(err, context.DeadlineExceeded) ||
-		errors.Is(err, rpctypes.ErrLeaseNotFound) ||
-		errors.Is(err, rpctypes.ErrGRPCLeaseNotFound) {
-		return nil
+	backoff := revokeBackoff
+	for {
+		actx, acancel := context.WithTimeout(ctx, revokeAttempt)
+		_, err := l.client.Revoke(actx, id)
+		acancel()
+
+		if err == nil ||
+			errors.Is(err, rpctypes.ErrLeaseNotFound) ||
+			errors.Is(err, rpctypes.ErrGRPCLeaseNotFound) {
+			return nil
+		}
+
+		if !revokeRetryable(err) {
+			l.log.Error(err, "failed to revoke leadership lease")
+			return err
+		}
+
+		select {
+		case <-ctx.Done():
+			l.log.Error(err, "failed to revoke leadership lease, it will expire after its TTL")
+			return nil
+		case <-time.After(backoff):
+		}
+
+		backoff *= 2
+	}
+}
+
+// revokeRetryable reports whether the request may not have applied and could
+// succeed if sent again. A request dropped by an etcd leader change is either
+// never answered or returned as codes.Unknown with etcd's own message.
+func revokeRetryable(err error) bool {
+	if errors.Is(err, context.DeadlineExceeded) {
+		return true
 	}
 
-	return err
+	s := status.Convert(err)
+	switch s.Code() {
+	case codes.Unavailable, codes.DeadlineExceeded:
+		return true
+	case codes.Unknown:
+		return s.Message() == "raft proposal dropped"
+	default:
+		return false
+	}
 }
 
 // Elect will elect this replica as the leader. It will return a context which
