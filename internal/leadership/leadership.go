@@ -25,9 +25,9 @@ import (
 )
 
 const (
-	revokeBudget  = 5 * time.Second
-	revokeAttempt = time.Second
-	revokeBackoff = 200 * time.Millisecond
+	revokeBudget  = 2 * time.Second
+	revokeAttempt = 500 * time.Millisecond
+	revokeBackoff = 50 * time.Millisecond
 )
 
 // Options are the options for the Leadership.
@@ -135,12 +135,14 @@ func (l *Leadership) Run(ctx context.Context) error {
 // A revoke sent during an etcd leader change is dropped and never applies,
 // so retry within the budget instead of waiting once for all of it.
 func (l *Leadership) revoke(id clientv3.LeaseID) error {
-	deadline := time.Now().Add(revokeBudget)
+	ctx, cancel := context.WithTimeout(context.Background(), revokeBudget)
+	defer cancel()
 
+	backoff := revokeBackoff
 	for {
-		rctx, cancel := context.WithTimeout(context.Background(), revokeAttempt)
-		_, err := l.client.Revoke(rctx, id)
-		cancel()
+		actx, acancel := context.WithTimeout(ctx, revokeAttempt)
+		_, err := l.client.Revoke(actx, id)
+		acancel()
 
 		if err == nil ||
 			errors.Is(err, rpctypes.ErrLeaseNotFound) ||
@@ -153,18 +155,20 @@ func (l *Leadership) revoke(id clientv3.LeaseID) error {
 			return err
 		}
 
-		if time.Now().After(deadline) {
+		select {
+		case <-ctx.Done():
 			l.log.Error(err, "failed to revoke leadership lease, it will expire after its TTL")
 			return nil
+		case <-time.After(backoff):
 		}
 
-		time.Sleep(revokeBackoff)
+		backoff *= 2
 	}
 }
 
 // revokeRetryable reports whether the request may not have applied and could
-// succeed if sent again. etcd reports a proposal dropped by a leader change
-// either by never answering or with raft.ErrProposalDropped as codes.Unknown.
+// succeed if sent again. A request dropped by an etcd leader change is either
+// never answered or returned as codes.Unknown with etcd's own message.
 func revokeRetryable(err error) bool {
 	if errors.Is(err, context.DeadlineExceeded) {
 		return true

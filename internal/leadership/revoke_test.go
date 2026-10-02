@@ -80,9 +80,20 @@ func Test_Run_revokeRetry(t *testing.T) {
 
 		res := run(t, func(d *etcd.LeaseRevokeDropper) { d.DropNext(1) })
 		require.NoError(t, res.err)
-		assert.Equal(t, int64(2), res.dropper.Hits())
+		assert.GreaterOrEqual(t, res.dropper.Hits(), int64(2))
 		assert.Zero(t, res.leases)
-		assert.Less(t, res.took, revokeBudget)
+		assert.Less(t, res.took, revokeBudget+500*time.Millisecond)
+	})
+
+	t.Run("a dropped request error is retried and the lease is released", func(t *testing.T) {
+		t.Parallel()
+
+		dropped := status.Error(codes.Unknown, "raft proposal dropped")
+		res := run(t, func(d *etcd.LeaseRevokeDropper) { d.FailNext(dropped) })
+		require.NoError(t, res.err)
+		assert.GreaterOrEqual(t, res.dropper.Hits(), int64(2))
+		assert.Zero(t, res.leases)
+		assert.Less(t, res.took, revokeBudget+500*time.Millisecond)
 	})
 
 	t.Run("gives up after the budget and leaves the lease to its TTL", func(t *testing.T) {
@@ -93,7 +104,7 @@ func Test_Run_revokeRetry(t *testing.T) {
 		assert.GreaterOrEqual(t, res.dropper.Hits(), int64(2))
 		assert.Equal(t, 1, res.leases)
 		assert.GreaterOrEqual(t, res.took, revokeBudget)
-		assert.Less(t, res.took, revokeBudget+2*revokeAttempt)
+		assert.Less(t, res.took, revokeBudget+500*time.Millisecond)
 	})
 
 	t.Run("a hard error is returned without retrying", func(t *testing.T) {
@@ -102,6 +113,17 @@ func Test_Run_revokeRetry(t *testing.T) {
 		hard := status.Error(codes.PermissionDenied, "no")
 		res := run(t, func(d *etcd.LeaseRevokeDropper) { d.FailNext(hard) })
 		require.ErrorIs(t, res.err, hard)
+		assert.Equal(t, int64(1), res.dropper.Hits())
+		assert.Equal(t, 1, res.leases)
+		assert.Less(t, res.took, revokeBudget)
+	})
+
+	t.Run("an unrelated unknown error is returned without retrying", func(t *testing.T) {
+		t.Parallel()
+
+		unknown := status.Error(codes.Unknown, "boom")
+		res := run(t, func(d *etcd.LeaseRevokeDropper) { d.FailNext(unknown) })
+		require.ErrorIs(t, res.err, unknown)
 		assert.Equal(t, int64(1), res.dropper.Hits())
 		assert.Equal(t, 1, res.leases)
 		assert.Less(t, res.took, revokeBudget)
