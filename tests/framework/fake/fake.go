@@ -24,6 +24,8 @@ type Fake struct {
 	deliverablePrefixesFn func(ctx context.Context, prefixes ...string) (context.CancelCauseFunc, error)
 
 	addIfNotExistsFn func(ctx context.Context, name string, job *api.Job) error
+
+	getQueueStateFn func() *api.QueueState
 }
 
 func New() *Fake {
@@ -55,6 +57,9 @@ func New() *Fake {
 		},
 		isElectedFn: func() bool {
 			return false
+		},
+		getQueueStateFn: func() *api.QueueState {
+			return &api.QueueState{}
 		},
 	}
 }
@@ -104,6 +109,11 @@ func (f *Fake) WithAddIfNotExists(fn func(context.Context, string, *api.Job) err
 	return f
 }
 
+func (f *Fake) WithGetQueueState(fn func() *api.QueueState) *Fake {
+	f.getQueueStateFn = fn
+	return f
+}
+
 func (f *Fake) Run(ctx context.Context) error {
 	return f.runFn(ctx)
 }
@@ -138,4 +148,8 @@ func (f *Fake) IsElected() bool {
 
 func (f *Fake) AddIfNotExists(ctx context.Context, name string, job *api.Job) error {
 	return f.addIfNotExistsFn(ctx, name, job)
+}
+
+func (f *Fake) GetQueueState() *api.QueueState {
+	return f.getQueueStateFn()
 }

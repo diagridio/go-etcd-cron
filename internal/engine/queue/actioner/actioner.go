@@ -17,6 +17,7 @@ import (
 	"github.com/diagridio/go-etcd-cron/internal/counter"
 	"github.com/diagridio/go-etcd-cron/internal/engine/informer/consumer"
 	"github.com/diagridio/go-etcd-cron/internal/engine/queue/actioner/staging"
+	"github.com/diagridio/go-etcd-cron/internal/engine/queue/queuestate"
 	"github.com/diagridio/go-etcd-cron/internal/key"
 	"github.com/diagridio/go-etcd-cron/internal/scheduler"
 )
@@ -29,6 +30,7 @@ type Options struct {
 	Key          *key.Key
 	Client       clientapi.Interface
 	Consumer     *consumer.Consumer
+	State        *queuestate.State
 }
 
 type Interface interface {
@@ -40,7 +42,7 @@ type Interface interface {
 	AddToControlLoop(*queue.ControlEvent)
 	DeliverablePrefixes(...string) []int64
 	UnDeliverablePrefixes(...string)
-	Stage(int64, string) bool
+	Stage(int64, string, *queuestate.Key) bool
 	Unstage(int64)
 }
 
@@ -57,7 +59,7 @@ type actioner struct {
 
 func New(opts Options) Interface {
 	return &actioner{
-		staging:      staging.New(),
+		staging:      staging.New(opts.State),
 		queue:        opts.Queue,
 		triggerFn:    opts.TriggerFn,
 		ctrlloop:     opts.ControlLoop,
@@ -122,8 +124,8 @@ func (a *actioner) UnDeliverablePrefixes(prefixes ...string) {
 	a.staging.UnDeliverablePrefixes(prefixes...)
 }
 
-func (a *actioner) Stage(modRevision int64, jobName string) bool {
-	return a.staging.Stage(modRevision, jobName)
+func (a *actioner) Stage(modRevision int64, jobName string, key *queuestate.Key) bool {
+	return a.staging.Stage(modRevision, jobName, key)
 }
 
 func (a *actioner) Unstage(modRevision int64) {

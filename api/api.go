@@ -63,4 +63,11 @@ type Interface interface {
 	// IsElected returns true if cron is currently elected for leadership of its
 	// partition.
 	IsElected() bool
+
+	// GetQueueState returns a copy of the in-flight and staged job counts of
+	// the jobs in the partition this replica currently owns, counted per
+	// namespace and app ID by the configured QueueStateKey. The counts are held
+	// in memory and reset whenever the partition is re-elected. Returns empty
+	// counts when this replica is not elected.
+	GetQueueState() *QueueState
 }

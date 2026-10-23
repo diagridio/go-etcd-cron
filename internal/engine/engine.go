@@ -47,11 +47,16 @@ type Options struct {
 	ConsumerSink chan<- *api.InformerEvent
 
 	Workers uint32
+
+	// QueueStateKey is an optional function which maps job names to the
+	// namespace and app ID they are counted under in the queue state.
+	QueueStateKey api.QueueStateKeyFunc
 }
 
 type Interface interface {
 	Run(ctx context.Context) error
 	API() handler.Interface
+	QueueState() *api.QueueState
 }
 
 type engine struct {
@@ -82,6 +87,7 @@ func New(opts Options) (Interface, error) {
 		TriggerFn:        opts.TriggerFn,
 		ConsumerSink:     opts.ConsumerSink,
 		Workers:          opts.Workers,
+		QueueStateKey:    opts.QueueStateKey,
 	})
 
 	handler := handler.New(handler.Options{
@@ -131,4 +137,8 @@ func (e *engine) Run(ctx context.Context) error {
 
 func (e *engine) API() handler.Interface {
 	return e.handler
+}
+
+func (e *engine) QueueState() *api.QueueState {
+	return e.queue.State()
 }

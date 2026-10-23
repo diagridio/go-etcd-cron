@@ -95,6 +95,17 @@ In such cases, the trigger function can return `UNDELIVERABLE` to indicate that 
 Staged jobs can be marked as deliverable again by calling `cron.DeliverablePrefixes` with the prefixes of those job names.
 Jobs whose name match these prefixes will be re-enqueued for delivery.
 
+## Queue state
+
+`cron.GetQueueState` returns how many jobs this replica is holding, per namespace and app ID:
+
+- `InFlight`: jobs that have been triggered and whose trigger function has not called back yet.
+- `Staged`: jobs parked in the staging queue because they were undeliverable.
+
+Set `Options.QueueStateKey` to map a job name to the namespace and app ID it is counted under; jobs for which it returns `false` are not counted, and with no function set nothing is counted.
+Each replica only counts the jobs in its own partition, so add up the state of every replica for the cluster total.
+The counts are held in memory and start again from zero when the replica's partition is re-elected, so staged jobs only reappear in the count when they next trigger.
+
 ## Leadership
 
 Leadership is fully dynamic, meaning that crons can be added or removed from a cluster at any time, and the running crons will self organize rebalancing the jobs between them.

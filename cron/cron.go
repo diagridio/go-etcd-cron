@@ -79,6 +79,13 @@ type Options struct {
 	// Every instance will have this number of workers.
 	// Must be larger than 0.
 	Workers *uint32
+
+	// QueueStateKey is an optional function which maps a job name to the
+	// namespace and app ID it is counted under in GetQueueState. Jobs for which
+	// it returns false are not counted. If nil, GetQueueState returns empty
+	// counts. It is called once per job version, and must not block or call
+	// back into cron.
+	QueueStateKey api.QueueStateKeyFunc
 }
 
 // cron is the implementation of the cron interface.
@@ -91,8 +98,10 @@ type cron struct {
 	replicaData  *anypb.Any
 	consumerSink chan<- *api.InformerEvent
 	workers      uint32
+	queueKey     api.QueueStateKeyFunc
 
 	api       *retry.Retry
+	engine    atomic.Pointer[engine.Interface]
 	elected   atomic.Bool
 	wleaderCh chan<- []*anypb.Any
 
@@ -171,6 +180,7 @@ func newEtcd(opts Options) (api.Interface, error) {
 		api:          retry.New(retry.Options{Log: log}),
 		consumerSink: opts.ConsumerSink,
 		workers:      workers,
+		queueKey:     opts.QueueStateKey,
 	}, nil
 }
 
@@ -275,23 +285,38 @@ func (c *cron) IsElected() bool {
 	return c.elected.Load()
 }
 
+// GetQueueState returns a copy of the in-flight and staged job counts of the
+// running engine, or empty counts if no engine is running.
+func (c *cron) GetQueueState() *api.QueueState {
+	if e := c.engine.Load(); e != nil {
+		return (*e).QueueState()
+	}
+
+	return &api.QueueState{
+		InFlight: make(map[string]map[string]uint64),
+		Staged:   make(map[string]map[string]uint64),
+	}
+}
+
 // runEngine runs the cron engine with the given elected leadership.
 func (c *cron) runEngine(ctx context.Context, elected *elector.Elected) error {
 	c.elected.Store(true)
 
 	engine, err := engine.New(engine.Options{
-		Log:          c.log,
-		Key:          c.key,
-		Partitioner:  elected.Partitioner,
-		Client:       c.client,
-		TriggerFn:    c.triggerFn,
-		ConsumerSink: c.consumerSink,
-		Workers:      c.workers,
+		Log:           c.log,
+		Key:           c.key,
+		Partitioner:   elected.Partitioner,
+		Client:        c.client,
+		TriggerFn:     c.triggerFn,
+		ConsumerSink:  c.consumerSink,
+		Workers:       c.workers,
+		QueueStateKey: c.queueKey,
 	})
 	if err != nil {
 		return err
 	}
 
+	c.engine.Store(&engine)
 	c.api.Ready(engine)
 
 	if c.wleaderCh != nil {
@@ -304,6 +329,7 @@ func (c *cron) runEngine(ctx context.Context, elected *elector.Elected) error {
 
 	err = engine.Run(ctx)
 	c.elected.Store(false)
+	c.engine.Store(nil)
 
 	c.api.NotReady()
 

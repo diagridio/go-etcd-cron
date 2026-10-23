@@ -8,6 +8,8 @@ package staging
 import (
 	"strings"
 	"sync"
+
+	"github.com/diagridio/go-etcd-cron/internal/engine/queue/queuestate"
 )
 
 // Staging handles the staging queue for the Job scheduler. It tracks the
@@ -18,8 +20,8 @@ import (
 type Staging struct {
 	// consumer has signalled that the job is currently undeliverable. When the
 	// consumer signals a prefix has become deliverable, counters in that prefix
-	// will be enqueued. Indexed by the Job Name.
-	staged map[int64]string
+	// will be enqueued. Indexed by the Job mod revision.
+	staged map[int64]stagedJob
 
 	// activeConsumerPrefixes tracks the job name prefixes which are currently
 	// deliverable. Since consumer may indicate the same prefix is deliverable
@@ -32,14 +34,23 @@ type Staging struct {
 	// and probes deliverablePrefixes with jobName[:length] for each length.
 	prefixLengths map[int]int
 
+	// state counts the staged jobs.
+	state *queuestate.State
+
 	lock sync.Mutex
 }
 
-func New() *Staging {
+type stagedJob struct {
+	name string
+	key  *queuestate.Key
+}
+
+func New(state *queuestate.State) *Staging {
 	return &Staging{
 		deliverablePrefixes: make(map[string]*uint64),
-		staged:              make(map[int64]string),
+		staged:              make(map[int64]stagedJob),
 		prefixLengths:       make(map[int]int),
+		state:               state,
 	}
 }
 
@@ -59,9 +70,10 @@ func (s *Staging) DeliverablePrefixes(prefixes ...string) []int64 {
 			s.deliverablePrefixes[prefix] = new(uint64)
 			s.prefixLengths[len(prefix)]++
 
-			for modRevision, jobName := range s.staged {
-				if strings.HasPrefix(jobName, prefix) {
+			for modRevision, job := range s.staged {
+				if strings.HasPrefix(job.name, prefix) {
 					delete(s.staged, modRevision)
+					s.state.RemoveStaged(job.key)
 					toEnqueue = append(toEnqueue, modRevision)
 				}
 			}
@@ -115,8 +127,9 @@ func (s *Staging) hasMatchingPrefix(jobName string) bool {
 // Stage adds the counter (job) to the staging queue. Accounting for control
 // loop ordering returns false if the counter can actually be delivered now
 // based on the current deliverable prefixes and should be immediately
-// re-queued at the current count.
-func (s *Staging) Stage(modRevision int64, jobName string) bool {
+// re-queued at the current count. key is what the job is counted under in the
+// queue state, nil if it is not counted.
+func (s *Staging) Stage(modRevision int64, jobName string, key *queuestate.Key) bool {
 	s.lock.Lock()
 	defer s.lock.Unlock()
 
@@ -125,7 +138,10 @@ func (s *Staging) Stage(modRevision int64, jobName string) bool {
 		return false
 	}
 
-	s.staged[modRevision] = jobName
+	if _, ok := s.staged[modRevision]; !ok {
+		s.state.AddStaged(key)
+	}
+	s.staged[modRevision] = stagedJob{name: jobName, key: key}
 
 	return true
 }
@@ -135,5 +151,8 @@ func (s *Staging) Unstage(modRevision int64) {
 	s.lock.Lock()
 	defer s.lock.Unlock()
 
-	delete(s.staged, modRevision)
+	if job, ok := s.staged[modRevision]; ok {
+		delete(s.staged, modRevision)
+		s.state.RemoveStaged(job.key)
+	}
 }

@@ -14,6 +14,7 @@ import (
 	"github.com/diagridio/go-etcd-cron/internal/api/queue"
 	"github.com/diagridio/go-etcd-cron/internal/counter"
 	"github.com/diagridio/go-etcd-cron/internal/engine/queue/actioner"
+	"github.com/diagridio/go-etcd-cron/internal/engine/queue/queuestate"
 	"github.com/go-logr/logr"
 )
 
@@ -22,6 +23,7 @@ type Options struct {
 	ModRevision int64
 	Name        string
 	Log         logr.Logger
+	State       *queuestate.State
 }
 
 // Counters is a loop which is responsible for executing a particular job. It
@@ -33,6 +35,11 @@ type Counters struct {
 	modRevision int64
 	name        string
 	log         logr.Logger
+	state       *queuestate.State
+
+	// key is what this job is counted under in the queue state, nil if it is
+	// not counted.
+	key *queuestate.Key
 
 	counter counter.Interface
 }
@@ -54,6 +61,8 @@ func New(opts Options) *Counters {
 	c.name = opts.Name
 	c.act = opts.Actioner
 	c.log = opts.Log
+	c.state = opts.State
+	c.key = opts.State.Key(opts.Name)
 
 	return c
 }
@@ -65,6 +74,8 @@ func (c *Counters) Reset() {
 	c.modRevision = 0
 	c.name = ""
 	c.log = logr.Logger{}
+	c.state = nil
+	c.key = nil
 	c.counter = nil
 }
 
@@ -120,8 +131,15 @@ func (c *Counters) handleExecuteRequest(action *queue.ExecuteRequest) {
 
 	modRevision := c.modRevision
 	act := c.act
+	state := c.state
+	key := c.key
 
+	// The trigger is in flight until its answer comes back. Counted down here
+	// rather than in handleExecuteResponse, which drops the answer for a job
+	// that was updated or deleted while in flight.
+	state.AddInFlight(key)
 	act.Trigger(counter.TriggerRequest(), func(result *api.TriggerResponse) {
+		state.RemoveInFlight(key)
 		act.AddToControlLoop(&queue.ControlEvent{
 			Action: &queue.ControlEvent_ExecuteResponse{
 				ExecuteResponse: &queue.ExecuteResponse{
@@ -194,7 +212,7 @@ func (c *Counters) handleTrigger(ctx context.Context, result api.TriggerResponse
 		// fact now deliverable, we need to re-enqueue jmmediately, else simply
 		// keep jt jn staging until the prefix is deliverable.
 	case api.TriggerResponseResult_UNDELIVERABLE:
-		if !c.act.Stage(c.modRevision, c.name) {
+		if !c.act.Stage(c.modRevision, c.name, c.key) {
 			c.act.Enqueue(c.counter)
 		}
 		return true, nil
