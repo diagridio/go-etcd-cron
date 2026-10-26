@@ -153,6 +153,23 @@ func (r *Retry) NotReady() {
 	r.readyCh = make(chan struct{})
 }
 
+// QueueState returns a copy of the in-flight and staged job counts of the
+// underlying engine, or empty counts if the engine is not ready.
+func (r *Retry) QueueState() *api.QueueState {
+	r.lock.RLock()
+	defer r.lock.RUnlock()
+
+	select {
+	case <-r.readyCh:
+		return (*r.engine.Load()).QueueState()
+	default:
+		return &api.QueueState{
+			InFlight: make(map[string]map[string]uint64),
+			Staged:   make(map[string]map[string]uint64),
+		}
+	}
+}
+
 func (r *Retry) Close() {
 	close(r.closeCh)
 }

@@ -20,8 +20,8 @@ import (
 type Staging struct {
 	// consumer has signalled that the job is currently undeliverable. When the
 	// consumer signals a prefix has become deliverable, counters in that prefix
-	// will be enqueued. Indexed by the Job mod revision.
-	staged map[int64]stagedJob
+	// will be enqueued. Indexed by the Job Name.
+	staged map[int64]string
 
 	// activeConsumerPrefixes tracks the job name prefixes which are currently
 	// deliverable. Since consumer may indicate the same prefix is deliverable
@@ -40,15 +40,10 @@ type Staging struct {
 	lock sync.Mutex
 }
 
-type stagedJob struct {
-	name string
-	key  *queuestate.Key
-}
-
 func New(state *queuestate.State) *Staging {
 	return &Staging{
 		deliverablePrefixes: make(map[string]*uint64),
-		staged:              make(map[int64]stagedJob),
+		staged:              make(map[int64]string),
 		prefixLengths:       make(map[int]int),
 		state:               state,
 	}
@@ -70,10 +65,10 @@ func (s *Staging) DeliverablePrefixes(prefixes ...string) []int64 {
 			s.deliverablePrefixes[prefix] = new(uint64)
 			s.prefixLengths[len(prefix)]++
 
-			for modRevision, job := range s.staged {
-				if strings.HasPrefix(job.name, prefix) {
+			for modRevision, jobName := range s.staged {
+				if strings.HasPrefix(jobName, prefix) {
 					delete(s.staged, modRevision)
-					s.state.RemoveStaged(job.key)
+					s.state.Unstage(modRevision)
 					toEnqueue = append(toEnqueue, modRevision)
 				}
 			}
@@ -138,10 +133,8 @@ func (s *Staging) Stage(modRevision int64, jobName string, key *queuestate.Key) 
 		return false
 	}
 
-	if _, ok := s.staged[modRevision]; !ok {
-		s.state.AddStaged(key)
-	}
-	s.staged[modRevision] = stagedJob{name: jobName, key: key}
+	s.staged[modRevision] = jobName
+	s.state.Stage(modRevision, key)
 
 	return true
 }
@@ -151,8 +144,6 @@ func (s *Staging) Unstage(modRevision int64) {
 	s.lock.Lock()
 	defer s.lock.Unlock()
 
-	if job, ok := s.staged[modRevision]; ok {
-		delete(s.staged, modRevision)
-		s.state.RemoveStaged(job.key)
-	}
+	delete(s.staged, modRevision)
+	s.state.Unstage(modRevision)
 }

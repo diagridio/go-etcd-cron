@@ -26,13 +26,18 @@ type State struct {
 	lock     sync.Mutex
 	inFlight map[Key]uint64
 	staged   map[Key]uint64
+
+	// stagedIDs is the key each staged job is counted under, indexed by the
+	// job's ID, so that staging is idempotent.
+	stagedIDs map[int64]Key
 }
 
 func New(keyFn api.QueueStateKeyFunc) *State {
 	return &State{
 		keyFn:    keyFn,
-		inFlight: make(map[Key]uint64),
-		staged:   make(map[Key]uint64),
+		inFlight:  make(map[Key]uint64),
+		staged:    make(map[Key]uint64),
+		stagedIDs: make(map[int64]Key),
 	}
 }
 
@@ -66,18 +71,41 @@ func (s *State) RemoveInFlight(key *Key) {
 	}
 }
 
-// AddStaged records that a job has entered the staging queue.
-func (s *State) AddStaged(key *Key) {
-	if key != nil {
-		s.add(s.staged, *key)
+// Stage records that the job with the given ID has entered the staging queue,
+// counted under key. Staging a job which is already staged does nothing.
+func (s *State) Stage(id int64, key *Key) {
+	if key == nil {
+		return
 	}
+
+	s.lock.Lock()
+	defer s.lock.Unlock()
+
+	if _, ok := s.stagedIDs[id]; ok {
+		return
+	}
+
+	s.stagedIDs[id] = *key
+	s.staged[*key]++
 }
 
-// RemoveStaged records that a job has left the staging queue.
-func (s *State) RemoveStaged(key *Key) {
-	if key != nil {
-		s.remove(s.staged, *key)
+// Unstage records that the job with the given ID has left the staging queue.
+// Unstaging a job which is not staged does nothing.
+func (s *State) Unstage(id int64) {
+	if s == nil {
+		return
 	}
+
+	s.lock.Lock()
+	defer s.lock.Unlock()
+
+	key, ok := s.stagedIDs[id]
+	if !ok {
+		return
+	}
+
+	delete(s.stagedIDs, id)
+	decrement(s.staged, key)
 }
 
 // Get returns a copy of the current counts.
@@ -105,7 +133,10 @@ func (s *State) add(counts map[Key]uint64, key Key) {
 func (s *State) remove(counts map[Key]uint64, key Key) {
 	s.lock.Lock()
 	defer s.lock.Unlock()
+	decrement(counts, key)
+}
 
+func decrement(counts map[Key]uint64, key Key) {
 	switch counts[key] {
 	case 0:
 	case 1:

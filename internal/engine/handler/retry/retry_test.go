@@ -15,6 +15,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/diagridio/go-etcd-cron/api"
 	apierrors "github.com/diagridio/go-etcd-cron/api/errors"
 	"github.com/diagridio/go-etcd-cron/internal/engine/fake"
 	"github.com/diagridio/go-etcd-cron/internal/engine/handler"
@@ -135,4 +136,28 @@ func Test_handle(t *testing.T) {
 		assert.Equal(t, int64(1), called.Load())
 		assert.True(t, apierrors.IsJobAlreadyExists(err))
 	})
+}
+
+func Test_QueueState(t *testing.T) {
+	t.Parallel()
+
+	empty := &api.QueueState{
+		InFlight: make(map[string]map[string]uint64),
+		Staged:   make(map[string]map[string]uint64),
+	}
+	engineState := &api.QueueState{
+		InFlight: map[string]map[string]uint64{"ns1": {"app1": 1}},
+		Staged:   map[string]map[string]uint64{"ns1": {"app2": 2}},
+	}
+
+	r := New(Options{Log: logr.Discard()})
+	assert.Equal(t, empty, r.QueueState())
+
+	r.Ready(fake.New().WithQueueState(func() *api.QueueState {
+		return engineState
+	}))
+	assert.Equal(t, engineState, r.QueueState())
+
+	r.NotReady()
+	assert.Equal(t, empty, r.QueueState())
 }

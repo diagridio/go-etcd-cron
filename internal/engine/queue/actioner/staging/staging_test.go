@@ -89,10 +89,10 @@ func Test_DeliverablePrefixes(t *testing.T) {
 		t.Parallel()
 
 		s := New(nil)
-		s.staged = map[int64]stagedJob{
-			123: {name: "abc123"}, 234: {name: "abc234"},
-			124: {name: "def123"}, 235: {name: "def234"},
-			125: {name: "xyz123"}, 236: {name: "xyz234"},
+		s.staged = map[int64]string{
+			123: "abc123", 234: "abc234",
+			124: "def123", 235: "def234",
+			125: "xyz123", 236: "xyz234",
 		}
 
 		assert.ElementsMatch(t,
@@ -100,7 +100,7 @@ func Test_DeliverablePrefixes(t *testing.T) {
 			s.DeliverablePrefixes("abc", "xyz"),
 		)
 		assert.Equal(t,
-			map[int64]stagedJob{124: {name: "def123"}, 235: {name: "def234"}},
+			map[int64]string{124: "def123", 235: "def234"},
 			s.staged,
 		)
 
