@@ -183,7 +183,7 @@ func Test_Relect(t *testing.T) {
 			select {
 			case <-time.After(5 * time.Second):
 				require.Fail(t, "timed out waiting for leader to stop")
-			case <-errCh:
+			case <-errCh: //nolint:errcheck // only draining; errors after cancel are expected
 			}
 		}
 	})
@@ -336,7 +336,7 @@ func Test_Elect(t *testing.T) {
 			select {
 			case <-time.After(5 * time.Second):
 				require.Fail(t, "timed out waiting for leader to stop")
-			case <-errCh:
+			case <-errCh: //nolint:errcheck // only draining; errors after cancel are expected
 			}
 		}
 	})
