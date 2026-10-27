@@ -181,8 +181,7 @@ func Test_control(t *testing.T) {
 		state := queuestate.New(func(string) (string, string, bool) {
 			return "ns1", "app1", true
 		})
-		state.Informed(42, "job", true)
-		state.ExecuteRequest(42)
+		state.ExecuteRequest(42, "job")
 		require.NotEmpty(t, state.Get().InFlight)
 
 		c := &control{router: router, act: actionerfake.New(), state: state}

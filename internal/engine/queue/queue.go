@@ -205,6 +205,7 @@ func (q *Queue) execute(counter counter.Interface) {
 		Action: &queue.ControlEvent_ExecuteRequest{
 			ExecuteRequest: &queue.ExecuteRequest{
 				ModRevision: counter.Key(),
+				Name:        counter.TriggerRequest().GetName(),
 			},
 		},
 	})

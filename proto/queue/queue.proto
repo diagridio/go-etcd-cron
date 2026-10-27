@@ -75,6 +75,9 @@ message Informed {
 message ExecuteRequest {
   // mod_revision is the mod revision of the  key of the job counter to execute.
   int64 mod_revision = 1;
+
+  // name is the name of the job to execute.
+  string name = 2;
 }
 
 // ExecuteResponse is to report the result of a job execution.

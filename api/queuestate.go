@@ -6,7 +6,9 @@ Licensed under the MIT License.
 package api
 
 // QueueStateKeyFunc maps a job name to the namespace and app ID its queue
-// state is counted under. Jobs for which ok is false are not counted.
+// state is counted under. Jobs for which ok is false are not counted. It is
+// called on the queue's control loop each time a job is triggered, so should
+// be fast; a panic leaves the job uncounted.
 type QueueStateKeyFunc func(jobName string) (namespace, appID string, ok bool)
 
 // QueueState is a point in time view of the jobs this replica's queue is

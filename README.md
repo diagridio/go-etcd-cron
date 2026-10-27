@@ -106,7 +106,9 @@ Set `Options.QueueStateKey` to map a job name to the namespace and app ID it is 
 Each replica only counts the jobs in its own partition, so add up the state of every replica for the cluster total.
 The counts are held in memory and start again from zero whenever the engine restarts, on a leadership change or when its etcd watch is lost, so staged jobs only reappear in the count when they next trigger.
 A call made while the engine is restarting may return the previous engine's counts.
-`InFlight` relies on the trigger function calling back exactly once for every trigger, even when the job has been deleted meanwhile; a trigger that is never answered stays counted until the engine restarts.
+`InFlight` relies on the trigger function calling back for every trigger, even when the job has been deleted meanwhile; a trigger that is never answered stays counted until the engine restarts.
+Only the first call back for a trigger is acted on, later ones are ignored.
+`QueueStateKey` is called each time a job is triggered, on the loop which processes every job event, so it should be fast.
 A staged job released because its prefix became deliverable is counted as staged until it is triggered again.
 
 ## Leadership

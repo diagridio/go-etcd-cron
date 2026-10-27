@@ -9,6 +9,7 @@ import (
 	"context"
 	"fmt"
 	"sync"
+	"sync/atomic"
 
 	"github.com/diagridio/go-etcd-cron/api"
 	"github.com/diagridio/go-etcd-cron/internal/api/queue"
@@ -121,8 +122,18 @@ func (c *Counters) handleExecuteRequest(action *queue.ExecuteRequest) {
 
 	modRevision := c.modRevision
 	act := c.act
+	log, name := c.log, c.name
 
+	// Only the first answer to a trigger is acted on, so a trigger function
+	// calling back more than once does not advance the counter twice.
+	var answered atomic.Bool
 	act.Trigger(counter.TriggerRequest(), func(result *api.TriggerResponse) {
+		if !answered.CompareAndSwap(false, true) {
+			log.WithName("counters").WithValues("job", name, "uid", modRevision).Info(
+				"ignored repeated answer to a trigger")
+			return
+		}
+
 		act.AddToControlLoop(&queue.ControlEvent{
 			Action: &queue.ControlEvent_ExecuteResponse{
 				ExecuteResponse: &queue.ExecuteResponse{

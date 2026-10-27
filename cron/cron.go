@@ -83,8 +83,9 @@ type Options struct {
 	// QueueStateKey is an optional function which maps a job name to the
 	// namespace and app ID it is counted under in GetQueueState. Jobs for which
 	// it returns false are not counted. If nil, GetQueueState returns empty
-	// counts. It is called once per job version, and must not block or call
-	// back into cron.
+	// counts. It is called each time a job is triggered, on the loop which
+	// processes every job event, so must not block. A panic leaves the job
+	// uncounted.
 	QueueStateKey api.QueueStateKeyFunc
 }
 

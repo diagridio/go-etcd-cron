@@ -173,6 +173,39 @@ func Test_worker(t *testing.T) {
 		assert.Zero(t, triggered.Load())
 	})
 
+	t.Run("an event dropped for a non-existing counter reports the job idle", func(t *testing.T) {
+		t.Parallel()
+
+		for name, action := range map[string]*queue.JobAction{
+			"ExecuteRequest": {Action: &queue.JobAction_ExecuteRequest{
+				ExecuteRequest: &queue.ExecuteRequest{ModRevision: 42},
+			}},
+			"ExecuteResponse": {Action: &queue.JobAction_ExecuteResponse{
+				ExecuteResponse: &queue.ExecuteResponse{ModRevision: 42},
+			}},
+			"Deliverable": {Action: &queue.JobAction_Deliverable{
+				Deliverable: &queue.DeliverableJob{ModRevision: 42},
+			}},
+		} {
+			t.Run(name, func(t *testing.T) {
+				t.Parallel()
+
+				var events []*queue.ControlEvent
+				w := &worker{
+					act: actionerfake.New().WithAddToControlLoop(func(e *queue.ControlEvent) {
+						events = append(events, e)
+					}),
+					counters: make(map[int64]*counters.Counters),
+				}
+
+				require.NoError(t, w.Handle(t.Context(), &queue.JobEvent{Action: action}))
+				assert.Equal(t, []*queue.ControlEvent{{
+					Action: &queue.ControlEvent_Idle{Idle: &queue.Idle{ModRevision: 42}},
+				}}, events)
+			})
+		}
+	})
+
 	t.Run("if handle ExecuteRequest with non-existing counter, other counters are preserved and not panicked over", func(t *testing.T) {
 		t.Parallel()
 

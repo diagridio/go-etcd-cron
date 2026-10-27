@@ -73,7 +73,7 @@ func (c *control) Handle(_ context.Context, event *queue.ControlEvent) error {
 }
 
 func (c *control) handleInformed(action *queue.Informed) {
-	c.state.Informed(action.GetQueuedJob().GetModRevision(), action.GetName(), action.GetIsPut())
+	c.state.Informed(action.GetQueuedJob().GetModRevision(), action.GetIsPut())
 	c.router.Enqueue(&queue.JobEvent{
 		Action: &queue.JobAction{
 			Action: &queue.JobAction_Informed{Informed: action},
@@ -82,7 +82,7 @@ func (c *control) handleInformed(action *queue.Informed) {
 }
 
 func (c *control) handleExecuteRequest(action *queue.ExecuteRequest) {
-	c.state.ExecuteRequest(action.GetModRevision())
+	c.state.ExecuteRequest(action.GetModRevision(), action.GetName())
 	c.router.Enqueue(&queue.JobEvent{
 		Action: &queue.JobAction{
 			Action: &queue.JobAction_ExecuteRequest{ExecuteRequest: action},

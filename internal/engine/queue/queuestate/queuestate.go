@@ -20,6 +20,8 @@ type key struct {
 type phase uint8
 
 const (
+	// phaseIdle is the phase of a job which is not counted. Idle jobs are not
+	// stored.
 	phaseIdle phase = iota
 	phaseInFlight
 	phaseStaged
@@ -43,8 +45,11 @@ type job struct {
 type State struct {
 	keyFn api.QueueStateKeyFunc
 
+	// jobs holds the in-flight and staged job versions. It is only accessed by
+	// the control loop, so is not guarded by lock.
+	jobs map[int64]job
+
 	lock     sync.Mutex
-	jobs     map[int64]job
 	inFlight map[key]uint64
 	staged   map[key]uint64
 }
@@ -58,54 +63,44 @@ func New(keyFn api.QueueStateKeyFunc) *State {
 	}
 }
 
-// Informed records a job version being put or deleted. A put which is counted
-// by the key function starts the version idle. Mirroring the counter, which
-// unstages the job on any inform, a staged job is no longer counted as staged.
-// A deleted job is dropped, unless its trigger is in flight, in which case it
-// is dropped once the trigger is answered.
-func (s *State) Informed(modRevision int64, jobName string, isPut bool) {
-	s.lock.Lock()
-	defer s.lock.Unlock()
-
+// Informed records a job version being put or deleted. Mirroring the counter,
+// which unstages the job on any inform, a staged job is no longer counted. A
+// job deleted while its trigger is in flight is dropped once the trigger is
+// answered.
+func (s *State) Informed(modRevision int64, isPut bool) {
 	j, ok := s.jobs[modRevision]
 	if !ok {
-		if !isPut || s.keyFn == nil {
-			return
-		}
-
-		namespace, appID, ok := s.keyFn(jobName)
-		if !ok {
-			return
-		}
-
-		s.jobs[modRevision] = job{key: key{namespace: namespace, appID: appID}}
 		return
 	}
 
-	if j.phase == phaseStaged {
-		s.setPhase(modRevision, &j, phaseIdle)
-	}
-
-	if !isPut {
-		if j.phase == phaseInFlight {
-			j.deleted = true
-			s.jobs[modRevision] = j
-		} else {
-			delete(s.jobs, modRevision)
-		}
+	switch {
+	case j.phase == phaseStaged:
+		s.drop(modRevision, j)
+	case !isPut:
+		j.deleted = true
+		s.jobs[modRevision] = j
 	}
 }
 
-// ExecuteRequest records a job version being triggered. Requests for deleted
-// job versions are dropped by the worker, so are not counted. If the worker
-// drops any other request, it reports the job Idle.
-func (s *State) ExecuteRequest(modRevision int64) {
-	s.lock.Lock()
-	defer s.lock.Unlock()
-
-	if j, ok := s.jobs[modRevision]; ok && !j.deleted {
-		s.setPhase(modRevision, &j, phaseInFlight)
+// ExecuteRequest records a job version being triggered, counted under the key
+// of its name. If the worker drops the request, including because the job was
+// deleted meanwhile, it reports the job Idle.
+func (s *State) ExecuteRequest(modRevision int64, jobName string) {
+	j, ok := s.jobs[modRevision]
+	if !ok {
+		k, ok := s.key(jobName)
+		if !ok {
+			return
+		}
+		j = job{key: k}
 	}
+
+	if j.deleted || j.phase == phaseInFlight {
+		return
+	}
+
+	s.move(&j, phaseInFlight)
+	s.jobs[modRevision] = j
 }
 
 // ExecuteResponse records a job version's trigger being answered. An
@@ -113,31 +108,23 @@ func (s *State) ExecuteRequest(modRevision int64) {
 // If the worker re-enqueues an undeliverable job rather than staging it, it
 // reports the job Idle.
 func (s *State) ExecuteResponse(modRevision int64, result api.TriggerResponseResult) {
-	s.lock.Lock()
-	defer s.lock.Unlock()
-
 	j, ok := s.jobs[modRevision]
 	if !ok || j.phase != phaseInFlight {
 		return
 	}
 
-	switch {
-	case j.deleted:
-		s.setPhase(modRevision, &j, phaseIdle)
-		delete(s.jobs, modRevision)
-	case result == api.TriggerResponseResult_UNDELIVERABLE:
-		s.setPhase(modRevision, &j, phaseStaged)
-	default:
-		s.setPhase(modRevision, &j, phaseIdle)
+	if !j.deleted && result == api.TriggerResponseResult_UNDELIVERABLE {
+		s.move(&j, phaseStaged)
+		s.jobs[modRevision] = j
+		return
 	}
+
+	s.drop(modRevision, j)
 }
 
 // CloseJob records a job version having no more triggers. A job whose trigger
 // is in flight is dropped once the trigger is answered, or reported Idle.
 func (s *State) CloseJob(modRevision int64) {
-	s.lock.Lock()
-	defer s.lock.Unlock()
-
 	j, ok := s.jobs[modRevision]
 	if !ok {
 		return
@@ -149,26 +136,15 @@ func (s *State) CloseJob(modRevision int64) {
 		return
 	}
 
-	s.setPhase(modRevision, &j, phaseIdle)
-	delete(s.jobs, modRevision)
+	s.drop(modRevision, j)
 }
 
 // Idle records the worker reporting that a job version counted as in flight
 // or staged is neither: it dropped the execute request or response, or
-// re-enqueued an undeliverable job rather than staging it. A job deleted or
-// closed while in flight is dropped.
+// re-enqueued an undeliverable job rather than staging it.
 func (s *State) Idle(modRevision int64) {
-	s.lock.Lock()
-	defer s.lock.Unlock()
-
-	j, ok := s.jobs[modRevision]
-	if !ok {
-		return
-	}
-
-	s.setPhase(modRevision, &j, phaseIdle)
-	if j.deleted {
-		delete(s.jobs, modRevision)
+	if j, ok := s.jobs[modRevision]; ok {
+		s.drop(modRevision, j)
 	}
 }
 
@@ -185,9 +161,29 @@ func (s *State) Get() *api.QueueState {
 	return state
 }
 
-// setPhase moves the job version to the given phase, updating the counts, and
-// stores it.
-func (s *State) setPhase(modRevision int64, j *job, p phase) {
+// key returns the key the job is counted under. It is called outside of lock,
+// so a slow key function does not block Get, and a panicking one leaves the
+// job uncounted rather than crashing the control loop.
+func (s *State) key(jobName string) (k key, ok bool) {
+	if s.keyFn == nil {
+		return key{}, false
+	}
+
+	defer func() {
+		if recover() != nil {
+			ok = false
+		}
+	}()
+
+	k.namespace, k.appID, ok = s.keyFn(jobName)
+	return k, ok
+}
+
+// move moves the job version to the given phase, updating the counts.
+func (s *State) move(j *job, p phase) {
+	s.lock.Lock()
+	defer s.lock.Unlock()
+
 	switch j.phase {
 	case phaseInFlight:
 		decrement(s.inFlight, j.key)
@@ -203,7 +199,12 @@ func (s *State) setPhase(modRevision int64, j *job, p phase) {
 	}
 
 	j.phase = p
-	s.jobs[modRevision] = *j
+}
+
+// drop stops counting the job version.
+func (s *State) drop(modRevision int64, j job) {
+	s.move(&j, phaseIdle)
+	delete(s.jobs, modRevision)
 }
 
 func decrement(counts map[key]uint64, k key) {

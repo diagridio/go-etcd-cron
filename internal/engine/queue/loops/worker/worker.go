@@ -66,6 +66,7 @@ func (w *worker) handleEvent(ctx context.Context, event *queue.JobEvent) error {
 		// trigger can land after the job was deleted and its counter closed.
 		if !ok {
 			w.log.Info("dropped ExecuteRequest for closed job", "modRevision", modRevision)
+			w.idle(modRevision)
 			return nil
 		}
 
@@ -73,6 +74,7 @@ func (w *worker) handleEvent(ctx context.Context, event *queue.JobEvent) error {
 		modRevision := action.ExecuteResponse.GetModRevision()
 		counter, ok = w.counters[modRevision]
 		if !ok {
+			w.idle(modRevision)
 			return nil
 		}
 
@@ -80,6 +82,7 @@ func (w *worker) handleEvent(ctx context.Context, event *queue.JobEvent) error {
 		modRevision := action.Deliverable.GetModRevision()
 		counter, ok = w.counters[modRevision]
 		if !ok {
+			w.idle(modRevision)
 			return nil
 		}
 
@@ -117,6 +120,17 @@ func (w *worker) newCounter(ctx context.Context, modRevision int64, name string)
 	w.counters[modRevision] = c
 
 	return c
+}
+
+// idle reports to the control loop that the job is neither being triggered
+// nor staged, since its counter is gone and the event the control loop counted
+// the job on was not acted on.
+func (w *worker) idle(modRevision int64) {
+	w.act.AddToControlLoop(&queue.ControlEvent{
+		Action: &queue.ControlEvent_Idle{
+			Idle: &queue.Idle{ModRevision: modRevision},
+		},
+	})
 }
 
 // The inner job loop has been signalled to be closed to release its resources.

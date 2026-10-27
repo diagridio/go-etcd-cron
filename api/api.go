@@ -14,10 +14,11 @@ import (
 // The returne TriggerResponse will indicate whether the Job was successfully
 // triggered, the trigger failed, or the Job need to be put into the staging
 // queue.
-// The callback must be called exactly once for every request, including when
-// the Job has been deleted or this replica has lost leadership in the
-// meantime. A request that is never answered is counted as in flight by
-// GetQueueState until the engine restarts.
+// The callback must be called for every request, including when the Job has
+// been deleted or this replica has lost leadership in the meantime. Only the
+// first call is acted on; later calls for the same request are ignored. A
+// request that is never answered is counted as in flight by GetQueueState
+// until the engine restarts.
 type TriggerFunction func(*TriggerRequest, func(*TriggerResponse))
 
 // Interface is a cron interface. It schedules and manages job which are stored
