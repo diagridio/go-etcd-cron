@@ -157,16 +157,14 @@ func (r *Retry) NotReady() {
 // underlying engine, or empty counts if the engine is not ready.
 func (r *Retry) QueueState() *api.QueueState {
 	r.lock.RLock()
-	defer r.lock.RUnlock()
+	readyCh := r.readyCh
+	r.lock.RUnlock()
 
 	select {
-	case <-r.readyCh:
+	case <-readyCh:
 		return (*r.engine.Load()).QueueState()
 	default:
-		return &api.QueueState{
-			InFlight: make(map[string]map[string]uint64),
-			Staged:   make(map[string]map[string]uint64),
-		}
+		return api.NewQueueState()
 	}
 }
 

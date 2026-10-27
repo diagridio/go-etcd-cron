@@ -104,7 +104,10 @@ Jobs whose name match these prefixes will be re-enqueued for delivery.
 
 Set `Options.QueueStateKey` to map a job name to the namespace and app ID it is counted under; jobs for which it returns `false` are not counted, and with no function set nothing is counted.
 Each replica only counts the jobs in its own partition, so add up the state of every replica for the cluster total.
-The counts are held in memory and start again from zero when the replica's partition is re-elected, so staged jobs only reappear in the count when they next trigger.
+The counts are held in memory and start again from zero whenever the engine restarts, on a leadership change or when its etcd watch is lost, so staged jobs only reappear in the count when they next trigger.
+A call made while the engine is restarting may return the previous engine's counts.
+`InFlight` relies on the trigger function calling back exactly once for every trigger, even when the job has been deleted meanwhile; a trigger that is never answered stays counted until the engine restarts.
+A job answered as undeliverable just after its prefix was made deliverable is re-triggered at once rather than staged, but is briefly counted as staged until that re-trigger is processed.
 
 ## Leadership
 

@@ -141,10 +141,7 @@ func Test_handle(t *testing.T) {
 func Test_QueueState(t *testing.T) {
 	t.Parallel()
 
-	empty := &api.QueueState{
-		InFlight: make(map[string]map[string]uint64),
-		Staged:   make(map[string]map[string]uint64),
-	}
+	empty := api.NewQueueState()
 	engineState := &api.QueueState{
 		InFlight: map[string]map[string]uint64{"ns1": {"app1": 1}},
 		Staged:   map[string]map[string]uint64{"ns1": {"app2": 2}},

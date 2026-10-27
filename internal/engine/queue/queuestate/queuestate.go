@@ -11,8 +11,8 @@ import (
 	"github.com/diagridio/go-etcd-cron/api"
 )
 
-// Key is the namespace and app ID a job is counted under.
-type Key struct {
+// key is the namespace and app ID a job is counted under.
+type key struct {
 	namespace string
 	appID     string
 }
@@ -27,7 +27,7 @@ const (
 
 // job is the phase of one counted job version.
 type job struct {
-	key   Key
+	key   key
 	phase phase
 
 	// deleted is set when the job version is deleted while its trigger is in
@@ -43,17 +43,17 @@ type State struct {
 	keyFn api.QueueStateKeyFunc
 
 	lock     sync.Mutex
-	jobs     map[int64]*job
-	inFlight map[Key]uint64
-	staged   map[Key]uint64
+	jobs     map[int64]job
+	inFlight map[key]uint64
+	staged   map[key]uint64
 }
 
 func New(keyFn api.QueueStateKeyFunc) *State {
 	return &State{
 		keyFn:    keyFn,
-		jobs:     make(map[int64]*job),
-		inFlight: make(map[Key]uint64),
-		staged:   make(map[Key]uint64),
+		jobs:     make(map[int64]job),
+		inFlight: make(map[key]uint64),
+		staged:   make(map[key]uint64),
 	}
 }
 
@@ -77,17 +77,18 @@ func (s *State) Informed(modRevision int64, jobName string, isPut bool) {
 			return
 		}
 
-		s.jobs[modRevision] = &job{key: Key{namespace: namespace, appID: appID}}
+		s.jobs[modRevision] = job{key: key{namespace: namespace, appID: appID}}
 		return
 	}
 
 	if j.phase == phaseStaged {
-		s.setPhase(j, phaseIdle)
+		s.setPhase(modRevision, &j, phaseIdle)
 	}
 
 	if !isPut {
 		if j.phase == phaseInFlight {
 			j.deleted = true
+			s.jobs[modRevision] = j
 		} else {
 			delete(s.jobs, modRevision)
 		}
@@ -101,12 +102,15 @@ func (s *State) ExecuteRequest(modRevision int64) {
 	defer s.lock.Unlock()
 
 	if j, ok := s.jobs[modRevision]; ok && !j.deleted {
-		s.setPhase(j, phaseInFlight)
+		s.setPhase(modRevision, &j, phaseInFlight)
 	}
 }
 
 // ExecuteResponse records a job version's trigger being answered. An
 // undeliverable job is staged, and a job deleted while in flight is dropped.
+// The worker re-triggers an undeliverable job at once, rather than staging it,
+// if a matching prefix is already deliverable. That job is counted as staged
+// until its re-trigger request is recorded, a brief over-count.
 func (s *State) ExecuteResponse(modRevision int64, result api.TriggerResponseResult) {
 	s.lock.Lock()
 	defer s.lock.Unlock()
@@ -118,12 +122,12 @@ func (s *State) ExecuteResponse(modRevision int64, result api.TriggerResponseRes
 
 	switch {
 	case j.deleted:
-		s.setPhase(j, phaseIdle)
+		s.setPhase(modRevision, &j, phaseIdle)
 		delete(s.jobs, modRevision)
 	case result == api.TriggerResponseResult_UNDELIVERABLE:
-		s.setPhase(j, phaseStaged)
+		s.setPhase(modRevision, &j, phaseStaged)
 	default:
-		s.setPhase(j, phaseIdle)
+		s.setPhase(modRevision, &j, phaseIdle)
 	}
 }
 
@@ -138,16 +142,13 @@ func (s *State) CloseJob(modRevision int64) {
 		return
 	}
 
-	s.setPhase(j, phaseIdle)
+	s.setPhase(modRevision, &j, phaseIdle)
 	delete(s.jobs, modRevision)
 }
 
 // Get returns a copy of the current counts.
 func (s *State) Get() *api.QueueState {
-	state := &api.QueueState{
-		InFlight: make(map[string]map[string]uint64),
-		Staged:   make(map[string]map[string]uint64),
-	}
+	state := api.NewQueueState()
 
 	s.lock.Lock()
 	defer s.lock.Unlock()
@@ -158,7 +159,9 @@ func (s *State) Get() *api.QueueState {
 	return state
 }
 
-func (s *State) setPhase(j *job, p phase) {
+// setPhase moves the job version to the given phase, updating the counts, and
+// stores it.
+func (s *State) setPhase(modRevision int64, j *job, p phase) {
 	switch j.phase {
 	case phaseInFlight:
 		decrement(s.inFlight, j.key)
@@ -174,23 +177,24 @@ func (s *State) setPhase(j *job, p phase) {
 	}
 
 	j.phase = p
+	s.jobs[modRevision] = *j
 }
 
-func decrement(counts map[Key]uint64, key Key) {
-	if counts[key] <= 1 {
-		delete(counts, key)
+func decrement(counts map[key]uint64, k key) {
+	if counts[k] <= 1 {
+		delete(counts, k)
 		return
 	}
-	counts[key]--
+	counts[k]--
 }
 
-func copyCounts(dst map[string]map[string]uint64, src map[Key]uint64) {
-	for key, count := range src {
-		apps, ok := dst[key.namespace]
+func copyCounts(dst map[string]map[string]uint64, src map[key]uint64) {
+	for k, count := range src {
+		apps, ok := dst[k.namespace]
 		if !ok {
 			apps = make(map[string]uint64)
-			dst[key.namespace] = apps
+			dst[k.namespace] = apps
 		}
-		apps[key.appID] = count
+		apps[k.appID] = count
 	}
 }
