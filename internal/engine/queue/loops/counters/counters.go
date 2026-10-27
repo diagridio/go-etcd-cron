@@ -81,7 +81,7 @@ func (c *Counters) Handle(ctx context.Context, event *queue.JobAction) error {
 		return c.handleExecuteResponse(ctx, action.ExecuteResponse)
 
 	case *queue.JobAction_Deliverable:
-		c.handleDeliverable()
+		c.handleDeliverable(action.Deliverable)
 		return nil
 
 	case *queue.JobAction_Close:
@@ -115,6 +115,7 @@ func (c *Counters) handleExecuteRequest(action *queue.ExecuteRequest) {
 	if counter == nil {
 		c.log.WithName("counters").WithValues("job", c.name).Info(
 			"dropped ExecuteRequest due to missing counter")
+		c.idle(action.GetModRevision())
 		return
 	}
 
@@ -141,6 +142,7 @@ func (c *Counters) handleExecuteResponse(ctx context.Context, action *queue.Exec
 		c.log.WithName("counters").WithValues("job", c.name, "uid", action.GetModRevision()).Info(
 			"dropped ExecuteResponse for old job version",
 		)
+		c.idle(action.GetModRevision())
 		return nil
 	}
 
@@ -195,6 +197,9 @@ func (c *Counters) handleTrigger(ctx context.Context, result api.TriggerResponse
 		// keep jt jn staging until the prefix is deliverable.
 	case api.TriggerResponseResult_UNDELIVERABLE:
 		if !c.act.Stage(c.modRevision, c.name) {
+			// Report idle before enqueueing, so the control loop sees it before
+			// the job's next ExecuteRequest.
+			c.idle(c.modRevision)
 			c.act.Enqueue(c.counter)
 		}
 		return true, nil
@@ -204,11 +209,22 @@ func (c *Counters) handleTrigger(ctx context.Context, result api.TriggerResponse
 	}
 }
 
-func (c *Counters) handleDeliverable() {
+func (c *Counters) handleDeliverable(action *queue.DeliverableJob) {
 	if c.counter == nil {
+		c.idle(action.GetModRevision())
 		return
 	}
 	c.act.Enqueue(c.counter)
+}
+
+// idle reports to the control loop that the job is neither being triggered
+// nor staged, since the event it counted the job on was not acted on.
+func (c *Counters) idle(modRevision int64) {
+	c.act.AddToControlLoop(&queue.ControlEvent{
+		Action: &queue.ControlEvent_Idle{
+			Idle: &queue.Idle{ModRevision: modRevision},
+		},
+	})
 }
 
 func (c *Counters) close() {

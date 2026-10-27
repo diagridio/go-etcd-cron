@@ -8,12 +8,14 @@ package fake
 import (
 	"context"
 
+	"github.com/diagridio/go-etcd-cron/api"
 	"github.com/diagridio/go-etcd-cron/internal/engine/handler"
 )
 
 type Fake struct {
-	runFn func(context.Context) error
-	apiFn func() handler.Interface
+	runFn        func(context.Context) error
+	apiFn        func() handler.Interface
+	queueStateFn func() *api.QueueState
 }
 
 func New() *Fake {
@@ -23,6 +25,9 @@ func New() *Fake {
 		},
 		apiFn: func() handler.Interface {
 			return nil
+		},
+		queueStateFn: func() *api.QueueState {
+			return api.NewQueueState()
 		},
 	}
 }
@@ -38,10 +43,19 @@ func (f *Fake) WithAPI(a handler.Interface) *Fake {
 	return f
 }
 
+func (f *Fake) WithQueueState(fn func() *api.QueueState) *Fake {
+	f.queueStateFn = fn
+	return f
+}
+
 func (f *Fake) Run(ctx context.Context) error {
 	return f.runFn(ctx)
 }
 
 func (f *Fake) API() handler.Interface {
 	return f.apiFn()
+}
+
+func (f *Fake) QueueState() *api.QueueState {
+	return f.queueStateFn()
 }

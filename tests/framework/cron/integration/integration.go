@@ -31,6 +31,8 @@ type Options struct {
 	TriggerFn func(*api.TriggerRequest, func(*api.TriggerResponse))
 	Client    *clientv3.Client
 	Workers   *uint32
+
+	QueueStateKey api.QueueStateKeyFunc
 }
 
 type Integration struct {
@@ -69,6 +71,8 @@ func New(t *testing.T, opts Options) *Integration {
 			Namespace: "abc",
 			ID:        strconv.FormatUint(i, 10),
 			Workers:   opts.Workers,
+
+			QueueStateKey: opts.QueueStateKey,
 			TriggerFn: func(req *api.TriggerRequest, fn func(*api.TriggerResponse)) {
 				defer triggered.Append(req.GetName())
 

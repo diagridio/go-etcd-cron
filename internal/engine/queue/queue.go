@@ -24,6 +24,7 @@ import (
 	"github.com/diagridio/go-etcd-cron/internal/engine/queue/loops/control"
 	"github.com/diagridio/go-etcd-cron/internal/engine/queue/loops/router"
 	"github.com/diagridio/go-etcd-cron/internal/engine/queue/loops/worker"
+	"github.com/diagridio/go-etcd-cron/internal/engine/queue/queuestate"
 	"github.com/diagridio/go-etcd-cron/internal/key"
 	"github.com/diagridio/go-etcd-cron/internal/scheduler"
 )
@@ -54,6 +55,10 @@ type Options struct {
 	// Workers is the number of workers to use for processing events in the
 	// queue.
 	Workers uint32
+
+	// QueueStateKey is an optional function which maps job names to the
+	// namespace and app ID they are counted under in the queue state.
+	QueueStateKey api.QueueStateKeyFunc
 }
 
 type Queue struct {
@@ -68,6 +73,7 @@ type Queue struct {
 	controlLoop loop.Interface[*queue.ControlEvent]
 	queue       *eventsqueue.Processor[int64, counter.Interface]
 	workers     uint32
+	state       *queuestate.State
 
 	readyCh chan struct{}
 }
@@ -84,6 +90,7 @@ func New(opts Options) *Queue {
 			Sink: opts.ConsumerSink,
 		}),
 		workers: opts.Workers,
+		state:   queuestate.New(opts.QueueStateKey),
 	}
 
 	q.queue = eventsqueue.NewProcessor[int64, counter.Interface](
@@ -126,6 +133,7 @@ func (q *Queue) Run(ctx context.Context) error {
 	q.controlLoop = control.New(control.Options{
 		Actioner: act,
 		Router:   routerLoop,
+		State:    q.state,
 	})
 
 	runners := make([]concurrency.Runner, 0, len(workers)+2)
@@ -185,6 +193,11 @@ func (q *Queue) DeliverablePrefixes(ctx context.Context, prefixes ...string) (co
 			},
 		})
 	}, nil
+}
+
+// State returns a copy of the queue's in-flight and staged job counts.
+func (q *Queue) State() *api.QueueState {
+	return q.state.Get()
 }
 
 func (q *Queue) execute(counter counter.Interface) {

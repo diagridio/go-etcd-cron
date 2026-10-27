@@ -14,6 +14,10 @@ import (
 // The returne TriggerResponse will indicate whether the Job was successfully
 // triggered, the trigger failed, or the Job need to be put into the staging
 // queue.
+// The callback must be called exactly once for every request, including when
+// the Job has been deleted or this replica has lost leadership in the
+// meantime. A request that is never answered is counted as in flight by
+// GetQueueState until the engine restarts.
 type TriggerFunction func(*TriggerRequest, func(*TriggerResponse))
 
 // Interface is a cron interface. It schedules and manages job which are stored
@@ -63,4 +67,14 @@ type Interface interface {
 	// IsElected returns true if cron is currently elected for leadership of its
 	// partition.
 	IsElected() bool
+
+	// GetQueueState returns a copy of the in-flight and staged job counts of
+	// the jobs in the partition this replica currently owns, counted per
+	// namespace and app ID by the configured QueueStateKey. The counts are held
+	// in memory and reset whenever the engine restarts, on a leadership change
+	// or when its etcd watch is lost. Staged jobs are not recovered from etcd,
+	// and are counted again only when they next trigger. A call made while the
+	// engine is restarting may return the previous engine's counts. Returns
+	// empty counts when this replica is not elected.
+	GetQueueState() *QueueState
 }
