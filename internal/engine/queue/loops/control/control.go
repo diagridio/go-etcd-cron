@@ -59,6 +59,9 @@ func (c *control) Handle(_ context.Context, event *queue.ControlEvent) error {
 	case *queue.ControlEvent_CloseJob:
 		c.handleCloseJob(action.CloseJob)
 
+	case *queue.ControlEvent_Idle:
+		c.state.Idle(action.Idle.GetModRevision())
+
 	case *queue.ControlEvent_Close:
 		c.handleClose()
 

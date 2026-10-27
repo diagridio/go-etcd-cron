@@ -171,6 +171,29 @@ func Test_control(t *testing.T) {
 		assert.True(t, closed)
 	})
 
+	t.Run("Idle should move the job to idle in the state without routing", func(t *testing.T) {
+		t.Parallel()
+
+		router := fake.New[*queue.JobEvent]().WithEnqueue(func(action *queue.JobEvent) {
+			assert.Fail(t, "Idle should not be routed", action)
+		})
+
+		state := queuestate.New(func(string) (string, string, bool) {
+			return "ns1", "app1", true
+		})
+		state.Informed(42, "job", true)
+		state.ExecuteRequest(42)
+		require.NotEmpty(t, state.Get().InFlight)
+
+		c := &control{router: router, act: actionerfake.New(), state: state}
+
+		err := c.Handle(t.Context(), &queue.ControlEvent{
+			Action: &queue.ControlEvent_Idle{Idle: &queue.Idle{ModRevision: 42}},
+		})
+		require.NoError(t, err)
+		assert.Empty(t, state.Get().InFlight)
+	})
+
 	t.Run("unknown event should return error", func(t *testing.T) {
 		t.Parallel()
 

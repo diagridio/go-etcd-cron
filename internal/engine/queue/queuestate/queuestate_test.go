@@ -75,6 +75,55 @@ func Test_State(t *testing.T) {
 		assert.Empty(t, s.jobs)
 	})
 
+	t.Run("an undeliverable job the worker re-enqueued rather than staged is idle", func(t *testing.T) {
+		t.Parallel()
+
+		s := newState()
+		s.Informed(1, "ns1/app1", true)
+		s.ExecuteRequest(1)
+		s.ExecuteResponse(1, api.TriggerResponseResult_UNDELIVERABLE)
+		s.Idle(1)
+		assert.Empty(t, s.Get().InFlight)
+		assert.Empty(t, s.Get().Staged)
+
+		s.ExecuteRequest(1)
+		assert.Equal(t, counts(map[string]uint64{"app1": 1}), s.Get().InFlight)
+	})
+
+	t.Run("a request the worker dropped is not counted as in flight", func(t *testing.T) {
+		t.Parallel()
+
+		s := newState()
+		s.Informed(1, "ns1/app1", true)
+		s.ExecuteRequest(1)
+		s.Idle(1)
+		assert.Empty(t, s.Get().InFlight)
+		assert.Len(t, s.jobs, 1)
+	})
+
+	t.Run("a job closed while in flight is dropped once answered or reported idle", func(t *testing.T) {
+		t.Parallel()
+
+		for name, finish := range map[string]func(*State){
+			"answered": func(s *State) { s.ExecuteResponse(1, api.TriggerResponseResult_SUCCESS) },
+			"idle":     func(s *State) { s.Idle(1) },
+		} {
+			t.Run(name, func(t *testing.T) {
+				t.Parallel()
+
+				s := newState()
+				s.Informed(1, "ns1/app1", true)
+				s.ExecuteRequest(1)
+				s.CloseJob(1)
+				assert.Equal(t, counts(map[string]uint64{"app1": 1}), s.Get().InFlight)
+
+				finish(s)
+				assert.Empty(t, s.Get().InFlight)
+				assert.Empty(t, s.jobs)
+			})
+		}
+	})
+
 	t.Run("a request after the job was deleted is not counted", func(t *testing.T) {
 		t.Parallel()
 

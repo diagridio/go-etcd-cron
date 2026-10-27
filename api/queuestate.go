@@ -20,9 +20,8 @@ type QueueState struct {
 
 	// Staged counts jobs which are parked in the staging queue because they
 	// were undeliverable when triggered. Indexed by namespace, then app ID.
-	// An undeliverable job whose prefix was made deliverable just before it
-	// was answered is re-triggered at once rather than staged, but is still
-	// counted as staged until that re-trigger is processed.
+	// A staged job released because its prefix became deliverable is counted
+	// as staged until it is triggered again.
 	Staged map[string]map[string]uint64
 }
 

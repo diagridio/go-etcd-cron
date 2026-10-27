@@ -74,9 +74,7 @@ type Interface interface {
 	// in memory and reset whenever the engine restarts, on a leadership change
 	// or when its etcd watch is lost. Staged jobs are not recovered from etcd,
 	// and are counted again only when they next trigger. A call made while the
-	// engine is restarting may return the previous engine's counts. Staged may
-	// briefly count an undeliverable job which was re-triggered rather than
-	// staged; see QueueState.Staged. Returns empty counts when this replica is
-	// not elected.
+	// engine is restarting may return the previous engine's counts. Returns
+	// empty counts when this replica is not elected.
 	GetQueueState() *QueueState
 }

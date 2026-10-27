@@ -30,8 +30,9 @@ type job struct {
 	key   key
 	phase phase
 
-	// deleted is set when the job version is deleted while its trigger is in
-	// flight. The entry is dropped once the trigger is answered.
+	// deleted is set when the job version is deleted or closed while its
+	// trigger is in flight. The entry is dropped once the trigger is answered
+	// or reported idle.
 	deleted bool
 }
 
@@ -96,7 +97,8 @@ func (s *State) Informed(modRevision int64, jobName string, isPut bool) {
 }
 
 // ExecuteRequest records a job version being triggered. Requests for deleted
-// job versions are dropped by the worker, so are not counted.
+// job versions are dropped by the worker, so are not counted. If the worker
+// drops any other request, it reports the job Idle.
 func (s *State) ExecuteRequest(modRevision int64) {
 	s.lock.Lock()
 	defer s.lock.Unlock()
@@ -108,9 +110,8 @@ func (s *State) ExecuteRequest(modRevision int64) {
 
 // ExecuteResponse records a job version's trigger being answered. An
 // undeliverable job is staged, and a job deleted while in flight is dropped.
-// The worker re-triggers an undeliverable job at once, rather than staging it,
-// if a matching prefix is already deliverable. That job is counted as staged
-// until its re-trigger request is recorded, a brief over-count.
+// If the worker re-enqueues an undeliverable job rather than staging it, it
+// reports the job Idle.
 func (s *State) ExecuteResponse(modRevision int64, result api.TriggerResponseResult) {
 	s.lock.Lock()
 	defer s.lock.Unlock()
@@ -132,18 +133,43 @@ func (s *State) ExecuteResponse(modRevision int64, result api.TriggerResponseRes
 }
 
 // CloseJob records a job version having no more triggers. A job whose trigger
-// is in flight was deleted, and is dropped once the trigger is answered.
+// is in flight is dropped once the trigger is answered, or reported Idle.
 func (s *State) CloseJob(modRevision int64) {
 	s.lock.Lock()
 	defer s.lock.Unlock()
 
 	j, ok := s.jobs[modRevision]
-	if !ok || j.phase == phaseInFlight {
+	if !ok {
+		return
+	}
+
+	if j.phase == phaseInFlight {
+		j.deleted = true
+		s.jobs[modRevision] = j
 		return
 	}
 
 	s.setPhase(modRevision, &j, phaseIdle)
 	delete(s.jobs, modRevision)
+}
+
+// Idle records the worker reporting that a job version counted as in flight
+// or staged is neither: it dropped the execute request or response, or
+// re-enqueued an undeliverable job rather than staging it. A job deleted or
+// closed while in flight is dropped.
+func (s *State) Idle(modRevision int64) {
+	s.lock.Lock()
+	defer s.lock.Unlock()
+
+	j, ok := s.jobs[modRevision]
+	if !ok {
+		return
+	}
+
+	s.setPhase(modRevision, &j, phaseIdle)
+	if j.deleted {
+		delete(s.jobs, modRevision)
+	}
 }
 
 // Get returns a copy of the current counts.

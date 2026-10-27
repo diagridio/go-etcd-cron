@@ -142,10 +142,13 @@ func Test_Counters(t *testing.T) {
 		assert.Equal(t, 1, called)
 	})
 
-	t.Run("an execute request should not error if there is no counter", func(t *testing.T) {
+	t.Run("an execute request with no counter should report the job idle", func(t *testing.T) {
 		t.Parallel()
 
-		c := &Counters{}
+		var events []*queue.ControlEvent
+		c := &Counters{act: fake.New().WithAddToControlLoop(func(event *queue.ControlEvent) {
+			events = append(events, event)
+		})}
 
 		require.NoError(t, c.Handle(t.Context(), &queue.JobAction{
 			Action: &queue.JobAction_ExecuteRequest{
@@ -154,6 +157,9 @@ func Test_Counters(t *testing.T) {
 				},
 			},
 		}))
+		assert.Equal(t, []*queue.ControlEvent{{
+			Action: &queue.ControlEvent_Idle{Idle: &queue.Idle{ModRevision: 789}},
+		}}, events)
 	})
 
 	t.Run("an execute request should trigger, and enqueue the result", func(t *testing.T) {
@@ -204,15 +210,22 @@ func Test_Counters(t *testing.T) {
 		}, time.Second*5, time.Millisecond*10)
 	})
 
-	t.Run("a handle deliverable with no counter should do nothing", func(t *testing.T) {
+	t.Run("a handle deliverable with no counter should report the job idle", func(t *testing.T) {
 		t.Parallel()
-		c := &Counters{}
+
+		var events []*queue.ControlEvent
+		c := &Counters{act: fake.New().WithAddToControlLoop(func(event *queue.ControlEvent) {
+			events = append(events, event)
+		})}
 
 		require.NoError(t, c.Handle(t.Context(), &queue.JobAction{
 			Action: &queue.JobAction_Deliverable{
-				Deliverable: new(queue.DeliverableJob),
+				Deliverable: &queue.DeliverableJob{ModRevision: 456},
 			},
 		}))
+		assert.Equal(t, []*queue.ControlEvent{{
+			Action: &queue.ControlEvent_Idle{Idle: &queue.Idle{ModRevision: 456}},
+		}}, events)
 	})
 
 	t.Run("a handle deliverable with counter should enqueue the counter", func(t *testing.T) {
@@ -239,10 +252,14 @@ func Test_Counters(t *testing.T) {
 		assert.Equal(t, 1, called)
 	})
 
-	t.Run("a stale execute response with matching uid and nil counter should be ignored", func(t *testing.T) {
+	t.Run("a stale execute response with matching uid and nil counter should report the job idle", func(t *testing.T) {
 		t.Parallel()
 
+		var events []*queue.ControlEvent
 		c := &Counters{
+			act: fake.New().WithAddToControlLoop(func(event *queue.ControlEvent) {
+				events = append(events, event)
+			}),
 			name: "test-job",
 		}
 		c.modRevision = 999
@@ -253,6 +270,73 @@ func Test_Counters(t *testing.T) {
 					ModRevision: 999,
 					Result: &api.TriggerResponse{
 						Result: api.TriggerResponseResult_SUCCESS,
+					},
+				},
+			},
+		}))
+		assert.Equal(t, []*queue.ControlEvent{{
+			Action: &queue.ControlEvent_Idle{Idle: &queue.Idle{ModRevision: 999}},
+		}}, events)
+	})
+
+	t.Run("an undeliverable response which is not staged should report the job idle before enqueueing", func(t *testing.T) {
+		t.Parallel()
+
+		cnter := counterfake.New()
+		var calls []string
+		act := fake.New().
+			WithStage(func(id int64, name string) bool {
+				assert.Equal(t, int64(123), id)
+				assert.Equal(t, "test-job", name)
+				calls = append(calls, "stage")
+				return false
+			}).
+			WithAddToControlLoop(func(event *queue.ControlEvent) {
+				assert.Equal(t, &queue.ControlEvent{
+					Action: &queue.ControlEvent_Idle{Idle: &queue.Idle{ModRevision: 123}},
+				}, event)
+				calls = append(calls, "idle")
+			}).
+			WithEnqueue(func(counter counter.Interface) {
+				assert.Equal(t, cnter, counter)
+				calls = append(calls, "enqueue")
+			})
+
+		c := &Counters{act: act, name: "test-job", modRevision: 123, counter: cnter}
+
+		require.NoError(t, c.Handle(t.Context(), &queue.JobAction{
+			Action: &queue.JobAction_ExecuteResponse{
+				ExecuteResponse: &queue.ExecuteResponse{
+					ModRevision: 123,
+					Result: &api.TriggerResponse{
+						Result: api.TriggerResponseResult_UNDELIVERABLE,
+					},
+				},
+			},
+		}))
+		assert.Equal(t, []string{"stage", "idle", "enqueue"}, calls)
+	})
+
+	t.Run("an undeliverable response which is staged should not report the job idle", func(t *testing.T) {
+		t.Parallel()
+
+		act := fake.New().
+			WithStage(func(int64, string) bool { return true }).
+			WithAddToControlLoop(func(event *queue.ControlEvent) {
+				assert.Fail(t, "unexpected control event", event)
+			}).
+			WithEnqueue(func(counter.Interface) {
+				assert.Fail(t, "a staged job should not be enqueued")
+			})
+
+		c := &Counters{act: act, name: "test-job", modRevision: 123, counter: counterfake.New()}
+
+		require.NoError(t, c.Handle(t.Context(), &queue.JobAction{
+			Action: &queue.JobAction_ExecuteResponse{
+				ExecuteResponse: &queue.ExecuteResponse{
+					ModRevision: 123,
+					Result: &api.TriggerResponse{
+						Result: api.TriggerResponseResult_UNDELIVERABLE,
 					},
 				},
 			},

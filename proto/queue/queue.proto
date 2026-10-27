@@ -25,6 +25,7 @@ message ControlEvent {
     UndeliverablePrefixes undeliverable_prefixes = 5;
     CloseJob close_job = 6;
     Close close = 7;
+    Idle idle = 8;
   }
 }
 
@@ -115,5 +116,14 @@ message CloseJob {
 // executed by the queue executor.
 message DeliverableJob {
   // mod_revision is the job mod revision that can now be executed.
+  int64 mod_revision = 1;
+}
+
+// Idle is a queue event which reports that a job event was not acted on as the
+// control loop expected, so the job is neither being triggered nor staged: its
+// execute request or response was dropped, or it was undeliverable but
+// re-enqueued rather than staged because its prefix was deliverable.
+message Idle {
+  // mod_revision is the job mod revision which is idle.
   int64 mod_revision = 1;
 }
