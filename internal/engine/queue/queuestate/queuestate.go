@@ -17,95 +17,129 @@ type Key struct {
 	appID     string
 }
 
-// State holds the in-flight and staged job counts of a queue. Only the queue's
-// state machine loops write to it, so the counts track exactly what the queue
-// holds. A nil *State counts nothing.
+type phase uint8
+
+const (
+	phaseIdle phase = iota
+	phaseInFlight
+	phaseStaged
+)
+
+// job is the phase of one counted job version.
+type job struct {
+	key   Key
+	phase phase
+
+	// deleted is set when the job version is deleted while its trigger is in
+	// flight. The entry is dropped once the trigger is answered.
+	deleted bool
+}
+
+// State holds the in-flight and staged job counts of a queue. It is written
+// only by the queue's control loop, which sees every job event in order before
+// they are fanned out to the workers, so each job version moves from one phase
+// to the next in a single step.
 type State struct {
 	keyFn api.QueueStateKeyFunc
 
 	lock     sync.Mutex
+	jobs     map[int64]*job
 	inFlight map[Key]uint64
 	staged   map[Key]uint64
-
-	// stagedIDs is the key each staged job is counted under, indexed by the
-	// job's ID, so that staging is idempotent.
-	stagedIDs map[int64]Key
 }
 
 func New(keyFn api.QueueStateKeyFunc) *State {
 	return &State{
 		keyFn:    keyFn,
-		inFlight:  make(map[Key]uint64),
-		staged:    make(map[Key]uint64),
-		stagedIDs: make(map[int64]Key),
+		jobs:     make(map[int64]*job),
+		inFlight: make(map[Key]uint64),
+		staged:   make(map[Key]uint64),
 	}
 }
 
-// Key returns the key the given job is counted under, or nil if the job is
-// not counted.
-func (s *State) Key(jobName string) *Key {
-	if s == nil || s.keyFn == nil {
-		return nil
-	}
-
-	namespace, appID, ok := s.keyFn(jobName)
-	if !ok {
-		return nil
-	}
-
-	return &Key{namespace: namespace, appID: appID}
-}
-
-// AddInFlight records that a job has been triggered. A nil key, which is all
-// a nil *State hands out, is not counted.
-func (s *State) AddInFlight(key *Key) {
-	if key != nil {
-		s.add(s.inFlight, *key)
-	}
-}
-
-// RemoveInFlight records that a job's trigger has been answered.
-func (s *State) RemoveInFlight(key *Key) {
-	if key != nil {
-		s.remove(s.inFlight, *key)
-	}
-}
-
-// Stage records that the job with the given ID has entered the staging queue,
-// counted under key. Staging a job which is already staged does nothing.
-func (s *State) Stage(id int64, key *Key) {
-	if key == nil {
-		return
-	}
-
+// Informed records a job version being put or deleted. A put which is counted
+// by the key function starts the version idle. Mirroring the counter, which
+// unstages the job on any inform, a staged job is no longer counted as staged.
+// A deleted job is dropped, unless its trigger is in flight, in which case it
+// is dropped once the trigger is answered.
+func (s *State) Informed(modRevision int64, jobName string, isPut bool) {
 	s.lock.Lock()
 	defer s.lock.Unlock()
 
-	if _, ok := s.stagedIDs[id]; ok {
+	j, ok := s.jobs[modRevision]
+	if !ok {
+		if !isPut || s.keyFn == nil {
+			return
+		}
+
+		namespace, appID, ok := s.keyFn(jobName)
+		if !ok {
+			return
+		}
+
+		s.jobs[modRevision] = &job{key: Key{namespace: namespace, appID: appID}}
 		return
 	}
 
-	s.stagedIDs[id] = *key
-	s.staged[*key]++
+	if j.phase == phaseStaged {
+		s.setPhase(j, phaseIdle)
+	}
+
+	if !isPut {
+		if j.phase == phaseInFlight {
+			j.deleted = true
+		} else {
+			delete(s.jobs, modRevision)
+		}
+	}
 }
 
-// Unstage records that the job with the given ID has left the staging queue.
-// Unstaging a job which is not staged does nothing.
-func (s *State) Unstage(id int64) {
-	if s == nil {
-		return
-	}
-
+// ExecuteRequest records a job version being triggered. Requests for deleted
+// job versions are dropped by the worker, so are not counted.
+func (s *State) ExecuteRequest(modRevision int64) {
 	s.lock.Lock()
 	defer s.lock.Unlock()
 
-	key, ok := s.stagedIDs[id]
-	if !ok {
+	if j, ok := s.jobs[modRevision]; ok && !j.deleted {
+		s.setPhase(j, phaseInFlight)
+	}
+}
+
+// ExecuteResponse records a job version's trigger being answered. An
+// undeliverable job is staged, and a job deleted while in flight is dropped.
+func (s *State) ExecuteResponse(modRevision int64, result api.TriggerResponseResult) {
+	s.lock.Lock()
+	defer s.lock.Unlock()
+
+	j, ok := s.jobs[modRevision]
+	if !ok || j.phase != phaseInFlight {
 		return
 	}
 
-	delete(s.stagedIDs, id)
-	decrement(s.staged, key)
+	switch {
+	case j.deleted:
+		s.setPhase(j, phaseIdle)
+		delete(s.jobs, modRevision)
+	case result == api.TriggerResponseResult_UNDELIVERABLE:
+		s.setPhase(j, phaseStaged)
+	default:
+		s.setPhase(j, phaseIdle)
+	}
+}
+
+// CloseJob records a job version having no more triggers. A job whose trigger
+// is in flight was deleted, and is dropped once the trigger is answered.
+func (s *State) CloseJob(modRevision int64) {
+	s.lock.Lock()
+	defer s.lock.Unlock()
+
+	j, ok := s.jobs[modRevision]
+	if !ok || j.phase == phaseInFlight {
+		return
+	}
+
+	s.setPhase(j, phaseIdle)
+	delete(s.jobs, modRevision)
 }
 
 // Get returns a copy of the current counts.
@@ -124,26 +158,30 @@ func (s *State) Get() *api.QueueState {
 	return state
 }
 
-func (s *State) add(counts map[Key]uint64, key Key) {
-	s.lock.Lock()
-	defer s.lock.Unlock()
-	counts[key]++
-}
+func (s *State) setPhase(j *job, p phase) {
+	switch j.phase {
+	case phaseInFlight:
+		decrement(s.inFlight, j.key)
+	case phaseStaged:
+		decrement(s.staged, j.key)
+	}
 
-func (s *State) remove(counts map[Key]uint64, key Key) {
-	s.lock.Lock()
-	defer s.lock.Unlock()
-	decrement(counts, key)
+	switch p {
+	case phaseInFlight:
+		s.inFlight[j.key]++
+	case phaseStaged:
+		s.staged[j.key]++
+	}
+
+	j.phase = p
 }
 
 func decrement(counts map[Key]uint64, key Key) {
-	switch counts[key] {
-	case 0:
-	case 1:
+	if counts[key] <= 1 {
 		delete(counts, key)
-	default:
-		counts[key]--
+		return
 	}
+	counts[key]--
 }
 
 func copyCounts(dst map[string]map[string]uint64, src map[Key]uint64) {

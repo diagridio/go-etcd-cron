@@ -16,19 +16,16 @@ import (
 	"github.com/diagridio/go-etcd-cron/internal/api/queue"
 	"github.com/diagridio/go-etcd-cron/internal/engine/queue/actioner"
 	"github.com/diagridio/go-etcd-cron/internal/engine/queue/loops/counters"
-	"github.com/diagridio/go-etcd-cron/internal/engine/queue/queuestate"
 )
 
 type Options struct {
 	Actioner actioner.Interface
 	Log      logr.Logger
-	State    *queuestate.State
 }
 
 type worker struct {
-	log   logr.Logger
-	act   actioner.Interface
-	state *queuestate.State
+	log logr.Logger
+	act actioner.Interface
 
 	counters map[int64]*counters.Counters
 	wg       sync.WaitGroup
@@ -38,7 +35,6 @@ func New(opts Options) loop.Interface[*queue.JobEvent] {
 	return loop.New[*queue.JobEvent](1024).NewLoop(&worker{
 		log:      opts.Log.WithName("worker"),
 		act:      opts.Actioner,
-		state:    opts.State,
 		counters: make(map[int64]*counters.Counters),
 	})
 }
@@ -116,7 +112,6 @@ func (w *worker) newCounter(ctx context.Context, modRevision int64, name string)
 		ModRevision: modRevision,
 		Name:        name,
 		Log:         w.log,
-		State:       w.state,
 	})
 
 	w.counters[modRevision] = c

@@ -19,7 +19,6 @@ import (
 	"github.com/diagridio/go-etcd-cron/internal/counter"
 	counterfake "github.com/diagridio/go-etcd-cron/internal/counter/fake"
 	"github.com/diagridio/go-etcd-cron/internal/engine/queue/actioner/fake"
-	"github.com/diagridio/go-etcd-cron/internal/engine/queue/queuestate"
 )
 
 func Test_Counters(t *testing.T) {
@@ -203,95 +202,6 @@ func Test_Counters(t *testing.T) {
 		assert.EventuallyWithT(t, func(c *assert.CollectT) {
 			assert.Equal(c, uint64(2), called.Load())
 		}, time.Second*5, time.Millisecond*10)
-	})
-
-	t.Run("an execute request counts the job in flight until the trigger is answered, even if the job was deleted meanwhile", func(t *testing.T) {
-		t.Parallel()
-
-		state := queuestate.New(func(jobName string) (string, string, bool) {
-			return "ns1", jobName, true
-		})
-
-		var answer func(*api.TriggerResponse)
-		act := fake.New().WithTrigger(func(_ *api.TriggerRequest, fn func(*api.TriggerResponse)) {
-			answer = fn
-		})
-
-		c := New(Options{
-			Actioner:    act,
-			ModRevision: 1234,
-			Name:        "app1",
-			State:       state,
-		})
-		c.counter = counterfake.New()
-
-		require.NoError(t, c.Handle(t.Context(), &queue.JobAction{
-			Action: &queue.JobAction_ExecuteRequest{
-				ExecuteRequest: &queue.ExecuteRequest{ModRevision: 1234},
-			},
-		}))
-		assert.Equal(t, map[string]map[string]uint64{"ns1": {"app1": 1}}, state.Get().InFlight)
-
-		// Delete the job while its trigger is in flight. The answer is then
-		// dropped by handleExecuteResponse, but the count must still go down.
-		require.NoError(t, c.Handle(t.Context(), &queue.JobAction{
-			Action: &queue.JobAction_Informed{
-				Informed: &queue.Informed{
-					Name:      "app1",
-					QueuedJob: &queue.QueuedJob{ModRevision: 1234},
-					IsPut:     false,
-				},
-			},
-		}))
-		assert.Equal(t, map[string]map[string]uint64{"ns1": {"app1": 1}}, state.Get().InFlight)
-
-		require.NotNil(t, answer)
-		answer(&api.TriggerResponse{Result: api.TriggerResponseResult_SUCCESS})
-		assert.Empty(t, state.Get().InFlight)
-	})
-
-	t.Run("an undeliverable answer moves the job from in flight to staged", func(t *testing.T) {
-		t.Parallel()
-
-		state := queuestate.New(func(jobName string) (string, string, bool) {
-			return "ns1", jobName, true
-		})
-
-		var answer func(*api.TriggerResponse)
-		var staged []*queuestate.Key
-		act := fake.New().
-			WithTrigger(func(_ *api.TriggerRequest, fn func(*api.TriggerResponse)) {
-				answer = fn
-			}).
-			WithStage(func(_ int64, _ string, key *queuestate.Key) bool {
-				staged = append(staged, key)
-				return true
-			})
-
-		c := New(Options{
-			Actioner:    act,
-			ModRevision: 1234,
-			Name:        "app1",
-			State:       state,
-		})
-		c.counter = counterfake.New()
-
-		require.NoError(t, c.Handle(t.Context(), &queue.JobAction{
-			Action: &queue.JobAction_ExecuteRequest{
-				ExecuteRequest: &queue.ExecuteRequest{ModRevision: 1234},
-			},
-		}))
-		require.NotNil(t, answer)
-		result := &api.TriggerResponse{Result: api.TriggerResponseResult_UNDELIVERABLE}
-		answer(result)
-		assert.Empty(t, state.Get().InFlight)
-
-		require.NoError(t, c.Handle(t.Context(), &queue.JobAction{
-			Action: &queue.JobAction_ExecuteResponse{
-				ExecuteResponse: &queue.ExecuteResponse{ModRevision: 1234, Result: result},
-			},
-		}))
-		assert.Equal(t, []*queuestate.Key{state.Key("app1")}, staged)
 	})
 
 	t.Run("a handle deliverable with no counter should do nothing", func(t *testing.T) {

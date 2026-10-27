@@ -11,7 +11,6 @@ import (
 	"github.com/diagridio/go-etcd-cron/api"
 	"github.com/diagridio/go-etcd-cron/internal/api/queue"
 	"github.com/diagridio/go-etcd-cron/internal/counter"
-	"github.com/diagridio/go-etcd-cron/internal/engine/queue/queuestate"
 )
 
 type Fake struct {
@@ -23,7 +22,7 @@ type Fake struct {
 	addToControlLoopFn      func(*queue.ControlEvent)
 	deliverablePrefixesFn   func(...string) []int64
 	unDeliverablePrefixesFn func(...string)
-	stageFn                 func(int64, string, *queuestate.Key) bool
+	stageFn                 func(int64, string) bool
 	unstageFn               func(int64)
 }
 
@@ -37,7 +36,7 @@ func New() *Fake {
 		addToControlLoopFn:      func(*queue.ControlEvent) {},
 		deliverablePrefixesFn:   func(...string) []int64 { return nil },
 		unDeliverablePrefixesFn: func(...string) {},
-		stageFn:                 func(int64, string, *queuestate.Key) bool { return false },
+		stageFn:                 func(int64, string) bool { return false },
 		unstageFn:               func(int64) {},
 	}
 }
@@ -82,7 +81,7 @@ func (f *Fake) WithRemoveConsumer(fn func(counter.Interface)) *Fake {
 	return f
 }
 
-func (f *Fake) WithStage(fn func(int64, string, *queuestate.Key) bool) *Fake {
+func (f *Fake) WithStage(fn func(int64, string) bool) *Fake {
 	f.stageFn = fn
 	return f
 }
@@ -120,8 +119,8 @@ func (f *Fake) UnDeliverablePrefixes(prefixes ...string) {
 	f.unDeliverablePrefixesFn(prefixes...)
 }
 
-func (f *Fake) Stage(id int64, name string, key *queuestate.Key) bool {
-	return f.stageFn(id, name, key)
+func (f *Fake) Stage(id int64, name string) bool {
+	return f.stageFn(id, name)
 }
 
 func (f *Fake) RemoveConsumer(c counter.Interface) {

@@ -27,7 +27,10 @@ func New() *Fake {
 			return nil
 		},
 		queueStateFn: func() *api.QueueState {
-			return nil
+			return &api.QueueState{
+				InFlight: make(map[string]map[string]uint64),
+				Staged:   make(map[string]map[string]uint64),
+			}
 		},
 	}
 }

@@ -107,8 +107,12 @@ func Test_queueState(t *testing.T) {
 				}, time.Second*10, time.Millisecond*10)
 
 				// A job updated while staged is counted once, under its new version.
+				// Wait for the new version to trigger, so the assertion observes the
+				// old version unstaged and the new one staged.
+				triggered := cron.Triggered()
 				require.NoError(t, cron.API().Add(cron.Context(), "ns1||app2||1", job()))
 				assert.EventuallyWithT(t, func(c *assert.CollectT) {
+					assert.Equal(c, triggered+1, cron.Triggered())
 					_, staged := sumQueueState(cron.AllCrons())
 					assert.Equal(c, map[string]map[string]uint64{
 						"ns1": {"app1": 10, "app2": 4},

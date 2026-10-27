@@ -8,8 +8,6 @@ package staging
 import (
 	"strings"
 	"sync"
-
-	"github.com/diagridio/go-etcd-cron/internal/engine/queue/queuestate"
 )
 
 // Staging handles the staging queue for the Job scheduler. It tracks the
@@ -34,18 +32,14 @@ type Staging struct {
 	// and probes deliverablePrefixes with jobName[:length] for each length.
 	prefixLengths map[int]int
 
-	// state counts the staged jobs.
-	state *queuestate.State
-
 	lock sync.Mutex
 }
 
-func New(state *queuestate.State) *Staging {
+func New() *Staging {
 	return &Staging{
 		deliverablePrefixes: make(map[string]*uint64),
 		staged:              make(map[int64]string),
 		prefixLengths:       make(map[int]int),
-		state:               state,
 	}
 }
 
@@ -68,7 +62,6 @@ func (s *Staging) DeliverablePrefixes(prefixes ...string) []int64 {
 			for modRevision, jobName := range s.staged {
 				if strings.HasPrefix(jobName, prefix) {
 					delete(s.staged, modRevision)
-					s.state.Unstage(modRevision)
 					toEnqueue = append(toEnqueue, modRevision)
 				}
 			}
@@ -122,9 +115,8 @@ func (s *Staging) hasMatchingPrefix(jobName string) bool {
 // Stage adds the counter (job) to the staging queue. Accounting for control
 // loop ordering returns false if the counter can actually be delivered now
 // based on the current deliverable prefixes and should be immediately
-// re-queued at the current count. key is what the job is counted under in the
-// queue state, nil if it is not counted.
-func (s *Staging) Stage(modRevision int64, jobName string, key *queuestate.Key) bool {
+// re-queued at the current count.
+func (s *Staging) Stage(modRevision int64, jobName string) bool {
 	s.lock.Lock()
 	defer s.lock.Unlock()
 
@@ -134,7 +126,6 @@ func (s *Staging) Stage(modRevision int64, jobName string, key *queuestate.Key) 
 	}
 
 	s.staged[modRevision] = jobName
-	s.state.Stage(modRevision, key)
 
 	return true
 }
@@ -145,5 +136,4 @@ func (s *Staging) Unstage(modRevision int64) {
 	defer s.lock.Unlock()
 
 	delete(s.staged, modRevision)
-	s.state.Unstage(modRevision)
 }

@@ -14,6 +14,7 @@ import (
 	"github.com/dapr/kit/events/loop/fake"
 	"github.com/diagridio/go-etcd-cron/internal/api/queue"
 	actionerfake "github.com/diagridio/go-etcd-cron/internal/engine/queue/actioner/fake"
+	"github.com/diagridio/go-etcd-cron/internal/engine/queue/queuestate"
 )
 
 func Test_control(t *testing.T) {
@@ -40,6 +41,7 @@ func Test_control(t *testing.T) {
 		c := &control{
 			router: router,
 			act:    actionerfake.New(),
+			state:  queuestate.New(nil),
 		}
 
 		require.NoError(t, c.Handle(t.Context(), &queue.ControlEvent{
@@ -62,7 +64,7 @@ func Test_control(t *testing.T) {
 			assert.Equal(t, execute, action.GetAction().GetExecuteRequest())
 		})
 
-		c := &control{router: router, act: actionerfake.New()}
+		c := &control{router: router, act: actionerfake.New(), state: queuestate.New(nil)}
 
 		err := c.Handle(t.Context(), &queue.ControlEvent{
 			Action: &queue.ControlEvent_ExecuteRequest{ExecuteRequest: execute},
@@ -78,7 +80,7 @@ func Test_control(t *testing.T) {
 			assert.Equal(t, response, action.GetAction().GetExecuteResponse())
 		})
 
-		c := &control{router: router, act: actionerfake.New()}
+		c := &control{router: router, act: actionerfake.New(), state: queuestate.New(nil)}
 
 		err := c.Handle(t.Context(), &queue.ControlEvent{
 			Action: &queue.ControlEvent_ExecuteResponse{ExecuteResponse: response},
@@ -99,7 +101,7 @@ func Test_control(t *testing.T) {
 			enqueued = append(enqueued, action.GetAction().GetDeliverable().ModRevision)
 		})
 
-		c := &control{router: router, act: act}
+		c := &control{router: router, act: act, state: queuestate.New(nil)}
 
 		err := c.Handle(t.Context(), &queue.ControlEvent{
 			Action: &queue.ControlEvent_DeliverablePrefixes{
@@ -119,7 +121,7 @@ func Test_control(t *testing.T) {
 			assert.ElementsMatch(t, []string{"badPrefix"}, prefixes)
 		})
 
-		c := &control{router: fake.New[*queue.JobEvent](), act: act}
+		c := &control{router: fake.New[*queue.JobEvent](), act: act, state: queuestate.New(nil)}
 
 		err := c.Handle(t.Context(), &queue.ControlEvent{
 			Action: &queue.ControlEvent_UndeliverablePrefixes{
@@ -138,7 +140,7 @@ func Test_control(t *testing.T) {
 			received = action
 		})
 
-		c := &control{router: router, act: actionerfake.New()}
+		c := &control{router: router, act: actionerfake.New(), state: queuestate.New(nil)}
 
 		err := c.Handle(t.Context(), &queue.ControlEvent{
 			Action: &queue.ControlEvent_CloseJob{
@@ -160,7 +162,7 @@ func Test_control(t *testing.T) {
 			assert.NotNil(t, event.Action.GetClose())
 		})
 
-		c := &control{router: router, act: actionerfake.New()}
+		c := &control{router: router, act: actionerfake.New(), state: queuestate.New(nil)}
 
 		err := c.Handle(t.Context(), &queue.ControlEvent{
 			Action: &queue.ControlEvent_Close{},
@@ -172,7 +174,7 @@ func Test_control(t *testing.T) {
 	t.Run("unknown event should return error", func(t *testing.T) {
 		t.Parallel()
 
-		c := &control{router: fake.New[*queue.JobEvent](), act: actionerfake.New()}
+		c := &control{router: fake.New[*queue.JobEvent](), act: actionerfake.New(), state: queuestate.New(nil)}
 
 		err := c.Handle(t.Context(), &queue.ControlEvent{
 			Action: nil,

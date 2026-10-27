@@ -59,7 +59,10 @@ func New() *Fake {
 			return false
 		},
 		getQueueStateFn: func() *api.QueueState {
-			return &api.QueueState{}
+			return &api.QueueState{
+				InFlight: make(map[string]map[string]uint64),
+				Staged:   make(map[string]map[string]uint64),
+			}
 		},
 	}
 }

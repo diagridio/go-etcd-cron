@@ -114,7 +114,6 @@ func (q *Queue) Run(ctx context.Context) error {
 		Client:       q.client,
 		Key:          q.key,
 		Consumer:     q.consumer,
-		State:        q.state,
 	})
 
 	q.log.Info("Starting queue with workers", "count", q.workers)
@@ -123,7 +122,6 @@ func (q *Queue) Run(ctx context.Context) error {
 		workers[i] = worker.New(worker.Options{
 			Actioner: act,
 			Log:      q.log,
-			State:    q.state,
 		})
 	}
 
@@ -135,6 +133,7 @@ func (q *Queue) Run(ctx context.Context) error {
 	q.controlLoop = control.New(control.Options{
 		Actioner: act,
 		Router:   routerLoop,
+		State:    q.state,
 	})
 
 	runners := make([]concurrency.Runner, 0, len(workers)+2)
