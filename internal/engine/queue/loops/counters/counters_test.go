@@ -210,6 +210,37 @@ func Test_Counters(t *testing.T) {
 		}, time.Second*5, time.Millisecond*10)
 	})
 
+	t.Run("an execute request answered more than once should enqueue only the first result", func(t *testing.T) {
+		t.Parallel()
+
+		var results []*queue.ControlEvent
+		act := fake.New().WithTrigger(func(_ *api.TriggerRequest, fn func(*api.TriggerResponse)) {
+			fn(&api.TriggerResponse{Result: api.TriggerResponseResult_SUCCESS})
+			fn(&api.TriggerResponse{Result: api.TriggerResponseResult_FAILED})
+		}).WithAddToControlLoop(func(event *queue.ControlEvent) {
+			results = append(results, event)
+		})
+
+		c := &Counters{
+			act:         act,
+			name:        "test-job",
+			modRevision: 1234,
+			counter: counterfake.New().WithTriggerRequest(func() *api.TriggerRequest {
+				return &api.TriggerRequest{Name: "test-job"}
+			}),
+		}
+
+		require.NoError(t, c.Handle(t.Context(), &queue.JobAction{
+			Action: &queue.JobAction_ExecuteRequest{
+				ExecuteRequest: &queue.ExecuteRequest{ModRevision: 1234},
+			},
+		}))
+
+		require.Len(t, results, 1)
+		assert.Equal(t, api.TriggerResponseResult_SUCCESS,
+			results[0].GetExecuteResponse().GetResult().GetResult())
+	})
+
 	t.Run("a handle deliverable with no counter should report the job idle", func(t *testing.T) {
 		t.Parallel()
 
