@@ -179,7 +179,7 @@ func (e *Elector) Elect(ctx context.Context) (context.Context, *Elected, error) 
 				return
 			}
 
-			if err := e.haveQuorum(r, uint64(len(ldata))); err != nil {
+			if err := e.haveQuorum(r, resp.Kvs); err != nil {
 				e.log.Error(err, "leadership quorum lost")
 				return
 			}
@@ -254,7 +254,7 @@ func (e *Elector) Reelect(ctx context.Context) (context.Context, *Elected, error
 				return
 			}
 
-			if err := e.haveQuorum(r, uint64(len(ldata))); err != nil {
+			if err := e.haveQuorum(r, resp.Kvs); err != nil {
 				e.log.Error(err, "leadership quorum lost")
 				return
 			}
@@ -267,20 +267,23 @@ func (e *Elector) Reelect(ctx context.Context) (context.Context, *Elected, error
 	}, nil
 }
 
-// haveQuorum checks that all leaders agree on the total partition size and
-// that our key hasn't been tampered with. Returns an error if we no longer
-// have quorum and should re-elect.
-func (e *Elector) haveQuorum(resp *clientv3.GetResponse, expTotal uint64) error {
+// haveQuorum checks that all leaders agree on the total partition size, that
+// the leaders are still the ones elected with, and that our key hasn't been
+// tampered with. Returns an error if we no longer have quorum and should
+// re-elect.
+func (e *Elector) haveQuorum(resp *clientv3.GetResponse, elected []*mvccpb.KeyValue) error {
 	var selfFound bool
 
 	//nolint:gosec
 	currentPartitionTotal := uint64(resp.Count)
+	//nolint:gosec
+	expTotal := uint64(len(elected))
 
 	if currentPartitionTotal != expTotal {
 		return fmt.Errorf("partition total changed: %d -> %d, fatal leadership error", expTotal, currentPartitionTotal)
 	}
 
-	for _, kv := range resp.Kvs {
+	for i, kv := range resp.Kvs {
 		var lead stored.Leadership
 		if err := proto.Unmarshal(kv.Value, &lead); err != nil {
 			return err
@@ -300,6 +303,24 @@ func (e *Elector) haveQuorum(resp *clientv3.GetResponse, expTotal uint64) error 
 			if !proto.Equal(lead.GetReplicaData(), e.replicaData) {
 				return fmt.Errorf("own replica data changed: %v -> %v, fatal leadership error", e.replicaData, lead.GetReplicaData())
 			}
+
+			continue
+		}
+
+		// A leader restarted under the same key between two informer reads
+		// keeps the total unchanged, so the leader behind each key is
+		// compared with the one elected with.
+		if string(kv.Key) != string(elected[i].Key) {
+			return fmt.Errorf("%s: leader replaced by %s, fatal leadership error", string(elected[i].Key), string(kv.Key))
+		}
+
+		var prev stored.Leadership
+		if err := proto.Unmarshal(elected[i].Value, &prev); err != nil {
+			return err
+		}
+
+		if lead.GetUid() != prev.GetUid() || !proto.Equal(lead.GetReplicaData(), prev.GetReplicaData()) {
+			return fmt.Errorf("%s: leader changed since election, fatal leadership error", string(kv.Key))
 		}
 	}
 
