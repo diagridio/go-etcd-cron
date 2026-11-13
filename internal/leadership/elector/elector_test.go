@@ -264,6 +264,102 @@ func Test_Elect(t *testing.T) {
 			}
 		}
 	})
+
+	t.Run("if another leader is replaced under its key, expect quorum lost and reelect with its new data", func(t *testing.T) {
+		t.Parallel()
+
+		client := etcd.Embedded(t)
+		lease, err := client.Grant(t.Context(), 20)
+		require.NoError(t, err)
+
+		ctx, cancel := context.WithCancel(t.Context())
+		t.Cleanup(cancel)
+
+		key1, err := key.New(key.Options{
+			Namespace: "abc",
+			ID:        "helloworld1",
+		})
+		require.NoError(t, err)
+		inf1, err := informer.New(ctx, informer.Options{
+			Client: client,
+			Key:    key1,
+		})
+		require.NoError(t, err)
+		e1 := New(Options{
+			Log:         logr.Discard(),
+			Client:      client,
+			Key:         key1,
+			ReplicaData: replicaData,
+			LeaseID:     lease.ID,
+			Informer:    inf1,
+		})
+
+		key2, err := key.New(key.Options{
+			Namespace: "abc",
+			ID:        "helloworld2",
+		})
+		require.NoError(t, err)
+		inf2, err := informer.New(ctx, informer.Options{
+			Client: client,
+			Key:    key2,
+		})
+		require.NoError(t, err)
+		e2 := New(Options{
+			Log:         logr.Discard(),
+			Client:      client,
+			Key:         key2,
+			ReplicaData: replicaData,
+			LeaseID:     lease.ID,
+			Informer:    inf2,
+		})
+
+		errCh := make(chan error, 2)
+		ectxCh := make(chan context.Context, 1)
+
+		go func() {
+			ectx, _, err := e1.Elect(ctx)
+			errCh <- err
+			ectxCh <- ectx
+		}()
+		go func() {
+			_, _, err := e2.Elect(ctx)
+			errCh <- err
+		}()
+
+		for range 2 {
+			select {
+			case <-time.After(time.Second * 10):
+				require.Fail(t, "timed out")
+			case err := <-errCh:
+				require.NoError(t, err)
+			}
+		}
+		ectx := <-ectxCh
+
+		// The second leader restarts under the same key with a new address,
+		// and its delete and put land in the same informer read.
+		moved := &anypb.Any{Value: []byte("moved")}
+		l2, err := proto.Marshal(&stored.Leadership{
+			Total:       2,
+			Uid:         e2.uid + 1,
+			ReplicaData: moved,
+		})
+		require.NoError(t, err)
+		_, err = client.Put(ctx, key2.LeadershipKey(), string(l2), clientv3.WithLease(lease.ID))
+		require.NoError(t, err)
+
+		select {
+		case <-ectx.Done():
+		case <-time.After(time.Second * 10):
+			require.Fail(t, "timed out waiting for quorum to be lost")
+		}
+
+		_, el, err := e1.Reelect(ctx)
+		require.NoError(t, err)
+		require.Len(t, el.LeadershipData, 2)
+		assert.True(t, proto.Equal(el.LeadershipData[0], replicaData))
+		assert.True(t, proto.Equal(el.LeadershipData[1], moved))
+	})
 }
 
 func Test_haveQuorum(t *testing.T) {
@@ -311,7 +407,7 @@ func Test_haveQuorum(t *testing.T) {
 		resp, err := client.Get(t.Context(), "abc/leadership", clientv3.WithPrefix())
 		require.NoError(t, err)
 
-		require.Error(t, e.haveQuorum(resp, 3))
+		require.Error(t, e.haveQuorum(resp, make([]*mvccpb.KeyValue, 3)))
 	})
 
 	t.Run("if the expTotal and resp count is same, expect no error", func(t *testing.T) {
@@ -350,7 +446,7 @@ func Test_haveQuorum(t *testing.T) {
 		resp, err := client.Get(t.Context(), "abc/leadership", clientv3.WithPrefix())
 		require.NoError(t, err)
 
-		require.NoError(t, e.haveQuorum(resp, 2))
+		require.NoError(t, e.haveQuorum(resp, resp.Kvs))
 	})
 
 	t.Run("if leader thinks total is different, expect error", func(t *testing.T) {
@@ -389,7 +485,7 @@ func Test_haveQuorum(t *testing.T) {
 		resp, err := client.Get(t.Context(), "abc/leadership", clientv3.WithPrefix())
 		require.NoError(t, err)
 
-		require.Error(t, e.haveQuorum(resp, 2))
+		require.Error(t, e.haveQuorum(resp, resp.Kvs))
 	})
 
 	t.Run("if we don't find outselves, expect error", func(t *testing.T) {
@@ -420,7 +516,7 @@ func Test_haveQuorum(t *testing.T) {
 		resp, err := client.Get(t.Context(), "abc/leadership", clientv3.WithPrefix())
 		require.NoError(t, err)
 
-		require.Error(t, e.haveQuorum(resp, 1))
+		require.Error(t, e.haveQuorum(resp, resp.Kvs))
 	})
 
 	t.Run("if our uid has changed, expect error", func(t *testing.T) {
@@ -459,7 +555,7 @@ func Test_haveQuorum(t *testing.T) {
 		resp, err := client.Get(t.Context(), "abc/leadership", clientv3.WithPrefix())
 		require.NoError(t, err)
 
-		require.Error(t, e.haveQuorum(resp, 2))
+		require.Error(t, e.haveQuorum(resp, resp.Kvs))
 	})
 
 	t.Run("if our replica data has changed, expect error", func(t *testing.T) {
@@ -498,7 +594,153 @@ func Test_haveQuorum(t *testing.T) {
 		resp, err := client.Get(t.Context(), "abc/leadership", clientv3.WithPrefix())
 		require.NoError(t, err)
 
-		require.Error(t, e.haveQuorum(resp, 2))
+		require.Error(t, e.haveQuorum(resp, resp.Kvs))
+	})
+
+	t.Run("if another leader's replica data changed since election, expect error", func(t *testing.T) {
+		t.Parallel()
+
+		client := etcd.Embedded(t)
+
+		lease, err := client.Grant(t.Context(), 20)
+		require.NoError(t, err)
+
+		e := New(Options{
+			Log:         logr.Discard(),
+			Client:      client,
+			Key:         key,
+			ReplicaData: replicaData,
+			LeaseID:     lease.ID,
+		})
+
+		l1, err := proto.Marshal(&stored.Leadership{
+			Total:       2,
+			Uid:         e.uid,
+			ReplicaData: replicaData,
+		})
+		require.NoError(t, err)
+		l2, err := proto.Marshal(&stored.Leadership{
+			Total:       2,
+			Uid:         123,
+			ReplicaData: &anypb.Any{Value: []byte("world")},
+		})
+		require.NoError(t, err)
+		l3, err := proto.Marshal(&stored.Leadership{
+			Total:       2,
+			Uid:         123,
+			ReplicaData: &anypb.Any{Value: []byte("moved")},
+		})
+		require.NoError(t, err)
+
+		_, err = client.Put(t.Context(), "abc/leadership/helloworld", string(l1))
+		require.NoError(t, err)
+		_, err = client.Put(t.Context(), "abc/leadership/1", string(l2))
+		require.NoError(t, err)
+		elected, err := client.Get(t.Context(), "abc/leadership", clientv3.WithPrefix())
+		require.NoError(t, err)
+
+		_, err = client.Put(t.Context(), "abc/leadership/1", string(l3))
+		require.NoError(t, err)
+		resp, err := client.Get(t.Context(), "abc/leadership", clientv3.WithPrefix())
+		require.NoError(t, err)
+
+		require.Error(t, e.haveQuorum(resp, elected.Kvs))
+	})
+
+	t.Run("if another leader's uid changed since election, expect error", func(t *testing.T) {
+		t.Parallel()
+
+		client := etcd.Embedded(t)
+
+		lease, err := client.Grant(t.Context(), 20)
+		require.NoError(t, err)
+
+		e := New(Options{
+			Log:         logr.Discard(),
+			Client:      client,
+			Key:         key,
+			ReplicaData: replicaData,
+			LeaseID:     lease.ID,
+		})
+
+		l1, err := proto.Marshal(&stored.Leadership{
+			Total:       2,
+			Uid:         e.uid,
+			ReplicaData: replicaData,
+		})
+		require.NoError(t, err)
+		l2, err := proto.Marshal(&stored.Leadership{
+			Total:       2,
+			Uid:         123,
+			ReplicaData: &anypb.Any{Value: []byte("world")},
+		})
+		require.NoError(t, err)
+		l3, err := proto.Marshal(&stored.Leadership{
+			Total:       2,
+			Uid:         456,
+			ReplicaData: &anypb.Any{Value: []byte("world")},
+		})
+		require.NoError(t, err)
+
+		_, err = client.Put(t.Context(), "abc/leadership/helloworld", string(l1))
+		require.NoError(t, err)
+		_, err = client.Put(t.Context(), "abc/leadership/1", string(l2))
+		require.NoError(t, err)
+		elected, err := client.Get(t.Context(), "abc/leadership", clientv3.WithPrefix())
+		require.NoError(t, err)
+
+		_, err = client.Put(t.Context(), "abc/leadership/1", string(l3))
+		require.NoError(t, err)
+		resp, err := client.Get(t.Context(), "abc/leadership", clientv3.WithPrefix())
+		require.NoError(t, err)
+
+		require.Error(t, e.haveQuorum(resp, elected.Kvs))
+	})
+
+	t.Run("if another leader was replaced by a different key, expect error", func(t *testing.T) {
+		t.Parallel()
+
+		client := etcd.Embedded(t)
+
+		lease, err := client.Grant(t.Context(), 20)
+		require.NoError(t, err)
+
+		e := New(Options{
+			Log:         logr.Discard(),
+			Client:      client,
+			Key:         key,
+			ReplicaData: replicaData,
+			LeaseID:     lease.ID,
+		})
+
+		l1, err := proto.Marshal(&stored.Leadership{
+			Total:       2,
+			Uid:         e.uid,
+			ReplicaData: replicaData,
+		})
+		require.NoError(t, err)
+		l2, err := proto.Marshal(&stored.Leadership{
+			Total:       2,
+			Uid:         123,
+			ReplicaData: &anypb.Any{Value: []byte("world")},
+		})
+		require.NoError(t, err)
+
+		_, err = client.Put(t.Context(), "abc/leadership/helloworld", string(l1))
+		require.NoError(t, err)
+		_, err = client.Put(t.Context(), "abc/leadership/1", string(l2))
+		require.NoError(t, err)
+		elected, err := client.Get(t.Context(), "abc/leadership", clientv3.WithPrefix())
+		require.NoError(t, err)
+
+		_, err = client.Delete(t.Context(), "abc/leadership/1")
+		require.NoError(t, err)
+		_, err = client.Put(t.Context(), "abc/leadership/2", string(l2))
+		require.NoError(t, err)
+		resp, err := client.Get(t.Context(), "abc/leadership", clientv3.WithPrefix())
+		require.NoError(t, err)
+
+		require.Error(t, e.haveQuorum(resp, elected.Kvs))
 	})
 }
 
